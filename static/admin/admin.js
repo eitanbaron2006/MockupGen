@@ -8,7 +8,8 @@
     settings: {},
     busy: false,
     drag: null,
-    pendingDelete: null
+    pendingDelete: null,
+    queueFilter: "all"
   };
   const $ = (id) => document.getElementById(id);
 
@@ -95,9 +96,19 @@
     renderEditor();
   }
 
+  function filteredTemplates() {
+    if (state.queueFilter === "approved") return state.templates.filter((t) => t.status === "active");
+    if (state.queueFilter === "review") return state.templates.filter((t) => t.status !== "active");
+    return state.templates;
+  }
+
   function renderQueue() {
+    const visible = filteredTemplates();
     $("queueCount").textContent = state.templates.length;
-    $("queue").innerHTML = state.templates.map((template) => `
+    document.querySelectorAll(".filter-pill").forEach((pill) => {
+      pill.classList.toggle("active", pill.dataset.filter === state.queueFilter);
+    });
+    $("queue").innerHTML = visible.map((template) => `
       <div class="queue-item ${state.selected && state.selected.template_id === template.template_id ? "selected" : ""}">
         <button class="queue-select" type="button" data-template="${template.template_id}" ${state.busy ? "disabled" : ""}>
           <img class="thumb" src="/api/admin/templates/${template.template_id}/asset/preview.png" alt="">
@@ -108,7 +119,7 @@
         </button>
         <button class="queue-delete" type="button" data-template="${template.template_id}" aria-label="Delete ${escapeHtml(template.name)}" title="Delete mockup" ${state.busy ? "disabled" : ""}>&times;</button>
       </div>
-    `).join("") || '<div class="empty">No templates in this category yet.<br>Drop mockups to begin.</div>';
+    `).join("") || '<div class="empty">No templates match this filter.</div>';
     document.querySelectorAll(".queue-select").forEach((button) => {
       button.onclick = () => {
         state.selected = state.templates.find((template) => template.template_id === button.dataset.template);
@@ -551,6 +562,12 @@
     }
   }
 
+  document.querySelectorAll(".filter-pill").forEach((pill) => {
+    pill.onclick = () => {
+      state.queueFilter = pill.dataset.filter;
+      renderQueue();
+    };
+  });
   $("openCategory").onclick = () => $("categoryModal").classList.add("open");
   $("cancelCategory").onclick = () => $("categoryModal").classList.remove("open");
   $("cancelDelete").onclick = closeDeleteModal;
