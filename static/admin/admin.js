@@ -9,7 +9,7 @@
     busy: false,
     drag: null,
     pendingDelete: null,
-    queueFilter: "all"
+    queueFilter: "review"
   };
   const $ = (id) => document.getElementById(id);
 
