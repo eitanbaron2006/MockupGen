@@ -33,11 +33,11 @@ def import_backgrounds(
             raise TemplateImportError("Only PNG, JPG, JPEG, and WebP mockup images are allowed")
         normalized_name = safe_name.casefold()
         if normalized_name in pending_names or catalog.source_filename_exists(safe_name):
-            raise TemplateImportError(f"A mockup image named {safe_name} already exists")
+            continue
         pending_names.add(normalized_name)
         validated_uploads.append((upload, safe_name))
     if not validated_uploads:
-        raise TemplateImportError("Select at least one mockup image")
+        raise TemplateImportError("No new valid mockups found (all were duplicates or invalid)")
 
     imported: list[dict[str, Any]] = []
     for upload, safe_name in validated_uploads:
