@@ -314,9 +314,10 @@ def batch_detect_admin_templates():
 
     draft_folder = Path(current_app.config["DRAFT_TEMPLATES_FOLDER"])
     templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
+    cat = catalog()
 
     def process_template(template_id: str):
-        template = catalog().get_template(template_id)
+        template = cat.get_template(template_id)
         if not template:
             return {"template_id": template_id, "success": False, "error": "Template not found"}
 
