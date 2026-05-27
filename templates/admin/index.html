@@ -48,11 +48,7 @@
               <button class="filter-pill active" data-filter="review">Review</button>
             </div>
           </div>
-          <div class="dropzone" id="dropzone">
-            <div class="drop-icon">&#8593;</div>
-            <strong>Drop multiple images</strong>
-            <div class="sub"><button class="link-button" id="browse">Browse files</button> or drag here</div>
-          </div>
+
           <div id="queue" class="queue"></div>
         </section>
         <section class="panel editor">
@@ -97,60 +93,67 @@
             <div class="sub" id="proposalState">Select a mockup to start.</div>
           </div>
         </section>
-        <aside class="panel inspector inactive" id="inspector">
-          <div class="panel-head">
-            <div><h2>Template details</h2><div class="sub" id="inspectorStatus">No template selected</div></div>
-            <div class="inspector-tools">
-              <button class="icon-button" id="openGuide" type="button" aria-label="Detection guide" data-tooltip="Detection guide">?</button>
-              <button class="icon-button" id="engineButton" type="button" aria-label="Detection engine" data-tooltip="Detection engine">&#9881;</button>
-            </div>
-          </div>
-          <div class="fields">
-            <div>
-              <label for="templateName">Template name</label>
-              <input id="templateName" class="text-input">
-            </div>
-            <div>
-              <label for="categorySelect">Product category</label>
-              <select id="categorySelect"></select>
-            </div>
-            <div>
-              <div class="label-row">
-                <label>Artwork orientation</label>
-                <span class="tip-icon" tabindex="0" aria-label="API match logic" data-tooltip="When a customer submits matching artwork for this category, the closest artwork-area ratio wins.">i</span>
-              </div>
-              <div class="orientation-grid">
-                <div class="direction square" data-direction="square"><span></span>Square</div>
-                <div class="direction portrait" data-direction="portrait"><span></span>Portrait</div>
-                <div class="direction landscape" data-direction="landscape"><span></span>Wide</div>
+        <div class="inspector-column">
+          <aside class="panel inspector inactive" id="inspector">
+            <div class="panel-head">
+              <div><h2>Template details</h2><div class="sub" id="inspectorStatus">No template selected</div></div>
+              <div class="inspector-tools">
+                <button class="icon-button" id="openGuide" type="button" aria-label="Detection guide" data-tooltip="Detection guide">?</button>
+                <button class="icon-button" id="engineButton" type="button" aria-label="Detection engine" data-tooltip="Detection engine">&#9881;</button>
               </div>
             </div>
-            <div>
-              <label for="fitMode">Fit mode</label>
-              <select id="fitMode">
-                <option value="cover">Cover</option>
-                <option value="contain">Contain</option>
-                <option value="stretch">Stretch</option>
-              </select>
-            </div>
-            <div class="engine-summary">
-              <label>Detection engine</label>
-              <div class="engine-current">
-                <div class="engine-mark">AI</div>
-                <div>
-                <strong id="engineProvider">Vertex AI</strong>
-                  <span id="engineModel">Gemini / Global</span>
+            <div class="fields">
+              <div>
+                <label for="templateName">Template name</label>
+                <input id="templateName" class="text-input">
+              </div>
+              <div>
+                <label for="categorySelect">Product category</label>
+                <select id="categorySelect"></select>
+              </div>
+              <div>
+                <div class="label-row">
+                  <label>Artwork orientation</label>
+                  <span class="tip-icon" tabindex="0" aria-label="API match logic" data-tooltip="When a customer submits matching artwork for this category, the closest artwork-area ratio wins.">i</span>
+                </div>
+                <div class="orientation-grid">
+                  <div class="direction square" data-direction="square"><span></span>Square</div>
+                  <div class="direction portrait" data-direction="portrait"><span></span>Portrait</div>
+                  <div class="direction landscape" data-direction="landscape"><span></span>Wide</div>
                 </div>
               </div>
-              <button class="link-button" id="editEngine">Change detector</button>
+              <div>
+                <label for="fitMode">Fit mode</label>
+                <select id="fitMode">
+                  <option value="cover">Cover</option>
+                  <option value="contain">Contain</option>
+                  <option value="stretch">Stretch</option>
+                </select>
+              </div>
+              <div class="engine-summary">
+                <label>Detection engine</label>
+                <div class="engine-current">
+                  <div class="engine-mark">AI</div>
+                  <div>
+                  <strong id="engineProvider">Vertex AI</strong>
+                    <span id="engineModel">Gemini / Global</span>
+                  </div>
+                </div>
+                <button class="link-button" id="editEngine">Change detector</button>
+              </div>
+              <div class="rule result-rule hidden" id="detectionResult"></div>
             </div>
-            <div class="rule result-rule hidden" id="detectionResult"></div>
+            <div class="inspector-actions">
+              <button class="btn" id="saveButton">Save draft</button>
+              <button class="btn primary" id="approveButton">Approve <span class="button-tip" data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
+            </div>
+          </aside>
+          <div class="dropzone" id="dropzone">
+            <div class="drop-icon">&#8593;</div>
+            <strong>Drop multiple images</strong>
+            <div class="sub"><button class="link-button" id="browse">Browse files</button> or drag here</div>
           </div>
-          <div class="inspector-actions">
-            <button class="btn" id="saveButton">Save draft</button>
-            <button class="btn primary" id="approveButton">Approve <span class="button-tip" data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
-          </div>
-        </aside>
+        </div>
       </main>
     </section>
   </div>

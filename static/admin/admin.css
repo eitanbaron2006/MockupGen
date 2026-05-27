@@ -119,9 +119,11 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 }
 
 .batch { display: flex; flex-direction: column; }
+.inspector-column { display: flex; flex-direction: column; gap: 16px; height: 100%; min-height: 0; }
+.inspector-column .inspector { flex: 1; height: auto; }
 .dropzone {
   background: rgba(236, 228, 207, .42); border: 1px dashed var(--line); border-radius: 10px;
-  color: var(--muted); margin: 14px; padding: 16px 10px; text-align: center; transition: .18s;
+  color: var(--muted); padding: 16px 10px; text-align: center; transition: .18s; flex-shrink: 0;
 }
 .dropzone.drag { background: var(--accent-soft); border-color: var(--accent); }
 .drop-icon {
