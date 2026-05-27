@@ -138,7 +138,7 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 .queue { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 14px; scrollbar-gutter: stable; }
 .queue-item {
   align-items: center; background: transparent; border: 1px solid transparent; border-radius: 10px;
-  display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) 28px; margin: 5px 0;
+  display: grid; gap: 6px; grid-template-columns: 18px minmax(0, 1fr) 28px; margin: 5px 0;
   padding: 7px; text-align: left; width: 100%;
 }
 .queue-item:hover { background: rgba(236, 228, 207, .48); }
@@ -164,6 +164,9 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 .review { background: rgba(237, 111, 92, .10); color: var(--accent); }
 .approved { background: rgba(110, 116, 72, .12); color: var(--success); }
 .queue-filters { align-items: center; display: flex; gap: 4px; }
+.queue-batch-actions { align-items: center; display: flex; justify-content: space-between; margin-bottom: 2px; }
+.select-all-label { align-items: center; cursor: pointer; display: flex; font-family: var(--mono); font-size: 10px; gap: 6px; text-transform: uppercase; user-select: none; }
+.queue-checkbox { align-self: center; accent-color: var(--accent); cursor: pointer; height: 14px; margin-right: 8px; width: 14px; }
 .queue-head { flex-direction: column; align-items: stretch; gap: 10px; }
 .filter-pill {
   background: transparent; border: 1px solid var(--line); border-radius: 16px; color: var(--faint);

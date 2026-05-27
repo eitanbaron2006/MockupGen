@@ -9,7 +9,8 @@
     busy: false,
     drag: null,
     pendingDelete: null,
-    queueFilter: "review"
+    queueFilter: "review",
+    selectedForBatch: new Set()
   };
   const $ = (id) => document.getElementById(id);
 
@@ -110,6 +111,7 @@
     });
     $("queue").innerHTML = visible.map((template) => `
       <div class="queue-item ${state.selected && state.selected.template_id === template.template_id ? "selected" : ""}">
+        <input type="checkbox" class="queue-checkbox" data-template="${template.template_id}" ${state.selectedForBatch.has(template.template_id) ? "checked" : ""} ${state.busy ? "disabled" : ""}>
         <button class="queue-select" type="button" data-template="${template.template_id}" ${state.busy ? "disabled" : ""}>
           <img class="thumb" src="/api/admin/templates/${template.template_id}/asset/preview.png" alt="">
           <span>
@@ -127,13 +129,83 @@
         renderEditor();
       };
     });
+    document.querySelectorAll(".queue-checkbox").forEach((box) => {
+      box.onchange = (e) => {
+        if (e.target.checked) {
+          state.selectedForBatch.add(e.target.dataset.template);
+        } else {
+          state.selectedForBatch.delete(e.target.dataset.template);
+        }
+        updateBatchControls();
+      };
+    });
     document.querySelectorAll(".queue-delete").forEach((button) => {
       button.onclick = () => {
         const template = state.templates.find((item) => item.template_id === button.dataset.template);
         openDeleteModal(template);
       };
     });
+    updateBatchControls();
   }
+
+  function updateBatchControls() {
+    const visible = filteredTemplates();
+    const allVisibleSelected = visible.length > 0 && visible.every(t => state.selectedForBatch.has(t.template_id));
+    $("selectAllCheckbox").checked = allVisibleSelected;
+    $("selectAllCheckbox").disabled = state.busy || visible.length === 0;
+    $("batchDetectButton").disabled = state.busy || state.selectedForBatch.size === 0;
+  }
+
+  $("selectAllCheckbox").onchange = (e) => {
+    const visible = filteredTemplates();
+    if (e.target.checked) {
+      visible.forEach(t => state.selectedForBatch.add(t.template_id));
+    } else {
+      visible.forEach(t => state.selectedForBatch.delete(t.template_id));
+    }
+    renderQueue();
+  };
+
+  $("batchDetectButton").onclick = async () => {
+    if (state.selectedForBatch.size === 0) return;
+    const ids = Array.from(state.selectedForBatch);
+    state.busy = true;
+    renderQueue();
+    renderEditor();
+
+    try {
+      const response = await api("/api/admin/templates/batch-detect", {
+        method: "POST",
+        body: JSON.stringify({ template_ids: ids })
+      });
+      if (response.success && response.results) {
+        let errorCount = 0;
+        response.results.forEach(result => {
+          if (result.success && result.template) {
+            const index = state.templates.findIndex(t => t.template_id === result.template_id);
+            if (index !== -1) {
+              state.templates[index] = result.template;
+              if (state.selected && state.selected.template_id === result.template_id) {
+                state.selected = result.template;
+                renderDetectionProposal(result.proposal, result.template_id);
+              }
+            }
+          } else {
+            errorCount++;
+          }
+        });
+        if (errorCount > 0) {
+          alert(`Batch detection finished, but ${errorCount} template(s) failed to detect properly.`);
+        }
+      }
+    } catch (error) {
+      alert("Batch detection failed: " + error.message);
+    } finally {
+      state.busy = false;
+      renderQueue();
+      renderEditor();
+    }
+  };
 
   function orientationTitle(value) {
     return value === "landscape" ? "Wide" : value.charAt(0).toUpperCase() + value.slice(1);

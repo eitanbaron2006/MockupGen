@@ -3,6 +3,7 @@ import secrets
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import (
     Blueprint,
@@ -295,6 +296,69 @@ def detect_admin_template(template_id: str):
             },
         }
     )
+
+
+@admin_routes.post("/api/admin/templates/batch-detect")
+@require_admin_json
+@require_csrf
+def batch_detect_admin_templates():
+    data = request.json or {}
+    template_ids = data.get("template_ids", [])
+    if not isinstance(template_ids, list) or not template_ids:
+        return json_error("Invalid or empty template_ids list", 400)
+
+    try:
+        provider = build_provider(catalog().get_settings(), current_app.config)
+    except Exception as e:
+        return json_error(f"Failed to initialize detection provider: {e}", 500)
+
+    draft_folder = Path(current_app.config["DRAFT_TEMPLATES_FOLDER"])
+    templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
+
+    def process_template(template_id: str):
+        template = catalog().get_template(template_id)
+        if not template:
+            return {"template_id": template_id, "success": False, "error": "Template not found"}
+
+        try:
+            background = draft_asset_path(draft_folder, template_id, "background.png")
+        except TemplateImportError:
+            background = templates_folder / template_id / "background.png"
+
+        try:
+            proposal = provider.detect(background)
+            preview = {
+                **template,
+                "artwork_area": proposal.artwork_area,
+                "orientation": orientation_for_size(
+                    proposal.artwork_area["width"], proposal.artwork_area["height"]
+                ),
+                "detection_provider": proposal.provider,
+                "detection_confidence": proposal.confidence,
+            }
+            return {
+                "template_id": template_id,
+                "success": True,
+                "template": preview,
+                "proposal": {
+                    "artwork_area": proposal.artwork_area,
+                    "confidence": proposal.confidence,
+                    "reason": proposal.reason,
+                    "provider": proposal.provider,
+                },
+            }
+        except DetectionError as error:
+            return {"template_id": template_id, "success": False, "error": str(error)}
+        except Exception as e:
+            return {"template_id": template_id, "success": False, "error": str(e)}
+
+    results = []
+    # Max workers limits concurrent requests, 5 is a good default for API rate limits and memory
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for result in executor.map(process_template, template_ids):
+            results.append(result)
+
+    return jsonify({"success": True, "results": results})
 
 
 def background_for_template(template_id: str) -> Path:
