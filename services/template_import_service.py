@@ -25,11 +25,22 @@ def import_backgrounds(
 ) -> list[dict[str, Any]]:
     if not catalog.get_category(category_id):
         raise TemplateImportError("Category not found")
-    imported: list[dict[str, Any]] = []
-    for upload in uploads:
+    validated_uploads: list[tuple[FileStorage, str]] = []
+    pending_names: set[str] = set()
+    for upload in list(uploads):
         safe_name = secure_filename(upload.filename or "")
         if not safe_name or Path(safe_name).suffix.lower() not in ALLOWED_ARTWORK_EXTENSIONS:
             raise TemplateImportError("Only PNG, JPG, JPEG, and WebP mockup images are allowed")
+        normalized_name = safe_name.casefold()
+        if normalized_name in pending_names or catalog.source_filename_exists(safe_name):
+            raise TemplateImportError(f"A mockup image named {safe_name} already exists")
+        pending_names.add(normalized_name)
+        validated_uploads.append((upload, safe_name))
+    if not validated_uploads:
+        raise TemplateImportError("Select at least one mockup image")
+
+    imported: list[dict[str, Any]] = []
+    for upload, safe_name in validated_uploads:
         try:
             image = Image.open(upload.stream).convert("RGBA")
         except (UnidentifiedImageError, OSError) as error:
@@ -55,8 +66,6 @@ def import_backgrounds(
                 }
             )
         )
-    if not imported:
-        raise TemplateImportError("Select at least one mockup image")
     return imported
 
 
@@ -72,6 +81,31 @@ def draft_asset_path(drafts_folder: Path, template_id: str, asset_name: str) -> 
     if drafts_folder.resolve() not in asset_path.parents or not asset_path.is_file():
         raise TemplateImportError("Asset not found")
     return asset_path
+
+
+def _safe_template_directory(root_folder: Path, template_id: str) -> Path:
+    if Path(template_id).name != template_id:
+        raise TemplateImportError("Template not found")
+    root = root_folder.resolve()
+    template_folder = (root_folder / template_id).resolve()
+    if root == template_folder or root not in template_folder.parents:
+        raise TemplateImportError("Template asset path is invalid")
+    return template_folder
+
+
+def delete_template_assets(
+    template_id: str,
+    *,
+    drafts_folder: Path,
+    templates_folder: Path,
+) -> None:
+    for root_folder in (drafts_folder, templates_folder):
+        template_folder = _safe_template_directory(root_folder, template_id)
+        if not template_folder.exists():
+            continue
+        if not template_folder.is_dir():
+            raise TemplateImportError("Template asset path is invalid")
+        shutil.rmtree(template_folder)
 
 
 def publish_template(

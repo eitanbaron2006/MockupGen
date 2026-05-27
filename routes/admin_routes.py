@@ -26,6 +26,7 @@ from services.vertex_model_service import (
 )
 from services.template_import_service import (
     TemplateImportError,
+    delete_template_assets,
     draft_asset_path,
     import_backgrounds,
     publish_template,
@@ -234,6 +235,25 @@ def update_admin_template(template_id: str):
     except (ValueError, CatalogError, DetectionError) as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template": updated})
+
+
+@admin_routes.delete("/api/admin/templates/<template_id>")
+@require_admin_json
+@require_csrf
+def delete_admin_template(template_id: str):
+    template = catalog().get_template(template_id)
+    if not template:
+        return json_error("Template not found", 404)
+    try:
+        delete_template_assets(
+            template_id,
+            drafts_folder=Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
+            templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+        )
+        catalog().delete_template(template_id)
+    except (CatalogError, TemplateImportError) as error:
+        return json_error(str(error), 400)
+    return jsonify({"success": True, "template_id": template_id})
 
 
 @admin_routes.post("/api/admin/templates/<template_id>/detect")

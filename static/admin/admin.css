@@ -100,6 +100,8 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover:not(:disabled) { background: var(--accent-hover); color: #fff; }
 .btn.success { background: var(--success); border-color: var(--success); color: #fff; }
+.btn.danger { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.btn.danger:hover:not(:disabled) { background: #2b2922; color: var(--panel); }
 .btn.compact { padding: 0 11px; }
 .btn:disabled { cursor: wait; opacity: .6; }
 
@@ -134,11 +136,22 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 .queue { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 14px; scrollbar-gutter: stable; }
 .queue-item {
   align-items: center; background: transparent; border: 1px solid transparent; border-radius: 10px;
-  display: grid; gap: 10px; grid-template-columns: 52px minmax(0, 1fr); margin: 5px 0;
+  display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) 28px; margin: 5px 0;
   padding: 7px; text-align: left; width: 100%;
 }
 .queue-item:hover { background: rgba(236, 228, 207, .48); }
 .queue-item.selected { background: rgba(237, 111, 92, .08); border-color: rgba(237, 111, 92, .38); }
+.queue-select {
+  align-items: center; background: transparent; border: 0; color: inherit; display: grid;
+  gap: 10px; grid-template-columns: 52px minmax(0, 1fr); min-width: 0; padding: 0; text-align: left;
+}
+.queue-delete {
+  align-items: center; align-self: center; background: transparent; border: 0; border-radius: 7px;
+  color: var(--faint); display: inline-flex; font-size: 18px; height: 28px; justify-content: center;
+  line-height: 1; padding: 0; width: 28px;
+}
+.queue-delete:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+.queue-select:disabled, .queue-delete:disabled { cursor: wait; opacity: .55; }
 .thumb { border-radius: 7px; height: 52px; object-fit: cover; width: 52px; }
 .file-title {
   display: block; font-family: var(--serif); font-size: 12.5px; font-weight: 500;
@@ -211,12 +224,15 @@ h2 { font-family: var(--serif); font-size: 17px; font-weight: 500; margin: 0 0 4
 .inspector { display: flex; flex-direction: column; }
 .inspector.inactive .fields, .inspector.inactive .inspector-actions { opacity: .45; pointer-events: none; }
 .inspector-tools { align-items: center; display: flex; gap: 5px; margin-left: auto; }
-.fields { display: flex; flex: 1; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding: 17px; }
+.fields {
+  display: flex; flex: 1; flex-direction: column; gap: 16px; min-height: 0;
+  overflow-x: hidden; overflow-y: auto; padding: 17px;
+}
 label {
   color: var(--faint); display: block; font-family: var(--mono); font-size: 9px;
   font-weight: 700; letter-spacing: .16em; margin-bottom: 7px; text-transform: uppercase;
 }
-.label-row { align-items: center; display: flex; gap: 7px; justify-content: flex-start; margin-bottom: 7px; }
+.label-row { align-items: center; display: flex; gap: 7px; justify-content: flex-start; margin-bottom: 7px; position: relative; }
 .label-row label { margin-bottom: 0; }
 select, .text-input {
   background: var(--page); border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
@@ -259,17 +275,32 @@ select, .text-input {
 .button-tip { border-color: rgba(255,255,255,.62); color: #fff; height: 16px; width: 16px; }
 [data-tooltip] { position: relative; }
 [data-tooltip]::after {
-  background: var(--ink); border-radius: 8px; bottom: calc(100% + 9px); color: var(--panel);
-  content: attr(data-tooltip); font-family: var(--body); font-size: 11px; font-weight: 500;
-  letter-spacing: 0; line-height: 1.35; max-width: 230px; min-width: 170px; opacity: 0;
-  padding: 9px 10px; pointer-events: none; position: absolute; right: 0; text-align: left;
-  text-transform: none; transform: translateY(4px); transition: .16s; visibility: hidden; white-space: normal; z-index: 40;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  bottom: var(--tip-bottom, calc(100% + 9px)); box-shadow: 0 14px 30px -24px rgba(21,20,15,.5);
+  color: var(--muted); content: attr(data-tooltip); font-family: var(--body); font-size: 11px;
+  font-weight: 500; left: var(--tip-left, auto); letter-spacing: 0; line-height: 1.45;
+  max-width: min(260px, calc(100vw - 32px)); opacity: 0; padding: 10px 12px;
+  pointer-events: none; position: absolute; right: var(--tip-right, 0); text-align: left;
+  text-transform: none; top: var(--tip-top, auto);
+  transform: translate(var(--tip-x, 0), var(--tip-hidden-y, 4px)); transition: .16s;
+  visibility: hidden; white-space: normal; width: var(--tip-width, 230px); z-index: 40;
 }
 [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after {
-  opacity: 1; transform: translateY(0); visibility: visible;
+  opacity: 1; transform: translate(var(--tip-x, 0), 0); visibility: visible;
 }
-.inspector-tools [data-tooltip]::after {
-  bottom: auto; top: calc(100% + 8px);
+.tip-icon[data-tooltip] {
+  --tip-bottom: auto;
+  --tip-left: 0;
+  --tip-right: auto;
+  --tip-top: calc(100% + 9px);
+  --tip-width: min(250px, 100%);
+  --tip-x: 0;
+  position: static;
+}
+.inspector-tools [data-tooltip] {
+  --tip-bottom: auto;
+  --tip-top: calc(100% + 8px);
+  --tip-width: 150px;
 }
 
 #fileInput { display: none; }
@@ -280,6 +311,12 @@ select, .text-input {
 .modal { background: var(--panel); border-radius: 14px; box-shadow: var(--shadow); padding: 22px; width: 380px; }
 .modal .sub { margin-bottom: 19px; }
 .modal-actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 20px; }
+.delete-modal { width: 410px; }
+.delete-target {
+  background: rgba(236, 228, 207, .55); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--ink); font-family: var(--serif); font-size: 16px; line-height: 1.35;
+  overflow: hidden; padding: 12px 13px; text-overflow: ellipsis; white-space: nowrap;
+}
 .drawer-backdrop.open { display: block; }
 .drawer {
   background: var(--panel); box-shadow: -20px 0 52px rgba(15, 23, 42, .16); display: flex;

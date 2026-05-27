@@ -7,7 +7,8 @@
     selected: null,
     settings: {},
     busy: false,
-    drag: null
+    drag: null,
+    pendingDelete: null
   };
   const $ = (id) => document.getElementById(id);
 
@@ -97,19 +98,28 @@
   function renderQueue() {
     $("queueCount").textContent = state.templates.length;
     $("queue").innerHTML = state.templates.map((template) => `
-      <button class="queue-item ${state.selected && state.selected.template_id === template.template_id ? "selected" : ""}" data-template="${template.template_id}">
-        <img class="thumb" src="/api/admin/templates/${template.template_id}/asset/preview.png" alt="">
-        <span>
-          <span class="file-title">${escapeHtml(template.name)}</span>
-          <span class="meta">${escapeHtml(template.orientation)} <span class="pill ${statusClass(template)}">${template.status === "active" ? "Approved" : "Review"}</span></span>
-        </span>
-      </button>
+      <div class="queue-item ${state.selected && state.selected.template_id === template.template_id ? "selected" : ""}">
+        <button class="queue-select" type="button" data-template="${template.template_id}" ${state.busy ? "disabled" : ""}>
+          <img class="thumb" src="/api/admin/templates/${template.template_id}/asset/preview.png" alt="">
+          <span>
+            <span class="file-title">${escapeHtml(template.name)}</span>
+            <span class="meta">${escapeHtml(template.orientation)} <span class="pill ${statusClass(template)}">${template.status === "active" ? "Approved" : "Review"}</span></span>
+          </span>
+        </button>
+        <button class="queue-delete" type="button" data-template="${template.template_id}" aria-label="Delete ${escapeHtml(template.name)}" title="Delete mockup" ${state.busy ? "disabled" : ""}>&times;</button>
+      </div>
     `).join("") || '<div class="empty">No templates in this category yet.<br>Drop mockups to begin.</div>';
-    document.querySelectorAll(".queue-item").forEach((button) => {
+    document.querySelectorAll(".queue-select").forEach((button) => {
       button.onclick = () => {
         state.selected = state.templates.find((template) => template.template_id === button.dataset.template);
         renderQueue();
         renderEditor();
+      };
+    });
+    document.querySelectorAll(".queue-delete").forEach((button) => {
+      button.onclick = () => {
+        const template = state.templates.find((item) => item.template_id === button.dataset.template);
+        openDeleteModal(template);
       };
     });
   }
@@ -308,6 +318,57 @@
     }
   }
 
+  function openDeleteModal(template) {
+    if (!template || state.busy) return;
+    state.pendingDelete = template;
+    $("deleteTarget").textContent = template.name;
+    $("deleteMessage").textContent = template.status === "active"
+      ? "This approved mockup will be removed from the import queue and the public API."
+      : "This draft mockup will be removed from the import queue.";
+    $("deleteModal").classList.add("open");
+  }
+
+  function closeDeleteModal() {
+    if (state.busy) return;
+    state.pendingDelete = null;
+    $("deleteModal").classList.remove("open");
+  }
+
+  async function deleteTemplate() {
+    const template = state.pendingDelete;
+    if (!template || state.busy) return;
+    try {
+      state.busy = true;
+      $("confirmDelete").disabled = true;
+      $("cancelDelete").disabled = true;
+      $("confirmDelete").textContent = "Deleting...";
+      renderQueue();
+      renderEditor();
+      setStatus("Deleting mockup...");
+      await api(`/api/admin/templates/${template.template_id}`, {method: "DELETE"});
+      $("deleteModal").classList.remove("open");
+      const nextSelected = state.selected && state.selected.template_id === template.template_id
+        ? null
+        : state.selected;
+      state.pendingDelete = null;
+      state.selected = nextSelected;
+      await loadCategories(state.selectedCategory && state.selectedCategory.id);
+      await loadTemplates(nextSelected && nextSelected.template_id);
+      toast("Mockup deleted");
+      setStatus("Mockup deleted");
+    } catch (error) {
+      setStatus("Delete failed", true);
+      toast(error.message);
+    } finally {
+      state.busy = false;
+      $("confirmDelete").disabled = false;
+      $("cancelDelete").disabled = false;
+      $("confirmDelete").textContent = "Delete mockup";
+      renderQueue();
+      renderEditor();
+    }
+  }
+
   async function detectFrame() {
     if (!state.selected) {
       toast("Select a mockup before running detection.");
@@ -492,6 +553,11 @@
 
   $("openCategory").onclick = () => $("categoryModal").classList.add("open");
   $("cancelCategory").onclick = () => $("categoryModal").classList.remove("open");
+  $("cancelDelete").onclick = closeDeleteModal;
+  $("confirmDelete").onclick = deleteTemplate;
+  $("deleteModal").onclick = (event) => {
+    if (event.target === $("deleteModal")) closeDeleteModal();
+  };
   $("createCategory").onclick = async () => {
     try {
       const payload = await api("/api/admin/categories", {

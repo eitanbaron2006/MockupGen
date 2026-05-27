@@ -202,6 +202,14 @@ class CatalogService:
             ).fetchone()
         return self._row_to_template(row)
 
+    def source_filename_exists(self, source_filename: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM templates WHERE lower(source_filename) = lower(?) LIMIT 1",
+                (source_filename,),
+            ).fetchone()
+        return bool(row)
+
     def list_templates(
         self, *, category_slug: str | None = None, status: str | None = None
     ) -> list[dict[str, Any]]:
@@ -261,6 +269,14 @@ class CatalogService:
             if not cursor.rowcount:
                 raise CatalogError("Template not found")
         return self.get_template(template_id)
+
+    def delete_template(self, template_id: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM templates WHERE template_id = ?", (template_id,)
+            )
+            if not cursor.rowcount:
+                raise CatalogError("Template not found")
 
     def set_settings(self, settings: dict[str, str]) -> None:
         with self._connect() as connection:

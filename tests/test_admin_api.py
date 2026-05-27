@@ -194,6 +194,130 @@ def test_batch_import_area_update_and_activation_publish_real_template(tmp_path:
     assert public_templates[0]["template_id"] == template_id
 
 
+def test_import_rejects_mockup_filename_that_already_exists(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+
+    first = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    duplicate = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    templates = client.get("/api/admin/templates?product_type=wall-art").get_json()["templates"]
+    assert first.status_code == 201
+    assert duplicate.status_code == 400
+    assert "frame.png" in duplicate.get_json()["error"]
+    assert len(templates) == 1
+
+
+def test_import_rejects_duplicate_batch_without_partial_creation(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    duplicate_batch = client.post(
+        "/api/admin/templates/import",
+        data={
+            "category_id": str(category["id"]),
+            "mockups": [
+                (image_bytes(), "new-frame.png"),
+                (image_bytes(), "frame.png"),
+            ],
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    templates = client.get("/api/admin/templates?product_type=wall-art").get_json()["templates"]
+    assert duplicate_batch.status_code == 400
+    assert "frame.png" in duplicate_batch.get_json()["error"]
+    assert [template["source_filename"] for template in templates] == ["frame.png"]
+
+
+def test_delete_draft_template_removes_record_assets_and_allows_reimport(tmp_path: Path):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    template = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]
+    draft_folder = Path(app.config["DRAFT_TEMPLATES_FOLDER"]) / template["template_id"]
+
+    deleted = client.delete(
+        f"/api/admin/templates/{template['template_id']}", headers=headers
+    )
+    templates = client.get("/api/admin/templates?product_type=wall-art").get_json()["templates"]
+    reimported = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    assert deleted.status_code == 200
+    assert templates == []
+    assert not draft_folder.exists()
+    assert reimported.status_code == 201
+
+
+def test_delete_active_template_removes_public_template_assets(tmp_path: Path):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    template = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]
+    template_id = template["template_id"]
+    client.post(f"/api/admin/templates/{template_id}/activate", headers=headers)
+    public_folder = Path(app.config["TEMPLATES_FOLDER"]) / template_id
+
+    deleted = client.delete(f"/api/admin/templates/{template_id}", headers=headers)
+    admin_templates = client.get("/api/admin/templates?product_type=wall-art").get_json()[
+        "templates"
+    ]
+    public_templates = client.get("/api/mockups/templates?product_type=wall-art").get_json()
+
+    assert deleted.status_code == 200
+    assert admin_templates == []
+    assert public_templates == []
+    assert not public_folder.exists()
+
+
 def test_reactivating_existing_active_template_publishes_new_reviewed_area(tmp_path: Path):
     app = build_app(tmp_path)
     client = app.test_client()
