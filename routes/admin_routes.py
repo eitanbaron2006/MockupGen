@@ -328,15 +328,17 @@ def batch_detect_admin_templates():
 
         try:
             proposal = provider.detect(background)
-            preview = {
-                **template,
-                "artwork_area": proposal.artwork_area,
-                "orientation": orientation_for_size(
-                    proposal.artwork_area["width"], proposal.artwork_area["height"]
-                ),
-                "detection_provider": proposal.provider,
-                "detection_confidence": proposal.confidence,
-            }
+            preview = cat.update_template(
+                template_id,
+                {
+                    "artwork_area": proposal.artwork_area,
+                    "orientation": orientation_for_size(
+                        proposal.artwork_area["width"], proposal.artwork_area["height"]
+                    ),
+                    "detection_provider": proposal.provider,
+                    "detection_confidence": proposal.confidence,
+                }
+            )
             return {
                 "template_id": template_id,
                 "success": True,

@@ -187,7 +187,6 @@
               state.templates[index] = result.template;
               if (state.selected && state.selected.template_id === result.template_id) {
                 state.selected = result.template;
-                renderDetectionProposal(result.proposal, result.template_id);
               }
             }
           } else {
