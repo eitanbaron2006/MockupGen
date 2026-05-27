@@ -1,0 +1,23 @@
+{
+  "template_id": "template_001",
+  "name": "Abstract wall art digital download mockup",
+  "product_type": "vertival-wall-art-frame",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 376,
+    "y": 341,
+    "width": 499,
+    "height": 537
+  },
+  "fit_mode": "cover",
+  "orientation": "square",
+  "background": "background.png",
+  "foreground": null,
+  "mask": null,
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png"
+}

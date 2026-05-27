@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MockupGen Studio - Admin Prototype</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    :root {
+      --page: #efe7d2;
+      --paper-warm: #ece4cf;
+      --paper-dark: #ddd2b6;
+      --panel: #f7f1de;
+      --panel-soft: #ece4cf;
+      --line: rgba(21, 20, 15, .16);
+      --line-soft: rgba(21, 20, 15, .08);
+      --ink: #15140f;
+      --muted: #5a5448;
+      --faint: #8b8676;
+      --accent: #ed6f5c;
+      --accent-hover: #e25e4a;
+      --accent-soft: rgba(237, 111, 92, .12);
+      --success: #6e7448;
+      --warning: #b8762e;
+      --shadow: 0 30px 60px -30px rgba(21, 20, 15, .18);
+      --sans: "Inter Tight", "Inter", Arial, sans-serif;
+      --body: "Inter", Arial, sans-serif;
+      --serif: "Playfair Display", Georgia, serif;
+      --mono: "JetBrains Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      margin: 0;
+      height: 100dvh;
+      min-width: 1080px;
+      background: var(--page);
+      color: var(--ink);
+      font-family: var(--body);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { height: 100dvh; overflow: hidden; display: grid; grid-template-columns: 252px 1fr; }
+    .sidebar {
+      background: var(--page);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      min-height: 0;
+      overflow: hidden;
+      padding: 20px 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      font-size: 20px;
+      margin-bottom: 30px;
+      padding: 0 8px;
+    }
+    .brand-name {
+      color: var(--ink);
+      font-family: var(--serif);
+      font-weight: 500;
+      letter-spacing: -.02em;
+    }
+    .brand-name em {
+      color: var(--accent);
+      font-family: var(--sans);
+      font-style: normal;
+      font-weight: 900;
+      margin-left: .24em;
+    }
+    .brand-name strong {
+      color: var(--accent);
+      font-family: var(--sans);
+    }
+    .nav-label, .section-label {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .18em;
+      margin: 0 10px 9px;
+      text-transform: uppercase;
+    }
+    .nav-item {
+      align-items: center;
+      border-radius: 10px;
+      color: var(--muted);
+      display: flex;
+      gap: 11px;
+      height: 43px;
+      margin: 2px 0;
+      padding: 0 12px;
+    }
+    .nav-item.active { background: rgba(237, 111, 92, .09); color: var(--ink); font-weight: 600; }
+    .nav-item.active .nav-icon { color: var(--accent); }
+    .nav-icon { font-size: 16px; width: 18px; text-align: center; }
+    .category-head {
+      align-items: center;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      margin-top: 22px;
+      padding: 20px 10px 8px;
+    }
+    .category-head .section-label { margin: 0; }
+    .icon-button {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: 8px;
+      color: var(--accent);
+      display: inline-flex;
+      font-size: 20px;
+      height: 28px;
+      justify-content: center;
+      width: 28px;
+    }
+    .icon-button:hover { background: var(--accent-soft); }
+    #categories {
+      max-height: calc(100dvh - 366px);
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .category {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      margin: 2px 0;
+      padding: 11px 12px;
+      text-align: left;
+      width: 100%;
+    }
+    .category.selected { background: rgba(237, 111, 92, .08); color: var(--ink); font-weight: 600; }
+    .count {
+      background: var(--paper-warm);
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      min-width: 25px;
+      padding: 3px 8px;
+      text-align: center;
+    }
+    .category.selected .count { background: var(--accent-soft); color: var(--accent); }
+    .account {
+      align-items: center;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+      padding: 16px 10px 0;
+    }
+    .avatar {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      color: var(--accent);
+      display: inline-flex;
+      font-weight: 700;
+      height: 36px;
+      justify-content: center;
+      width: 36px;
+    }
+    .shell {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .topbar {
+      align-items: center;
+      background: var(--page);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex: 0 0 66px;
+      height: 66px;
+      justify-content: space-between;
+      padding: 0 27px;
+    }
+    .prototype-banner {
+      align-items: center;
+      background: rgba(237,111,92,.10);
+      border-bottom: 1px solid rgba(237,111,92,.24);
+      color: var(--muted);
+      display: flex;
+      flex: 0 0 38px;
+      font-family: var(--mono);
+      font-size: 9px;
+      gap: 12px;
+      height: 38px;
+      letter-spacing: .09em;
+      padding: 0 27px;
+      text-transform: uppercase;
+    }
+    .prototype-badge {
+      background: var(--accent);
+      border-radius: 16px;
+      color: #fff;
+      font-weight: 700;
+      padding: 5px 9px;
+    }
+    .crumb { color: var(--faint); font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+    .crumb strong { color: var(--ink); margin-left: 8px; }
+    .actions { align-items: center; display: flex; gap: 10px; }
+    .btn {
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      display: inline-flex;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      gap: 8px;
+      height: 40px;
+      padding: 0 16px;
+      background: transparent;
+      color: var(--muted);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .btn:hover { background: var(--paper-warm); color: var(--ink); }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.success { background: var(--success); border-color: var(--success); color: #fff; }
+    .btn:disabled { cursor: not-allowed; opacity: .55; }
+    .content {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 300px minmax(420px, 1fr) 296px;
+      height: calc(100dvh - 104px);
+      overflow: hidden;
+      padding: 18px 22px;
+      min-height: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      box-shadow: none;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .panel-head {
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      padding: 17px 17px 14px;
+    }
+    h1 { font-family: var(--serif); font-size: 21px; font-weight: 500; letter-spacing: -.01em; margin: 0; }
+    h2 { font-family: var(--serif); font-size: 16px; font-weight: 500; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 12px; }
+    .batch {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .dropzone {
+      background: rgba(236, 228, 207, .42);
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      margin: 14px;
+      padding: 16px 10px;
+      text-align: center;
+      transition: .18s;
+    }
+    .dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
+    .drop-icon {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      color: var(--accent);
+      display: flex;
+      font-size: 19px;
+      height: 38px;
+      justify-content: center;
+      margin: 0 auto 9px;
+      width: 38px;
+    }
+    .dropzone strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .link-button { background: none; border: 0; color: var(--accent); font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 0; text-transform: uppercase; }
+    #queue {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 12px 14px;
+      scrollbar-gutter: stable;
+    }
+    .queue-item {
+      align-items: center;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 52px minmax(0, 1fr);
+      margin: 5px 0;
+      padding: 7px;
+      text-align: left;
+      width: 100%;
+    }
+    .queue-item:hover { background: rgba(236, 228, 207, .48); }
+    .queue-item.selected { background: rgba(237, 111, 92, .08); border-color: rgba(237, 111, 92, .38); }
+    .thumb { border-radius: 7px; height: 52px; object-fit: cover; width: 52px; }
+    .file-title {
+      display: block;
+      font-size: 12.5px;
+      font-family: var(--serif);
+      font-weight: 500;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .meta { align-items: center; color: var(--faint); display: flex; font-family: var(--mono); font-size: 9px; gap: 7px; text-transform: uppercase; }
+    .pill {
+      border-radius: 20px;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 3px 7px;
+    }
+    .review { background: rgba(237, 111, 92, .10); color: var(--accent); }
+    .needs-review { background: rgba(184, 118, 46, .12); color: var(--warning); }
+    .approved { background: rgba(110, 116, 72, .12); color: var(--success); }
+    .published { background: rgba(110, 116, 72, .12); color: var(--success); }
+    .editor { display: flex; flex-direction: column; overflow: hidden; }
+    .editor-head {
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      padding: 17px 19px;
+    }
+    .confidence { align-items: center; color: var(--accent); display: inline-flex; font-family: var(--mono); font-size: 10px; font-weight: 600; gap: 5px; letter-spacing: .08em; text-transform: uppercase; }
+    .workspace {
+      align-items: center;
+      background-color: var(--paper-warm);
+      background-image: radial-gradient(rgba(21,20,15,.09) 1px, transparent 1px);
+      background-size: 20px 20px;
+      display: flex;
+      flex: 1;
+      justify-content: center;
+      min-height: 0;
+      overflow: hidden;
+      padding: 18px;
+    }
+    .workspace-empty {
+      color: var(--muted);
+      display: none;
+      max-width: 300px;
+      text-align: center;
+    }
+    .workspace-empty strong {
+      color: var(--ink);
+      display: block;
+      font-size: 17px;
+      margin-bottom: 7px;
+    }
+    #stage {
+      box-shadow: var(--shadow);
+      line-height: 0;
+      max-height: calc(100dvh - 222px);
+      max-width: 100%;
+      position: relative;
+      user-select: none;
+    }
+    #stage img {
+      display: block;
+      max-height: calc(100dvh - 222px);
+      max-width: 100%;
+      object-fit: contain;
+    }
+    #selection {
+      background: rgba(237, 111, 92, .12);
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 0 9999px rgba(21,20,15,.20);
+      cursor: move;
+      position: absolute;
+    }
+    .zone-tag {
+      background: var(--accent);
+      font-family: var(--mono);
+      border-radius: 5px 5px 0 0;
+      bottom: 100%;
+      color: white;
+      font-size: 11px;
+      line-height: 24px;
+      padding: 0 9px;
+      position: absolute;
+      white-space: nowrap;
+    }
+    .handle {
+      background: #fff;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      height: 11px;
+      position: absolute;
+      width: 11px;
+    }
+    .handle.nw { cursor: nwse-resize; left: -7px; top: -7px; }
+    .handle.ne { cursor: nesw-resize; right: -7px; top: -7px; }
+    .handle.sw { bottom: -7px; cursor: nesw-resize; left: -7px; }
+    .handle.se { bottom: -7px; cursor: nwse-resize; right: -7px; }
+    .editor-foot {
+      align-items: center;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 11px;
+      justify-content: space-between;
+      padding: 13px 18px;
+    }
+    .coordinates { color: var(--faint); display: flex; font-family: var(--mono); font-size: 10px; gap: 13px; text-transform: uppercase; }
+    .coordinates strong { color: var(--ink); margin-left: 3px; }
+    .inspector { display: flex; flex-direction: column; overflow: hidden; }
+    .inspector.inactive .fields, .inspector.inactive .inspector-actions {
+      opacity: .45;
+      pointer-events: none;
+    }
+    .fields {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 17px;
+    }
+    label { color: var(--faint); display: block; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: .16em; margin-bottom: 7px; text-transform: uppercase; }
+    select, .text-input {
+      background: var(--page);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      font-family: var(--body);
+      height: 39px;
+      padding: 0 11px;
+      width: 100%;
+    }
+    .orientation-grid { display: grid; gap: 7px; grid-template-columns: repeat(3, 1fr); }
+    .direction {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      height: 63px;
+      text-align: center;
+    }
+    .direction span { border: 1.5px solid currentColor; display: block; margin: 9px auto 5px; }
+    .direction.square span { height: 16px; width: 16px; }
+    .direction.portrait span { height: 19px; width: 14px; }
+    .direction.landscape span { height: 14px; width: 20px; margin-top: 11px; }
+    .direction.active { background: var(--accent-soft); border-color: rgba(237,111,92,.42); color: var(--accent); font-weight: 600; }
+    .rule {
+      background: rgba(236,228,207,.42);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      padding: 12px;
+    }
+    .inspector-actions {
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 9px;
+      grid-template-columns: 1fr 1fr;
+      margin-top: auto;
+      padding: 15px;
+    }
+    .inspector-actions .btn { justify-content: center; padding: 0 9px; }
+    #fileInput { display: none; }
+    .modal-backdrop {
+      align-items: center;
+      background: rgba(21,20,15,.31);
+      display: none;
+      inset: 0;
+      justify-content: center;
+      position: fixed;
+      z-index: 20;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--panel);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      width: 380px;
+    }
+    .modal h2 { font-size: 18px; margin-bottom: 6px; }
+    .modal .sub { margin-bottom: 19px; }
+    .modal-actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 20px; }
+    .guide-backdrop {
+      background: rgba(21,20,15,.25);
+      display: none;
+      inset: 0;
+      position: fixed;
+      z-index: 20;
+    }
+    .guide-backdrop.open { display: block; }
+    .guide-drawer {
+      background: var(--panel);
+      box-shadow: -20px 0 52px rgba(15,23,42,.16);
+      display: flex;
+      flex-direction: column;
+      gap: 17px;
+      height: 100%;
+      margin-left: auto;
+      overflow-y: auto;
+      padding: 26px 25px;
+      width: min(480px, 42vw);
+    }
+    .guide-head {
+      align-items: flex-start;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+    }
+    .guide-head h2 { font-size: 20px; margin-bottom: 7px; }
+    .guide-list {
+      color: var(--muted);
+      display: grid;
+      gap: 12px;
+      line-height: 1.45;
+      margin: 0;
+      padding-left: 20px;
+    }
+    .prompt-box {
+      background: var(--page);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      margin: 0;
+      padding: 13px;
+      white-space: pre-wrap;
+    }
+    .guide-note {
+      background: rgba(237,111,92,.10);
+      border-radius: 10px;
+      color: var(--accent);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 13px;
+    }
+    .engine-summary {
+      background: rgba(236,228,207,.42);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .engine-current {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      margin: 2px 0 11px;
+    }
+    .engine-mark {
+      align-items: center;
+      background: var(--accent-soft);
+      border-radius: 50%;
+      color: var(--accent);
+      display: inline-flex;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      height: 33px;
+      justify-content: center;
+      width: 33px;
+    }
+    .engine-current strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .engine-current span {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .engine-drawer { width: min(540px, 46vw); }
+    .provider-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .provider-card {
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      padding: 12px 10px;
+      text-align: left;
+    }
+    .provider-card strong {
+      color: var(--ink);
+      display: block;
+      font-family: var(--serif);
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 5px;
+    }
+    .provider-card small {
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .provider-card.selected {
+      background: var(--accent-soft);
+      border-color: rgba(237,111,92,.42);
+    }
+    .provider-card.selected small { color: var(--accent); }
+    .engine-config {
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 13px;
+      padding-top: 17px;
+    }
+    .config-row {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .model-cost {
+      background: var(--page);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 12px;
+    }
+    .model-cost strong {
+      display: block;
+      font-family: var(--serif);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .model-cost .cost-meta {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 9px;
+      line-height: 1.55;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .model-cost .recommended {
+      align-self: start;
+      background: rgba(110,116,72,.12);
+      border-radius: 20px;
+      color: var(--success);
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 600;
+      padding: 5px 8px;
+      text-transform: uppercase;
+    }
+    .engine-actions {
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding-top: 17px;
+    }
+    .toast {
+      background: var(--ink);
+      border-radius: 10px;
+      bottom: 24px;
+      box-shadow: var(--shadow);
+      color: var(--panel);
+      opacity: 0;
+      padding: 13px 17px;
+      pointer-events: none;
+      position: fixed;
+      right: 25px;
+      transform: translateY(10px);
+      transition: .22s;
+      z-index: 30;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .empty { color: var(--muted); padding: 26px 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-name">Mockup <em>Studio</em><strong>.</strong></div></div>
+      <div class="nav-label">Workspace</div>
+      <div class="nav-item active"><span class="nav-icon">&#9638;</span>Templates</div>
+      <div class="nav-item"><span class="nav-icon">&#8635;</span>Render history</div>
+      <div class="nav-item"><span class="nav-icon">&#9881;</span>API settings</div>
+      <div class="category-head">
+        <div class="section-label">Categories</div>
+        <button class="icon-button" id="openCategory" title="New category">+</button>
+      </div>
+      <div id="categories"></div>
+      <div class="account">
+        <div class="avatar">EB</div>
+        <div><strong>Eitan Baron</strong><div class="sub">Administrator</div></div>
+      </div>
+    </aside>
+    <section class="shell">
+      <header class="topbar">
+        <div class="crumb">Templates / <strong id="breadcrumb">Wall Art</strong></div>
+        <div class="actions">
+          <button class="btn" id="openGuide">Detection guide</button>
+          <button class="btn" id="openEngine">AI engine</button>
+          <button class="btn" id="autoButton">Preview AI proposal</button>
+          <button class="btn primary" id="chooseFiles">Import mockups</button>
+          <button class="btn success" id="publishButton">Publish approved</button>
+        </div>
+      </header>
+      <div class="prototype-banner">
+        <span class="prototype-badge">UX Prototype</span>
+        No live Flask or Vertex AI connection. Settings and detection actions below demonstrate the intended flow only.
+      </div>
+      <div class="content">
+        <section class="panel batch">
+          <div class="panel-head">
+            <div><h2>Import queue</h2><div class="sub"><span id="queueCount">12</span> mockups in current category</div></div>
+          </div>
+          <div class="dropzone" id="dropzone">
+            <div class="drop-icon">&#8593;</div>
+            <strong>Drop multiple images</strong>
+            <div class="sub"><button class="link-button" id="browse">Browse files</button> or drag here</div>
+          </div>
+          <div id="queue"></div>
+        </section>
+        <section class="panel editor">
+          <div class="editor-head">
+            <div>
+              <h1 id="currentTitle">warm_wall_art_01.png</h1>
+              <div class="sub">Prototype preview: a saved proposal is shown here. No model request is being sent.</div>
+            </div>
+            <div class="confidence" id="confidence">AI proposal / 96% confidence</div>
+          </div>
+          <div class="workspace">
+            <div class="workspace-empty" id="emptyEditor">
+              <strong id="emptyCategory">New category</strong>
+              Import one or more mockup images to begin detecting artwork areas.
+            </div>
+            <div id="stage">
+              <img id="canvasImage" src="/files/light-frame.jpg" alt="Selected mockup image">
+              <div id="selection">
+                <div class="zone-tag">Artwork area</div>
+                <div class="handle nw" data-handle="nw"></div>
+                <div class="handle ne" data-handle="ne"></div>
+                <div class="handle sw" data-handle="sw"></div>
+                <div class="handle se" data-handle="se"></div>
+              </div>
+            </div>
+          </div>
+          <div class="editor-foot">
+            <div class="coordinates">
+              <span>X <strong id="coordX">354</strong></span>
+              <span>Y <strong id="coordY">342</strong></span>
+              <span>W <strong id="coordW">559</strong></span>
+              <span>H <strong id="coordH">559</strong></span>
+            </div>
+            <div class="sub">Preview reflects `manifest.json` coordinates</div>
+          </div>
+        </section>
+        <aside class="panel inspector" id="inspector">
+          <div class="panel-head"><div><h2>Template details</h2><div class="sub">Ready before publishing</div></div></div>
+          <div class="fields">
+            <div>
+              <label for="templateName">Template name</label>
+              <input id="templateName" class="text-input" value="Warm frame interior">
+            </div>
+            <div>
+              <label for="categorySelect">Product category</label>
+              <select id="categorySelect"></select>
+            </div>
+            <div>
+              <label>Artwork orientation</label>
+              <div class="orientation-grid">
+                <button class="direction square" data-direction="square"><span></span>Square</button>
+                <button class="direction portrait active" data-direction="portrait"><span></span>Portrait</button>
+                <button class="direction landscape" data-direction="landscape"><span></span>Wide</button>
+              </div>
+            </div>
+            <div>
+              <label for="fitMode">Fit mode</label>
+              <select id="fitMode">
+                <option selected>Cover</option>
+                <option>Contain</option>
+                <option>Stretch</option>
+              </select>
+            </div>
+            <div class="rule">
+              <strong>API match logic</strong><br>
+              When a customer submits a <span id="ruleOrientation">portrait</span> artwork for
+              <span id="ruleCategory">Wall Art</span>, this template is eligible. The closest
+              artwork-area ratio wins.
+            </div>
+            <div class="engine-summary">
+              <label>Detection engine</label>
+              <div class="engine-current">
+                <div class="engine-mark">AI</div>
+                <div>
+                  <strong id="engineProvider">Vertex AI</strong>
+                  <span id="engineModel">Gemini 3.5 Flash / Global</span>
+                </div>
+              </div>
+              <button class="link-button" id="editEngine">Change model</button>
+            </div>
+            <div class="rule">
+              <strong>AI detection policy</strong><br>
+              Vision analysis proposes the artwork rectangle and orientation.
+              A template becomes active only after administrator approval.
+            </div>
+          </div>
+          <div class="inspector-actions">
+            <button class="btn" id="rejectButton">Remove</button>
+            <button class="btn primary" id="approveButton">Approve</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+  <input id="fileInput" type="file" multiple accept="image/png,image/jpeg,image/webp">
+  <div class="modal-backdrop" id="modal">
+    <div class="modal">
+      <h2>Create category</h2>
+      <div class="sub">Templates and automatic API matching will use this product type.</div>
+      <label for="newCategory">Category name</label>
+      <input id="newCategory" class="text-input" placeholder="e.g. Phone Cases">
+      <div class="modal-actions">
+        <button class="btn" id="cancelCategory">Cancel</button>
+        <button class="btn primary" id="createCategory">Create category</button>
+      </div>
+    </div>
+  </div>
+  <div class="guide-backdrop" id="guide">
+    <aside class="guide-drawer" aria-label="Mockup detection guide">
+      <div class="guide-head">
+        <div>
+          <h2>Create detection-friendly mockups</h2>
+          <div class="sub">Source image guidelines for reliable AI artwork-area proposals.</div>
+        </div>
+        <button class="icon-button" id="closeGuide" title="Close">&times;</button>
+      </div>
+      <ol class="guide-list">
+        <li>Keep one empty insertion area with visible contrast from the frame or mat.</li>
+        <li>Use a continuous solid or dashed border around the target area, about 2-4 px, without plants, text, reflections, or shadows crossing it.</li>
+        <li>For simple PNG rendering, keep the artwork area front-facing and rectangular. Angled or perspective frames require a future warp or PSD mode.</li>
+        <li>Do not place "YOUR ARTWORK HERE" text inside the final replacement region unless it is only a temporary source image.</li>
+        <li>Create separate square, portrait, and landscape variants for each product category.</li>
+      </ol>
+      <div>
+        <label>Suggested image-generation prompt</label>
+        <pre class="prompt-box">Minimal wall-art mockup, front-facing empty framed print, clearly defined blank [square/portrait/landscape] artwork area, no text inside artwork area, soft decor only outside the frame, high resolution.</pre>
+      </div>
+      <div class="guide-note">
+        AI can substantially improve detection on decorated mockups, but publishing still requires your confirmation. The saved template always uses the area you approve.
+      </div>
+    </aside>
+  </div>
+  <div class="guide-backdrop" id="engineDrawer">
+    <aside class="guide-drawer engine-drawer" aria-label="AI detection engine settings">
+      <div class="guide-head">
+        <div>
+          <h2>AI detection engine</h2>
+          <div class="sub">Prototype configuration preview. Live connection is not implemented yet.</div>
+        </div>
+        <button class="icon-button" id="closeEngine" title="Close">&times;</button>
+      </div>
+      <div class="provider-grid">
+        <button class="provider-card selected" data-provider="vertex">
+          <strong>Vertex AI</strong>
+          <small>Cloud / recommended</small>
+        </button>
+        <button class="provider-card" data-provider="local">
+          <strong>Local</strong>
+          <small>No API cost</small>
+        </button>
+        <button class="provider-card" data-provider="classic">
+          <strong>Classic</strong>
+          <small>Edge scan only</small>
+        </button>
+      </div>
+      <section class="engine-config" id="vertexConfig">
+        <div class="guide-note">
+          Prototype only: entering a project ID here does not connect to Google Cloud. In the working build this drawer will call the Flask backend and display the real Vertex response or error.
+        </div>
+        <div class="model-cost">
+          <div>
+            <strong>Vertex AI via Google Cloud</strong>
+            <div class="cost-meta">Use existing cloud credit<br>Structured rectangle output</div>
+          </div>
+          <span class="recommended">Default</span>
+        </div>
+        <div>
+          <label for="vertexModel">Model</label>
+          <select id="vertexModel">
+            <option value="Gemini 3.5 Flash">Gemini 3.5 Flash - strongest current default</option>
+            <option value="Gemini 3.1 Flash-Lite">Gemini 3.1 Flash-Lite - budget candidate</option>
+            <option value="Gemini 2.5 Flash-Lite">Gemini 2.5 Flash-Lite - temporary fallback</option>
+          </select>
+        </div>
+        <div class="config-row">
+          <div>
+            <label for="vertexProject">Google Cloud project</label>
+            <input class="text-input" id="vertexProject" placeholder="Available after Vertex integration" disabled>
+          </div>
+          <div>
+            <label for="vertexRegion">Location</label>
+            <select id="vertexRegion"><option>global</option><option>us-central1</option><option>europe-west4</option></select>
+          </div>
+        </div>
+        <div>
+          <label for="vertexAuth">Authentication</label>
+          <select id="vertexAuth">
+            <option>Application Default Credentials (recommended)</option>
+            <option>Service account JSON path</option>
+          </select>
+        </div>
+        <div class="guide-note">
+          Use AI only while importing or re-detecting templates. Customer render requests continue using saved coordinates, so model cost does not grow with every generated mockup.
+        </div>
+      </section>
+      <section class="engine-config" id="localConfig" hidden>
+        <div class="model-cost">
+          <div>
+            <strong>Local open model</strong>
+            <div class="cost-meta">No per-call billing<br>Hardware dependent</div>
+          </div>
+          <span class="recommended">Offline</span>
+        </div>
+        <div>
+          <label for="localModel">Model</label>
+          <select id="localModel">
+            <option>Qwen3-VL-8B-Instruct - recommended local</option>
+            <option>Qwen3-VL-4B-Instruct - lighter hardware</option>
+          </select>
+        </div>
+        <div>
+          <label for="localEndpoint">OpenAI-compatible endpoint</label>
+          <input class="text-input" id="localEndpoint" value="http://localhost:11434/v1">
+        </div>
+        <div class="guide-note">Local inference is useful for offline work, but final accuracy should be benchmarked against your approved template rectangles.</div>
+      </section>
+      <section class="engine-config" id="classicConfig" hidden>
+        <div class="model-cost">
+          <div>
+            <strong>Classic frame detection</strong>
+            <div class="cost-meta">Pixel and contour scan<br>No external model</div>
+          </div>
+          <span class="recommended">Free</span>
+        </div>
+        <div class="guide-note">Fast for clean, high-contrast blank frames. Use AI fallback when borders are decorative, partly obstructed, or visually ambiguous.</div>
+      </section>
+      <div class="engine-actions">
+        <button class="btn" id="testEngine" disabled>Connection unavailable</button>
+        <button class="btn primary" id="saveEngine">Preview selection</button>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    const seededItems = [
+      { id: 1, name: "warm_square_frame_01.png", image: "/files/batch-01.jpg", direction: "square", status: "Review", suggestion: { x: 28.2, y: 27.2, w: 44.6, h: 44.6, confidence: 96 } },
+      { id: 2, name: "gallery_noir_portrait_02.png", image: "/files/dark-frame.jpg", direction: "portrait", status: "Approved", suggestion: { x: 28.7, y: 22.8, w: 42.7, h: 66.7, confidence: 92 } },
+      { id: 3, name: "digital_print_portrait_03.png", image: "/files/dark-print.jpg", direction: "portrait", status: "Review", suggestion: { x: 28.7, y: 22.8, w: 42.7, h: 66.7, confidence: 92 } },
+      { id: 4, name: "oak_frame_square_04.png", image: "/files/batch-04.jpg", direction: "square", status: "Review", suggestion: { x: 28.4, y: 27.4, w: 43.9, h: 43.9, confidence: 91 } },
+      { id: 5, name: "neutral_gallery_square_05.png", image: "/files/batch-05.jpg", direction: "square", status: "Needs review", suggestion: { x: 29.1, y: 26.8, w: 42.5, h: 42.5, confidence: 85 } },
+      { id: 6, name: "ceramic_console_square_06.png", image: "/files/batch-06.jpg", direction: "square", status: "Review", suggestion: { x: 30.0, y: 27.0, w: 41.4, h: 41.4, confidence: 88 } },
+      { id: 7, name: "light_studio_square_07.png", image: "/files/batch-07.jpg", direction: "square", status: "Needs review", suggestion: { x: 28.0, y: 27.0, w: 44.2, h: 44.2, confidence: 83 } },
+      { id: 8, name: "charcoal_wall_portrait_08.png", image: "/files/batch-08.jpg", direction: "portrait", status: "Review", suggestion: { x: 29.0, y: 23.1, w: 42.1, h: 65.8, confidence: 89 } },
+      { id: 9, name: "loft_portrait_09.png", image: "/files/batch-09.jpg", direction: "portrait", status: "Needs review", suggestion: { x: 29.5, y: 24.0, w: 40.8, h: 63.0, confidence: 82 } },
+      { id: 10, name: "minimal_portrait_10.png", image: "/files/batch-10.jpg", direction: "portrait", status: "Review", suggestion: { x: 30.1, y: 24.0, w: 39.9, h: 62.8, confidence: 86 } },
+      { id: 11, name: "gallery_portrait_11.png", image: "/files/batch-11.jpg", direction: "portrait", status: "Needs review", suggestion: { x: 29.0, y: 23.8, w: 42.1, h: 64.5, confidence: 84 } },
+      { id: 12, name: "desk_landscape_12.png", image: "/files/batch-12.jpg", direction: "landscape", status: "Review", suggestion: { x: 22.5, y: 29.0, w: 55.0, h: 38.0, confidence: 88 } }
+    ];
+    const items = seededItems.map((item) => ({
+      ...item,
+      category: "Wall Art",
+      ...item.suggestion
+    }));
+    const categories = ["Wall Art", "Mugs", "T-Shirts"];
+    let activeCategory = "Wall Art";
+    let currentId = 1;
+    let dragState = null;
+    let activeProvider = "vertex";
+    const $ = (id) => document.getElementById(id);
+    const current = () => items.find((item) => item.id === currentId && item.category === activeCategory && item.status !== "Removed")
+      || items.find((item) => item.category === activeCategory && item.status !== "Removed")
+      || null;
+
+    function statusClass(value) { return value.toLowerCase().replaceAll(" ", "-"); }
+    function toast(message) {
+      $("toast").textContent = message;
+      $("toast").classList.add("show");
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => $("toast").classList.remove("show"), 2600);
+    }
+    function renderCategories() {
+      const selectedItem = current();
+      $("categories").innerHTML = categories.map((category) => {
+        const count = items.filter((item) => item.category === category && item.status !== "Removed").length;
+        return `<button class="category ${category === activeCategory ? "selected" : ""}" data-category="${category}">
+          <span>${category}</span><span class="count">${count}</span></button>`;
+      }).join("");
+      $("categorySelect").innerHTML = categories.map((category) =>
+        `<option ${category === (selectedItem ? selectedItem.category : activeCategory) ? "selected" : ""}>${category}</option>`).join("");
+      document.querySelectorAll("[data-category]").forEach((button) => button.onclick = () => {
+        activeCategory = button.dataset.category;
+        const candidate = items.find((item) => item.category === activeCategory && item.status !== "Removed");
+        if (candidate) currentId = candidate.id;
+        $("breadcrumb").textContent = activeCategory;
+        renderAll();
+      });
+    }
+    function renderQueue() {
+      const filtered = items.filter((item) => item.category === activeCategory && item.status !== "Removed");
+      $("queueCount").textContent = filtered.length;
+      $("queue").innerHTML = filtered.length ? filtered.map((item) => `
+        <button class="queue-item ${item.id === currentId ? "selected" : ""}" data-item="${item.id}">
+          <img class="thumb" src="${item.image}" alt="">
+          <span>
+            <span class="file-title">${item.name}</span>
+            <span class="meta">${item.direction}<span class="pill ${statusClass(item.status)}">${item.status}</span></span>
+          </span>
+        </button>`).join("") : `<div class="empty">No templates in this category yet.<br>Drop mockups to begin.</div>`;
+      document.querySelectorAll("[data-item]").forEach((button) => button.onclick = () => {
+        currentId = Number(button.dataset.item);
+        renderAll();
+      });
+    }
+    function updateSelection() {
+      const item = current();
+      if (!item) return;
+      const box = $("selection");
+      box.style.left = item.x + "%";
+      box.style.top = item.y + "%";
+      box.style.width = item.w + "%";
+      box.style.height = item.h + "%";
+      $("coordX").textContent = Math.round(item.x * 12.54);
+      $("coordY").textContent = Math.round(item.y * 12.54);
+      $("coordW").textContent = Math.round(item.w * 12.54);
+      $("coordH").textContent = Math.round(item.h * 12.54);
+    }
+    function renderEditor() {
+      const item = current();
+      if (!item) {
+        $("currentTitle").textContent = `No ${activeCategory} templates yet`;
+        $("confidence").textContent = "Awaiting import";
+        $("stage").style.display = "none";
+        $("emptyEditor").style.display = "block";
+        $("emptyCategory").textContent = activeCategory;
+        $("inspector").classList.add("inactive");
+        $("templateName").value = "";
+        $("ruleCategory").textContent = activeCategory;
+        return;
+      }
+      currentId = item.id;
+      $("stage").style.display = "block";
+      $("emptyEditor").style.display = "none";
+      $("inspector").classList.remove("inactive");
+      $("currentTitle").textContent = item.name;
+      $("canvasImage").src = item.image;
+      $("confidence").textContent = item.confidence ? `AI proposal / ${item.confidence}% confidence` : "AI review required";
+      $("templateName").value = item.name.replace(/\.[^.]+$/, "").replaceAll("_", " ");
+      $("ruleOrientation").textContent = item.direction;
+      $("ruleCategory").textContent = item.category;
+      document.querySelectorAll(".direction").forEach((button) =>
+        button.classList.toggle("active", button.dataset.direction === item.direction));
+      $("approveButton").textContent = item.status === "Approved" ? "Approved" : "Approve";
+      $("approveButton").classList.toggle("success", item.status === "Approved");
+      $("canvasImage").onload = updateSelection;
+      updateSelection();
+    }
+    function renderAll() {
+      renderCategories();
+      renderQueue();
+      renderEditor();
+    }
+    function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+    function percentPoint(event) {
+      const rect = $("stage").getBoundingClientRect();
+      return { x: (event.clientX - rect.left) / rect.width * 100, y: (event.clientY - rect.top) / rect.height * 100 };
+    }
+    $("selection").addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      const item = current();
+      if (!item) return;
+      const point = percentPoint(event);
+      const handle = event.target.dataset.handle || "move";
+      dragState = { handle, point, start: { x: item.x, y: item.y, w: item.w, h: item.h } };
+      $("selection").setPointerCapture(event.pointerId);
+    });
+    $("selection").addEventListener("pointermove", (event) => {
+      if (!dragState) return;
+      const item = current();
+      const point = percentPoint(event);
+      const dx = point.x - dragState.point.x;
+      const dy = point.y - dragState.point.y;
+      const start = dragState.start;
+      if (dragState.handle === "move") {
+        item.x = clamp(start.x + dx, 0, 100 - start.w);
+        item.y = clamp(start.y + dy, 0, 100 - start.h);
+      } else {
+        if (dragState.handle.includes("e")) item.w = clamp(start.w + dx, 5, 100 - start.x);
+        if (dragState.handle.includes("s")) item.h = clamp(start.h + dy, 5, 100 - start.y);
+        if (dragState.handle.includes("w")) {
+          item.x = clamp(start.x + dx, 0, start.x + start.w - 5);
+          item.w = start.w + start.x - item.x;
+        }
+        if (dragState.handle.includes("n")) {
+          item.y = clamp(start.y + dy, 0, start.y + start.h - 5);
+          item.h = start.h + start.y - item.y;
+        }
+      }
+      updateSelection();
+    });
+    $("selection").addEventListener("pointerup", () => dragState = null);
+    document.querySelectorAll(".direction").forEach((button) => button.onclick = () => {
+      if (!current()) return;
+      current().direction = button.dataset.direction;
+      renderAll();
+    });
+    $("categorySelect").onchange = (event) => {
+      if (!current()) return;
+      current().category = event.target.value;
+      activeCategory = event.target.value;
+      $("breadcrumb").textContent = activeCategory;
+      renderAll();
+    };
+    $("approveButton").onclick = () => {
+      if (!current()) return;
+      current().status = "Approved";
+      toast(`${current().name} approved for publishing`);
+      renderAll();
+    };
+    $("rejectButton").onclick = () => {
+      if (!current()) return;
+      const removed = current();
+      removed.status = "Removed";
+      const replacement = items.find((item) => item.category === activeCategory && item.status !== "Removed");
+      if (replacement) currentId = replacement.id;
+      toast(`${removed.name} removed from queue`);
+      renderAll();
+    };
+    $("publishButton").onclick = () => {
+      let count = 0;
+      items.forEach((item) => {
+        if (item.category === activeCategory && item.status === "Approved") { item.status = "Published"; count += 1; }
+      });
+      toast(count ? `${count} templates published to ${activeCategory}` : "Approve at least one template before publishing");
+      renderAll();
+    };
+    $("autoButton").onclick = () => {
+      const item = current();
+      if (!item) {
+        toast("Import a mockup before detecting a frame.");
+        return;
+      }
+      if (!item.suggestion) {
+        toast("New imports need detection before a suggestion can be restored.");
+        return;
+      }
+      Object.assign(item, item.suggestion);
+      toast("Prototype proposal restored. No model request was sent.");
+      renderEditor();
+    };
+    function openFileDialog() { $("fileInput").click(); }
+    $("chooseFiles").onclick = openFileDialog;
+    $("browse").onclick = openFileDialog;
+    function importFiles(files) {
+      Array.from(files).forEach((file) => {
+        if (!file.type.startsWith("image/")) return;
+        const image = new Image();
+        const url = URL.createObjectURL(file);
+        image.onload = () => {
+          const direction = image.width === image.height ? "square" : image.width > image.height ? "landscape" : "portrait";
+          const item = { id: Date.now() + Math.random(), name: file.name, image: url, category: activeCategory, direction, confidence: null, status: "Needs review", x: 25, y: 25, w: 50, h: 50, suggestion: null };
+          items.unshift(item);
+          currentId = item.id;
+          renderAll();
+          toast(`${file.name} added. Adjust the proposed frame.`);
+        };
+        image.src = url;
+      });
+    }
+    $("fileInput").onchange = (event) => importFiles(event.target.files);
+    ["dragenter", "dragover"].forEach((name) => $("dropzone").addEventListener(name, (event) => {
+      event.preventDefault(); $("dropzone").classList.add("drag");
+    }));
+    ["dragleave", "drop"].forEach((name) => $("dropzone").addEventListener(name, (event) => {
+      event.preventDefault(); $("dropzone").classList.remove("drag");
+      if (name === "drop") importFiles(event.dataTransfer.files);
+    }));
+    $("openCategory").onclick = () => {
+      $("newCategory").value = "";
+      $("modal").classList.add("open");
+      $("newCategory").focus();
+    };
+    $("cancelCategory").onclick = () => $("modal").classList.remove("open");
+    $("createCategory").onclick = () => {
+      const name = $("newCategory").value.trim();
+      if (!name) return;
+      if (!categories.includes(name)) categories.push(name);
+      activeCategory = name;
+      $("breadcrumb").textContent = name;
+      $("modal").classList.remove("open");
+      toast(`${name} category created`);
+      renderAll();
+    };
+    $("newCategory").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") $("createCategory").click();
+    });
+    $("openGuide").onclick = () => $("guide").classList.add("open");
+    $("closeGuide").onclick = () => $("guide").classList.remove("open");
+    $("guide").onclick = (event) => {
+      if (event.target === $("guide")) $("guide").classList.remove("open");
+    };
+    function openEngine() { $("engineDrawer").classList.add("open"); }
+    function switchProvider(provider) {
+      activeProvider = provider;
+      document.querySelectorAll("[data-provider]").forEach((button) =>
+        button.classList.toggle("selected", button.dataset.provider === provider));
+      $("vertexConfig").hidden = provider !== "vertex";
+      $("localConfig").hidden = provider !== "local";
+      $("classicConfig").hidden = provider !== "classic";
+    }
+    $("openEngine").onclick = openEngine;
+    $("editEngine").onclick = openEngine;
+    $("closeEngine").onclick = () => $("engineDrawer").classList.remove("open");
+    $("engineDrawer").onclick = (event) => {
+      if (event.target === $("engineDrawer")) $("engineDrawer").classList.remove("open");
+    };
+    document.querySelectorAll("[data-provider]").forEach((button) =>
+      button.onclick = () => switchProvider(button.dataset.provider));
+    $("saveEngine").onclick = () => {
+      const providerName = activeProvider === "vertex" ? "Vertex AI" : activeProvider === "local" ? "Local" : "Classic detection";
+      const modelName = activeProvider === "vertex" ? $("vertexModel").value : activeProvider === "local" ? $("localModel").value.split(" - ")[0] : "No AI model";
+      $("engineProvider").textContent = providerName;
+      $("engineModel").textContent = activeProvider === "vertex" ? `${modelName} / ${$("vertexRegion").value}` : modelName;
+      $("engineDrawer").classList.remove("open");
+      toast(`${providerName} shown in prototype only. No backend configuration was saved.`);
+    };
+    renderAll();
+  </script>
+</body>
+</html>

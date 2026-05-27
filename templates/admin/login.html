@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mockup Studio - Sign in</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-showcase">
+      <div class="brand">Mockup <em>Studio</em><strong>.</strong></div>
+      <p class="eyebrow">Template Operations</p>
+      <h1>Approve artwork areas with precision.</h1>
+      <p class="login-copy">Import product backgrounds, compare detection proposals and publish clean mockup templates from one calm workspace.</p>
+      <div class="login-preview" aria-hidden="true">
+        <div class="preview-toolbar">
+          <span class="preview-dot"></span>
+          <span>WALL ART / REVIEW</span>
+          <b>Vertex + edges</b>
+        </div>
+        <div class="preview-columns">
+          <div class="preview-queue">
+            <span></span><span class="selected"></span><span></span>
+          </div>
+          <div class="preview-canvas">
+            <div class="preview-frame"><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="preview-fields">
+            <span></span><span></span><span class="action"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="login-panel">
+      <p class="section-label">Private workspace</p>
+      <h2>Sign in</h2>
+      <p class="login-hint">Open your template library and detection controls.</p>
+      <form id="loginForm" class="stack">
+        <label class="field" for="password">Admin password</label>
+        <input class="text-input login-input" id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button class="primary" type="submit">Enter studio</button>
+        <p class="notice" id="loginNotice" aria-live="polite"></p>
+      </form>
+      <p class="login-secure">Authentication is kept inside your local Flask service.</p>
+    </section>
+  </main>
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const notice = document.getElementById("loginNotice");
+      notice.textContent = "Signing in...";
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({password: document.getElementById("password").value})
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        window.location.href = "/admin";
+      } else {
+        notice.textContent = payload.error || "Unable to sign in.";
+      }
+    });
+  </script>
+</body>
+</html>

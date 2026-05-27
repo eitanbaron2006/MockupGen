@@ -1,0 +1,16 @@
+C:\Users\Eitan:1
+[5D5C:3B5C][2024-07-26T10:15:36]i001: Burn v3.10.4.4718, Windows v10.0 (Build 22631: Service Pack 0), path: C:\Windows\Temp\{2ACBA9B5-7FCE-4D5C-BD2E-EAB5F4CE4724}\.cr\VC_redist.x64.exe
+ ^
+
+SyntaxError: Invalid or unexpected token
+    at wrapSafe (node:internal/modules/cjs/loader:1638:18)
+    at Module._compile (node:internal/modules/cjs/loader:1680:20)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49
+
+Node.js v22.22.0

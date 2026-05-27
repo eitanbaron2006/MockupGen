@@ -1,0 +1,256 @@
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from PIL import Image, ImageChops
+
+from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
+
+
+class TemplateNotFoundError(FileNotFoundError):
+    pass
+
+
+class InvalidTemplateError(ValueError):
+    pass
+
+
+class RenderValidationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class RenderResult:
+    mode: str
+    template_id: str
+    output_url: str
+    width: int
+    height: int
+
+    def as_response(self) -> dict[str, Any]:
+        return {
+            "success": True,
+            "mode": self.mode,
+            "template_id": self.template_id,
+            "output_url": self.output_url,
+            "width": self.width,
+            "height": self.height,
+        }
+
+
+def _safe_template_folder(templates_folder: Path, template_id: str) -> Path:
+    if not template_id or Path(template_id).name != template_id:
+        raise TemplateNotFoundError(template_id)
+    template_folder = templates_folder / template_id
+    if not template_folder.is_dir():
+        raise TemplateNotFoundError(template_id)
+    return template_folder
+
+
+def _safe_asset_path(template_folder: Path, asset_name: str) -> Path:
+    if not isinstance(asset_name, str) or not asset_name:
+        raise InvalidTemplateError("Template references a missing image asset")
+    asset_path = (template_folder / asset_name).resolve()
+    if template_folder.resolve() not in asset_path.parents or not asset_path.is_file():
+        raise InvalidTemplateError(f"Template asset not found: {asset_name}")
+    return asset_path
+
+
+def _optional_asset_path(template_folder: Path, asset_name: Any) -> Path | None:
+    if asset_name in (None, ""):
+        return None
+    if not isinstance(asset_name, str):
+        raise InvalidTemplateError("Template references an invalid optional image asset")
+    asset_path = (template_folder / asset_name).resolve()
+    if template_folder.resolve() not in asset_path.parents:
+        raise InvalidTemplateError(f"Template asset path is invalid: {asset_name}")
+    if not asset_path.is_file():
+        return None
+    return asset_path
+
+
+def load_manifest(templates_folder: Path, template_id: str) -> tuple[Path, dict[str, Any]]:
+    template_folder = _safe_template_folder(templates_folder, template_id)
+    manifest_path = template_folder / "manifest.json"
+    if not manifest_path.is_file():
+        raise TemplateNotFoundError(template_id)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as error:
+        raise InvalidTemplateError("Invalid template manifest") from error
+
+    required_fields = {
+        "template_id",
+        "name",
+        "canvas_width",
+        "canvas_height",
+        "artwork_area",
+        "background",
+        "supported_modes",
+    }
+    if not isinstance(manifest, dict) or not required_fields.issubset(manifest):
+        raise InvalidTemplateError("Invalid template manifest")
+    if manifest["template_id"] != template_id:
+        raise InvalidTemplateError("Template ID does not match its directory")
+    _validated_canvas_and_area(manifest)
+    _safe_asset_path(template_folder, manifest["background"])
+    _optional_asset_path(template_folder, manifest.get("foreground"))
+    return template_folder, manifest
+
+
+def _validated_canvas_and_area(
+    manifest: dict[str, Any],
+) -> tuple[tuple[int, int], dict[str, int]]:
+    try:
+        canvas = (int(manifest["canvas_width"]), int(manifest["canvas_height"]))
+        area_source = manifest["artwork_area"]
+        area = {
+            "x": int(area_source["x"]),
+            "y": int(area_source["y"]),
+            "width": int(area_source["width"]),
+            "height": int(area_source["height"]),
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise InvalidTemplateError("Invalid canvas or artwork area in manifest") from error
+
+    if canvas[0] <= 0 or canvas[1] <= 0 or area["width"] <= 0 or area["height"] <= 0:
+        raise InvalidTemplateError("Canvas and artwork area must be positive")
+    if (
+        area["x"] < 0
+        or area["y"] < 0
+        or area["x"] + area["width"] > canvas[0]
+        or area["y"] + area["height"] > canvas[1]
+    ):
+        raise InvalidTemplateError("Artwork area must fit inside the canvas")
+    return canvas, area
+
+
+def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
+    templates: list[dict[str, Any]] = []
+    if not templates_folder.is_dir():
+        return templates
+    for template_folder in sorted(path for path in templates_folder.iterdir() if path.is_dir()):
+        try:
+            _, manifest = load_manifest(templates_folder, template_folder.name)
+        except (TemplateNotFoundError, InvalidTemplateError):
+            continue
+        preview_name = manifest.get("preview", "preview.png")
+        try:
+            _safe_asset_path(template_folder, preview_name)
+        except InvalidTemplateError:
+            continue
+        templates.append(
+            {
+                "template_id": manifest["template_id"],
+                "name": manifest["name"],
+                "preview_url": f"/templates/{template_folder.name}/{preview_name}",
+                "supported_modes": manifest["supported_modes"],
+            }
+        )
+    return templates
+
+
+def select_template_for_artwork(
+    templates_folder: Path, product_type: str, artwork_path: Path
+) -> str | None:
+    artwork = load_rgba(artwork_path)
+    artwork_ratio = artwork.width / artwork.height
+    candidates: list[tuple[float, str]] = []
+    if not templates_folder.is_dir():
+        return None
+    for template_folder in templates_folder.iterdir():
+        if not template_folder.is_dir():
+            continue
+        try:
+            _, manifest = load_manifest(templates_folder, template_folder.name)
+        except (TemplateNotFoundError, InvalidTemplateError):
+            continue
+        if str(manifest.get("product_type", "")).lower() != product_type.lower():
+            continue
+        area = manifest["artwork_area"]
+        area_ratio = int(area["width"]) / int(area["height"])
+        candidates.append((abs(math.log(artwork_ratio / area_ratio)), template_folder.name))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[0][1]
+
+
+def _mask_for_artwork(
+    template_folder: Path,
+    mask_name: str,
+    canvas_size: tuple[int, int],
+    area: dict[str, int],
+) -> Image.Image:
+    mask_image = load_mask(_safe_asset_path(template_folder, mask_name))
+    area_size = (area["width"], area["height"])
+    if mask_image.size == canvas_size:
+        return mask_image.crop(
+            (
+                area["x"],
+                area["y"],
+                area["x"] + area["width"],
+                area["y"] + area["height"],
+            )
+        )
+    if mask_image.size == area_size:
+        return mask_image
+    raise InvalidTemplateError("Mask size must match the canvas or artwork area")
+
+
+def render_simple_mockup(
+    *,
+    template_id: str,
+    artwork_path: Path,
+    output_format: str,
+    templates_folder: Path,
+    output_folder: Path,
+) -> RenderResult:
+    if output_format.lower() != "png":
+        raise RenderValidationError("Only png output format is currently supported")
+
+    template_folder, manifest = load_manifest(templates_folder, template_id)
+    if "simple" not in manifest["supported_modes"]:
+        raise RenderValidationError("Template does not support simple rendering")
+
+    canvas_size, area = _validated_canvas_and_area(manifest)
+    background = load_rgba(_safe_asset_path(template_folder, manifest["background"]))
+    foreground_path = _optional_asset_path(template_folder, manifest.get("foreground"))
+    if background.size != canvas_size:
+        raise InvalidTemplateError("Background must match canvas size")
+
+    artwork = load_rgba(artwork_path)
+    artwork_layer = fit_artwork(
+        artwork,
+        (area["width"], area["height"]),
+        str(manifest.get("fit_mode", "cover")),
+    )
+    mask_name = manifest.get("mask")
+    if mask_name:
+        mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
+        artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))
+
+    artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
+    composed = Image.alpha_composite(background, artwork_canvas)
+    if foreground_path:
+        foreground = load_rgba(foreground_path)
+        if foreground.size != canvas_size:
+            raise InvalidTemplateError("Foreground must match canvas size")
+        composed = Image.alpha_composite(composed, foreground)
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
+    composed.save(output_folder / output_name, format="PNG")
+    return RenderResult(
+        mode="simple",
+        template_id=template_id,
+        output_url=f"/outputs/{output_name}",
+        width=canvas_size[0],
+        height=canvas_size[1],
+    )

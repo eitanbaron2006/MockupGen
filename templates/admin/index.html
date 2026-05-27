@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Mockup Studio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}">
+</head>
+<body class="admin-page">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">Mockup <em>Studio</em><strong>.</strong></div>
+      <p class="nav-label">Workspace</p>
+      <div class="nav-item active"><span class="nav-icon">&#9638;</span>Templates</div>
+      <div class="nav-item"><span class="nav-icon">&#8635;</span>Render history</div>
+      <button class="nav-item nav-button" id="openEngine"><span class="nav-icon">&#9881;</span>API settings</button>
+      <div class="category-head">
+        <p class="section-label">Categories</p>
+        <button class="icon-button" id="openCategory" title="New category">+</button>
+      </div>
+      <nav id="categories" class="category-list"></nav>
+      <div class="account">
+        <div class="avatar">EB</div>
+        <div><strong>Eitan Baron</strong><div class="sub">Administrator</div></div>
+      </div>
+    </aside>
+    <section class="shell">
+      <header class="topbar">
+        <div class="crumb">Templates / <strong id="breadcrumb">Select category</strong></div>
+        <div class="top-actions">
+          <span class="top-status" id="status">Ready</span>
+          <button class="btn primary" id="chooseFiles">Import mockups</button>
+          <button class="btn success" id="publishButton">Publish approved</button>
+          <button class="btn compact" id="logoutButton">Log out</button>
+        </div>
+      </header>
+      <main class="content">
+        <section class="panel batch">
+          <div class="panel-head">
+            <div>
+              <h2>Import queue</h2>
+              <div class="sub"><span id="queueCount">0</span> mockups in current category</div>
+            </div>
+          </div>
+          <div class="dropzone" id="dropzone">
+            <div class="drop-icon">&#8593;</div>
+            <strong>Drop multiple images</strong>
+            <div class="sub"><button class="link-button" id="browse">Browse files</button> or drag here</div>
+          </div>
+          <div id="queue" class="queue"></div>
+        </section>
+        <section class="panel editor">
+          <div class="editor-head">
+            <div>
+              <h1 id="currentTitle">Select a mockup</h1>
+              <div class="sub" id="editorSub">Choose a template from the queue to review its artwork area.</div>
+            </div>
+            <div class="editor-tools">
+              <div class="confidence" id="confidence"></div>
+              <button class="btn" id="detectButton">Detect frame</button>
+            </div>
+          </div>
+          <div class="canvas-workspace">
+            <div class="workspace-empty" id="emptyEditor">
+              <strong id="emptyCategory">No template selected</strong>
+              Import one or more mockup images to begin detecting artwork areas.
+            </div>
+            <div id="stage" class="hidden">
+              <img id="canvasImage" alt="Selected mockup image">
+              <div id="selection" class="hidden">
+                <div class="zone-tag">Artwork area</div>
+                <div class="handle nw" data-handle="nw"></div>
+                <div class="handle ne" data-handle="ne"></div>
+                <div class="handle sw" data-handle="sw"></div>
+                <div class="handle se" data-handle="se"></div>
+              </div>
+              <div id="analysisOverlay" class="analysis-overlay hidden">
+                <span class="spinner"></span>
+                <strong id="analysisLabel">Detection is analyzing the frame</strong>
+                <small>This can take several seconds.</small>
+              </div>
+            </div>
+          </div>
+          <div class="editor-foot">
+            <div class="coordinates">
+              <span>X <strong id="coordX">-</strong></span>
+              <span>Y <strong id="coordY">-</strong></span>
+              <span>W <strong id="coordW">-</strong></span>
+              <span>H <strong id="coordH">-</strong></span>
+            </div>
+            <div class="sub" id="proposalState">Select a mockup to start.</div>
+          </div>
+        </section>
+        <aside class="panel inspector inactive" id="inspector">
+          <div class="panel-head">
+            <div><h2>Template details</h2><div class="sub" id="inspectorStatus">No template selected</div></div>
+            <div class="inspector-tools">
+              <button class="icon-button" id="openGuide" type="button" aria-label="Detection guide" data-tooltip="Detection guide">?</button>
+              <button class="icon-button" id="engineButton" type="button" aria-label="Detection engine" data-tooltip="Detection engine">&#9881;</button>
+            </div>
+          </div>
+          <div class="fields">
+            <div>
+              <label for="templateName">Template name</label>
+              <input id="templateName" class="text-input">
+            </div>
+            <div>
+              <label for="categorySelect">Product category</label>
+              <select id="categorySelect"></select>
+            </div>
+            <div>
+              <div class="label-row">
+                <label>Artwork orientation</label>
+                <span class="tip-icon" tabindex="0" aria-label="API match logic" data-tooltip="When a customer submits matching artwork for this category, the closest artwork-area ratio wins.">i</span>
+              </div>
+              <div class="orientation-grid">
+                <div class="direction square" data-direction="square"><span></span>Square</div>
+                <div class="direction portrait" data-direction="portrait"><span></span>Portrait</div>
+                <div class="direction landscape" data-direction="landscape"><span></span>Wide</div>
+              </div>
+            </div>
+            <div>
+              <label for="fitMode">Fit mode</label>
+              <select id="fitMode">
+                <option value="cover">Cover</option>
+                <option value="contain">Contain</option>
+                <option value="stretch">Stretch</option>
+              </select>
+            </div>
+            <div class="engine-summary">
+              <label>Detection engine</label>
+              <div class="engine-current">
+                <div class="engine-mark">AI</div>
+                <div>
+                <strong id="engineProvider">Vertex AI</strong>
+                  <span id="engineModel">Gemini / Global</span>
+                </div>
+              </div>
+              <button class="link-button" id="editEngine">Change detector</button>
+            </div>
+            <div class="rule result-rule hidden" id="detectionResult"></div>
+          </div>
+          <div class="inspector-actions">
+            <button class="btn" id="saveButton">Save draft</button>
+            <button class="btn primary" id="approveButton">Approve <span class="button-tip" data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
+          </div>
+        </aside>
+      </main>
+    </section>
+  </div>
+  <input id="fileInput" type="file" multiple accept="image/png,image/jpeg,image/webp">
+  <div class="modal-backdrop" id="categoryModal">
+    <div class="modal">
+      <h2>Create category</h2>
+      <div class="sub">Templates and automatic API matching will use this product type.</div>
+      <input id="newCategory" class="text-input" placeholder="e.g. Wall Art">
+      <div class="modal-actions">
+        <button class="btn" id="cancelCategory">Cancel</button>
+        <button class="btn primary" id="createCategory">Create category</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-backdrop" id="guideDrawer">
+    <aside class="drawer">
+      <div class="drawer-head">
+        <div><h2>Detection guide</h2><div class="sub">Source images that make accurate proposals easier.</div></div>
+        <button class="icon-button" id="closeGuide">&times;</button>
+      </div>
+      <ol class="guide-list">
+        <li>Best option: choose a mockup with a clear gray dashed rectangle marking the artwork replacement area.</li>
+        <li>Otherwise prefer a front-facing frame with a clear inner printable boundary.</li>
+        <li>Keep text, shadows and decorative objects outside the artwork opening.</li>
+        <li>Use a separate transparent foreground layer for objects overlapping artwork.</li>
+        <li>Always review and adjust the detection proposal before approval.</li>
+      </ol>
+    </aside>
+  </div>
+  <div class="drawer-backdrop" id="engineDrawer">
+    <aside class="drawer engine-drawer">
+      <div class="drawer-head">
+        <div><h2>Frame detection engine</h2><div class="sub">Choose AI-assisted or classic local detection. Tests use the selected mockup only.</div></div>
+        <button class="icon-button" id="closeEngine">&times;</button>
+      </div>
+      <div class="provider-grid">
+        <button class="provider-card" data-provider="vertex"><strong>Vertex AI</strong><small>Cloud / recommended</small></button>
+        <button class="provider-card" data-provider="classic"><strong>Classic / No AI</strong><small>Local edge scan</small></button>
+        <button class="provider-card" data-provider="local"><strong>Local AI</strong><small>Installed models</small></button>
+      </div>
+      <section class="engine-config" id="vertexConfig">
+        <div class="model-cost">
+          <div>
+            <strong>Vertex AI via Google Cloud</strong>
+            <div class="cost-meta">Live multimodal frame analysis with your configured project.</div>
+          </div>
+          <span class="recommended">Recommended</span>
+        </div>
+        <div class="guide-note">The model list loads live from Vertex Model Garden and filters out image generation, audio/TTS and embedding models that cannot return a frame rectangle.</div>
+        <div class="config-row">
+          <div>
+            <label for="vertexModel">Available model</label>
+            <select id="vertexModel"></select>
+          </div>
+          <div>
+            <label for="vertexLocation">Location</label>
+            <select id="vertexLocation">
+              <option value="global">global</option>
+              <option value="us-central1">us-central1</option>
+              <option value="europe-west4">europe-west4</option>
+            </select>
+          </div>
+        </div>
+        <label for="vertexProject">Google Cloud project ID</label>
+        <input class="text-input" id="vertexProject">
+        <div class="config-row">
+          <div>
+            <label for="vertexResolution">Media resolution</label>
+            <select id="vertexResolution">
+              <option value="high">High - best fine-detail detection</option>
+              <option value="medium">Medium - reduced cost</option>
+              <option value="low">Low - quick testing only</option>
+            </select>
+          </div>
+          <div>
+            <label for="vertexAuth">Authentication</label>
+            <select id="vertexAuth">
+              <option value="adc">Application Default Credentials</option>
+            </select>
+          </div>
+        </div>
+        <label for="refinementMode">Boundary refinement</label>
+        <select id="refinementMode">
+          <option value="ai_only">AI bounding box only - recommended</option>
+          <option value="hybrid">AI + guarded edge refinement - experimental</option>
+        </select>
+        <div class="guide-note">AI-only keeps the Vertex box unchanged. Guarded refinement is experimental: it may snap to a dashed boundary, but it is discarded if it distorts the AI result.</div>
+      </section>
+      <section class="engine-config hidden" id="localConfig">
+        <div class="model-cost">
+          <div>
+            <strong>Local vision model endpoint</strong>
+            <div class="cost-meta">No cloud token cost. Uses models installed on your local service.</div>
+          </div>
+        </div>
+        <label for="localUrl">Local detector endpoint</label>
+        <input class="text-input" id="localUrl" placeholder="http://localhost:11434/detect">
+        <div class="config-row model-row">
+          <div>
+            <label for="localModel">Local model</label>
+            <select id="localModel"><option value="">Connect an endpoint to list models</option></select>
+          </div>
+          <button class="btn inline-action" id="refreshLocalModels" type="button">Load installed models</button>
+        </div>
+        <div class="guide-note" id="localModelNotice">The local service must expose a model listing endpoint and accept an image detection payload returning an `artwork_area` rectangle.</div>
+      </section>
+      <section class="engine-config hidden" id="classicConfig">
+        <div class="model-cost">
+          <div>
+            <strong>Classic edge detection</strong>
+            <div class="cost-meta">Pixel and contour scan. No AI model and no external cost.</div>
+          </div>
+        </div>
+        <div class="guide-note">Classic detection runs entirely in this backend without credentials. A gray dashed artwork rectangle is ideal because the local edge scan can snap directly to it, independently of AI.</div>
+      </section>
+      <div class="engine-actions">
+        <button class="btn" id="testEngine">Test connection</button>
+        <button class="btn primary" id="saveSettings">Save settings</button>
+      </div>
+      <div class="sub" id="settingsNotice"></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}"></script>
+</body>
+</html>

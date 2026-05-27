@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/*.sqlite3
+draft_templates/*
+!draft_templates/.gitkeep
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
+logs/*
+!logs/.gitkeep
