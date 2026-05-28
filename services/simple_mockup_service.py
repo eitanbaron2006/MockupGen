@@ -276,34 +276,72 @@ def _apply_realism_filter(artwork_layer: Image.Image) -> Image.Image:
     return img
 
 
-def _apply_edge_feathering(
-    artwork_canvas: Image.Image,
+def _apply_edge_feathering_ssaa(
+    artwork_layer: Image.Image,
     area: dict[str, Any],
     canvas_size: tuple[int, int],
-    coefficients: list[float] | None = None,
+    corners_present: bool = False,
 ) -> Image.Image:
+    SS_FACTOR = 3
+    hr_canvas_size = (canvas_size[0] * SS_FACTOR, canvas_size[1] * SS_FACTOR)
     width, height = area["width"], area["height"]
-    mask_base = Image.new("L", (width, height), 255)
     
-    # Warp or place the mask identically to the artwork placement
-    if coefficients is not None:
-        mask_canvas = mask_base.transform(
-            canvas_size,
+    if corners_present:
+        from services.image_utils import get_perspective_coefficients
+        src_coords = [
+            (0.0, 0.0),
+            (float(width), 0.0),
+            (float(width), float(height)),
+            (0.0, float(height))
+        ]
+        # Scale destination corner coordinates by SS_FACTOR
+        hr_dst_coords = [(float(p["x"]) * SS_FACTOR, float(p["y"]) * SS_FACTOR) for p in area["corners"]]
+        hr_coefficients = get_perspective_coefficients(src_coords, hr_dst_coords)
+        
+        # Warp the artwork quad at 3x supersampled resolution (with BICUBIC for high detail)
+        hr_artwork_canvas = artwork_layer.transform(
+            hr_canvas_size,
             Image.Transform.PERSPECTIVE,
-            coefficients,
+            hr_coefficients,
             Image.Resampling.BICUBIC
         )
-    else:
-        mask_canvas = Image.new("L", canvas_size, 0)
-        mask_canvas.paste(mask_base, (area["x"], area["y"]))
         
-    # Apply soft blur to mask boundary
-    feathered_mask = mask_canvas.filter(ImageFilter.GaussianBlur(radius=1.2))
-    
-    # Soften outer boundary of poster alpha channel
-    r, g, b, a = artwork_canvas.split()
-    a_feathered = ImageChops.multiply(a, feathered_mask)
-    return Image.merge("RGBA", (r, g, b, a_feathered))
+        # Generate the footprint mask at 3x resolution
+        mask_base = Image.new("L", (width, height), 255)
+        hr_mask_canvas = mask_base.transform(
+            hr_canvas_size,
+            Image.Transform.PERSPECTIVE,
+            hr_coefficients,
+            Image.Resampling.BICUBIC
+        )
+        
+        # Blur the mask at 3x resolution (radius 3.6 pixels corresponds to 1.2 at 1x)
+        hr_feathered_mask = hr_mask_canvas.filter(ImageFilter.GaussianBlur(radius=3.6))
+        
+        # Multiply high-res alpha with the soft blurred quad mask
+        hr_r, hr_g, hr_b, hr_a = hr_artwork_canvas.split()
+        hr_a_feathered = ImageChops.multiply(hr_a, hr_feathered_mask)
+        hr_artwork_canvas = Image.merge("RGBA", (hr_r, hr_g, hr_b, hr_a_feathered))
+        
+        # Downscale to destination canvas size using LANCZOS (removes all sawtooth aliasing!)
+        return hr_artwork_canvas.resize(canvas_size, Image.Resampling.LANCZOS)
+    else:
+        # Flat placement anti-aliasing and feathering
+        hr_artwork_layer = artwork_layer.resize((width * SS_FACTOR, height * SS_FACTOR), Image.Resampling.LANCZOS)
+        hr_artwork_canvas = Image.new("RGBA", hr_canvas_size, (0, 0, 0, 0))
+        hr_artwork_canvas.alpha_composite(hr_artwork_layer, dest=(area["x"] * SS_FACTOR, area["y"] * SS_FACTOR))
+        
+        mask_base = Image.new("L", (width * SS_FACTOR, height * SS_FACTOR), 255)
+        hr_mask_canvas = Image.new("L", hr_canvas_size, 0)
+        hr_mask_canvas.paste(mask_base, (area["x"] * SS_FACTOR, area["y"] * SS_FACTOR))
+        
+        hr_feathered_mask = hr_mask_canvas.filter(ImageFilter.GaussianBlur(radius=3.6))
+        
+        hr_r, hr_g, hr_b, hr_a = hr_artwork_canvas.split()
+        hr_a_feathered = ImageChops.multiply(hr_a, hr_feathered_mask)
+        hr_artwork_canvas = Image.merge("RGBA", (hr_r, hr_g, hr_b, hr_a_feathered))
+        
+        return hr_artwork_canvas.resize(canvas_size, Image.Resampling.LANCZOS)
 
 
 def render_simple_mockup(
@@ -345,31 +383,35 @@ def render_simple_mockup(
     if realism:
         artwork_layer = _apply_realism_filter(artwork_layer)
 
-    if "corners" in area:
-        from services.image_utils import get_perspective_coefficients
-        src_coords = [
-            (0.0, 0.0),
-            (float(area["width"]), 0.0),
-            (float(area["width"]), float(area["height"])),
-            (0.0, float(area["height"]))
-        ]
-        dst_coords = [(float(p["x"]), float(p["y"])) for p in area["corners"]]
-        coefficients = get_perspective_coefficients(src_coords, dst_coords)
-        artwork_canvas = artwork_layer.transform(
+    if realism:
+        # Premium Super Sample Anti-Aliased (SSAA) rendering and edge softening
+        artwork_canvas = _apply_edge_feathering_ssaa(
+            artwork_layer,
+            area,
             canvas_size,
-            Image.Transform.PERSPECTIVE,
-            coefficients,
-            Image.Resampling.BICUBIC
+            corners_present=("corners" in area)
         )
-        # Apply boundary feathering to soften sharp perspective quad edges if enabled
-        if realism:
-            artwork_canvas = _apply_edge_feathering(artwork_canvas, area, canvas_size, coefficients)
     else:
-        artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-        artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
-        # Apply boundary feathering to soften flat edges if enabled
-        if realism:
-            artwork_canvas = _apply_edge_feathering(artwork_canvas, area, canvas_size, None)
+        # Legacy exact 1x pixel mapping path (for backward-compatible unit tests)
+        if "corners" in area:
+            from services.image_utils import get_perspective_coefficients
+            src_coords = [
+                (0.0, 0.0),
+                (float(area["width"]), 0.0),
+                (float(area["width"]), float(area["height"])),
+                (0.0, float(area["height"]))
+            ]
+            dst_coords = [(float(p["x"]), float(p["y"])) for p in area["corners"]]
+            coefficients = get_perspective_coefficients(src_coords, dst_coords)
+            artwork_canvas = artwork_layer.transform(
+                canvas_size,
+                Image.Transform.PERSPECTIVE,
+                coefficients,
+                Image.Resampling.BICUBIC
+            )
+        else:
+            artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+            artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
 
     composed = Image.alpha_composite(background, artwork_canvas)
     if foreground_path:
