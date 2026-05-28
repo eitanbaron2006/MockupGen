@@ -470,9 +470,12 @@ select, .text-input {
   grid-auto-rows: 80px; gap: 8px; overflow-y: auto; scrollbar-width: thin; padding: 8px;
   background: rgba(236, 228, 207, 0.25); border: 1px solid var(--line-soft); border-radius: 10px;
 }
+.test-gallery-grid:has(.gallery-empty), .test-mockup-gallery:has(.gallery-empty) {
+  display: flex; align-items: center; justify-content: center;
+}
 .gallery-empty {
-  grid-column: span 3; color: var(--faint); font-family: var(--mono); font-size: 9px; text-align: center; width: 100%;
-  padding: 68px 0; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.45;
+  color: var(--faint); font-family: var(--mono); font-size: 9px; text-align: center; width: 100%;
+  text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.45; margin: 0; padding: 0;
 }
 
 .hidden-input { display: none; }
@@ -543,8 +546,8 @@ select, .text-input {
 }
 
 .test-options-row {
-  display: flex; align-items: flex-end; gap: 16px; margin-top: auto; padding-top: 15px;
-  border-top: 1px solid var(--line-soft); flex-shrink: 0;
+  display: flex; align-items: flex-end; gap: 16px; margin-top: auto; padding-top: 0;
+  border-top: none; flex-shrink: 0;
 }
 .test-options-row > div { display: flex; flex-direction: column; }
 .test-options-row label { display: block; margin-bottom: 6px; }
@@ -578,6 +581,69 @@ a.btn { text-decoration: none; }
   box-shadow: 0 4px 12px rgba(237, 111, 92, 0.15); transition: all 0.2s ease;
 }
 #testResultDownload:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(237, 111, 92, 0.25); }
+
+/* Premium Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(21, 20, 15, 0.15);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(21, 20, 15, 0.35);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(21, 20, 15, 0.15) transparent;
+}
+
+/* Premium Customized Checkboxes */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  vertical-align: middle;
+}
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--accent);
+  background-color: rgba(236, 228, 207, 0.7);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input[type="checkbox"]:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -60%) rotate(45deg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 @media (max-width: 1240px) {
   .app { grid-template-columns: 215px 1fr; }
