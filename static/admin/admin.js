@@ -482,6 +482,7 @@
     $("saveButton").disabled = active;
     $("approveButton").disabled = active;
     $("publishButton").disabled = active;
+    renderQueue();
   }
 
   async function importFiles(files) {

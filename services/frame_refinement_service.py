@@ -74,9 +74,72 @@ def _inner_boundary_line(
     return max(selected_cluster)[1]
 
 
+def _global_frame_detect(source_image: Image.Image) -> dict[str, int] | None:
+    # 1. Resize to a small size for fast pure-Python analysis
+    target_size = 100
+    w, h = source_image.size
+    scale_x = w / target_size
+    scale_y = h / target_size
+    
+    small = source_image.convert("L").resize((target_size, target_size), Image.Resampling.BILINEAR)
+    filtered = small.filter(ImageFilter.MedianFilter(size=3))
+    edges = ImageOps.autocontrast(filtered.filter(ImageFilter.FIND_EDGES))
+    pixels = edges.load()
+    
+    # 2. Compute 1D projections (sums along rows and columns)
+    col_sums = [sum(pixels[x, y] for y in range(target_size)) for x in range(target_size)]
+    row_sums = [sum(pixels[x, y] for x in range(target_size)) for y in range(target_size)]
+    
+    # 3. Find candidates on left/right and top/bottom halves
+    left_candidates = sorted(range(5, target_size // 2 - 5), key=lambda x: col_sums[x], reverse=True)[:5]
+    right_candidates = sorted(range(target_size // 2 + 5, target_size - 5), key=lambda x: col_sums[x], reverse=True)[:5]
+    top_candidates = sorted(range(5, target_size // 2 - 5), key=lambda y: row_sums[y], reverse=True)[:5]
+    bottom_candidates = sorted(range(target_size // 2 + 5, target_size - 5), key=lambda y: row_sums[y], reverse=True)[:5]
+    
+    best_score = -1
+    best_box = None
+    
+    # 4. Evaluate all candidate combinations
+    for left in left_candidates:
+        for right in right_candidates:
+            for top in top_candidates:
+                for bottom in bottom_candidates:
+                    box_w = right - left
+                    box_h = bottom - top
+                    if box_w < 20 or box_h < 20: # Too small
+                        continue
+                    
+                    l_score = sum(pixels[left, y] for y in range(top, bottom + 1))
+                    r_score = sum(pixels[right, y] for y in range(top, bottom + 1))
+                    t_score = sum(pixels[x, top] for x in range(left, right + 1))
+                    b_score = sum(pixels[x, bottom] for x in range(left, right + 1))
+                    
+                    # Normalize by border length to avoid bias towards large boxes
+                    total_score = (l_score + r_score) / box_h + (t_score + b_score) / box_w
+                    
+                    if total_score > best_score:
+                        best_score = total_score
+                        best_box = (left, top, box_w, box_h)
+                        
+    if best_box and best_score > 60: # Coarse threshold
+        left, top, box_w, box_h = best_box
+        return {
+            "x": round(left * scale_x),
+            "y": round(top * scale_y),
+            "width": round(box_w * scale_x),
+            "height": round(box_h * scale_y)
+        }
+    return None
+
+
 def refine_artwork_area(image_path: Path, proposed_area: dict[str, int]) -> dict[str, int]:
     """Snap an outer or approximate frame proposal to its visible inner opening."""
     with Image.open(image_path) as source:
+        # Try global coarse frame detection first to handle off-center frames beautifully!
+        coarse = _global_frame_detect(source)
+        if coarse:
+            proposed_area = coarse
+            
         # Apply a median filter to suppress fine high-frequency noise and textures (like wood grains)
         # while preserving perfectly sharp structural borders for pixel-accurate snapping.
         filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=3))
