@@ -310,13 +310,15 @@
           <div class="test-gallery" id="testGallery"></div>
           <div class="sub" id="testOrientationLabel"></div>
           
-          <div class="config-row test-options-row">
-            <div style="flex: 2;">
-              <label for="testTemplateSelect">2. Choose matching mockup</label>
-              <select id="testTemplateSelect" disabled>
-                <option value="">Upload an image first</option>
-              </select>
-            </div>
+          <label style="margin-top: 15px;">2. Choose matching mockup</label>
+          <select id="testTemplateSelect" class="hidden" disabled>
+            <option value="">Upload an image first</option>
+          </select>
+          <div class="test-mockup-gallery" id="testMockupGallery">
+            <div class="gallery-empty">Upload artwork to load matching templates</div>
+          </div>
+
+          <div class="test-options-row">
             <div style="flex: 1;">
               <label for="testFitMode">Fit Mode</label>
               <select id="testFitMode">
@@ -325,19 +327,21 @@
                 <option value="stretch">Stretch</option>
               </select>
             </div>
-          </div>
-
-          <div class="engine-actions" style="margin-top: 25px;">
             <button class="btn primary" id="testGenerateButton" disabled>Generate</button>
           </div>
         </div>
 
-        <div class="test-col-right test-result-area hidden" id="testResultArea">
+        <div class="test-col-right test-result-area" id="testResultArea">
           <label>Result</label>
-          <div class="test-result-wrapper">
+          <div class="test-result-placeholder" id="testResultPlaceholder">
+            <div class="placeholder-icon">&#127912;</div>
+            <h3>Generated Mockup Preview</h3>
+            <p>Select your artwork and choose a mockup template on the left, then click Generate to preview the high-quality mockup here.</p>
+          </div>
+          <div class="test-result-wrapper hidden" id="testResultWrapper">
             <img id="testResultImage" alt="Generated mockup">
           </div>
-          <div class="test-result-actions">
+          <div class="test-result-actions hidden" id="testResultActions">
             <a id="testResultDownload" class="btn primary" download="mockup.png">Download Mockup</a>
           </div>
         </div>

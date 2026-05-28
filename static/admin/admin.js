@@ -705,11 +705,24 @@
   $("closeEngine").onclick = () => $("engineDrawer").classList.remove("open");
 
   // Test Mockups Modal Logic
-  $("openTestModal").onclick = () => $("testModal").classList.add("open");
+  $("openTestModal").onclick = () => {
+    $("testModal").classList.add("open");
+    if (testState.activeIndex === -1) {
+      resetTestResult();
+    }
+  };
   $("closeTestModal").onclick = () => $("testModal").classList.remove("open");
   $("testModal").onclick = (event) => {
     if (event.target === $("testModal")) $("testModal").classList.remove("open");
   };
+
+  function resetTestResult() {
+    $("testResultPlaceholder").classList.remove("hidden");
+    $("testResultWrapper").classList.add("hidden");
+    $("testResultActions").classList.add("hidden");
+    $("testResultImage").src = "";
+    $("testResultDownload").href = "";
+  }
   
   $("testUploadArea").onclick = () => $("testArtworkFile").click();
   $("testArtworkFile").onchange = (e) => {
@@ -767,6 +780,42 @@
     });
   }
 
+  function renderMockupGallery() {
+    const gallery = $("testMockupGallery");
+    if (testState.templates.length === 0) {
+      gallery.innerHTML = `<div class="gallery-empty">No matching mockups found</div>`;
+      return;
+    }
+    
+    const selectValue = $("testTemplateSelect").value;
+    gallery.innerHTML = testState.templates.map((t) => {
+      const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
+      const isActive = t.template_id === selectValue;
+      return `
+        <img src="${previewUrl}" class="test-mockup-card ${isActive ? 'active' : ''}" data-id="${t.template_id}" title="${escapeHtml(t.name)}" alt="${escapeHtml(t.name)}">
+      `;
+    }).join('');
+    
+    gallery.querySelectorAll('.test-mockup-card').forEach(img => {
+      img.onclick = (e) => {
+        e.stopPropagation();
+        selectMockupTemplate(img.dataset.id);
+      };
+    });
+  }
+
+  function selectMockupTemplate(templateId) {
+    const select = $("testTemplateSelect");
+    select.value = templateId;
+    
+    const activeFile = testState.files[testState.activeIndex];
+    if (activeFile && activeFile.orientation && templateId) {
+      $("testGenerateButton").disabled = false;
+    }
+    
+    renderMockupGallery();
+  }
+
   async function selectTestImage(index) {
     if (index < 0 || index >= testState.files.length) return;
     testState.activeIndex = index;
@@ -777,12 +826,14 @@
     $("testUploadPlaceholder").classList.add("hidden");
     
     renderTestGallery(); // Update active state class
+    resetTestResult();   // Switch active image resets result state
     
     if (!activeFile.orientation) {
       $("testOrientationLabel").textContent = "Detecting orientation...";
       $("testTemplateSelect").innerHTML = `<option value="">Detecting orientation...</option>`;
       $("testTemplateSelect").disabled = true;
       $("testGenerateButton").disabled = true;
+      $("testMockupGallery").innerHTML = `<div class="gallery-empty">Detecting orientation...</div>`;
       return; // Will be called again by the onload handler
     }
 
@@ -806,9 +857,11 @@
           opt.textContent = `${t.name || t.template_id}`;
           select.appendChild(opt);
         });
+        select.value = testState.templates[0].template_id; // Auto-select first template
         select.disabled = false;
         $("testGenerateButton").disabled = false;
       }
+      renderMockupGallery(); // Render visual gallery
     } catch (err) {
       toast("Failed to load templates");
     }
@@ -841,7 +894,10 @@
       
       $("testResultImage").src = data.output_url;
       $("testResultDownload").href = data.output_url;
-      $("testResultArea").classList.remove("hidden");
+      
+      $("testResultPlaceholder").classList.add("hidden");
+      $("testResultWrapper").classList.remove("hidden");
+      $("testResultActions").classList.remove("hidden");
     } catch (err) {
       toast(err.message);
     } finally {
