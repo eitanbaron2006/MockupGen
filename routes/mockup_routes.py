@@ -93,10 +93,26 @@ def render_mockup():
                 fit_mode=fit_mode,
             )
             return jsonify(result.as_response())
-        if mode == "psd":
+        elif mode == "ai":
+            project_id = current_app.config.get("VERTEX_PROJECT_ID", "").strip()
+            if not project_id:
+                catalog = current_app.extensions.get("catalog_service")
+                if catalog:
+                    project_id = catalog.get_settings().get("VERTEX_PROJECT_ID", "").strip()
+            if not project_id:
+                return error_response("Vertex Project ID is not configured. Please set it in .env or Settings.", 400)
+
+            result = render_ai_mockup(
+                template_id=template_id,
+                artwork_path=artwork_path,
+                templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+                output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
+                project_id=project_id,
+                location=current_app.config.get("VERTEX_LOCATION", "global"),
+            )
+            return jsonify(result.as_response())
+        elif mode == "psd":
             render_psd_mockup(template_id=template_id, artwork_path=artwork_path)
-        else:
-            render_ai_mockup(template_id=template_id, artwork_path=artwork_path)
     except TemplateNotFoundError:
         return error_response("Template not found", 404)
     except (ImageProcessingError, RenderValidationError) as error:

@@ -1389,13 +1389,16 @@
     
     const activeFile = testState.files[testState.activeIndex];
     const formData = new FormData();
-    formData.append("mode", "simple");
+    const renderMode = $("testRenderMode").value;
+    formData.append("mode", renderMode);
     formData.append("template_id", $("testTemplateSelect").value);
     formData.append("artwork", activeFile.file);
     
-    const fitMode = $("testFitMode").value;
-    if (fitMode) {
-      formData.append("fit_mode", fitMode);
+    if (renderMode === "simple") {
+      const fitMode = $("testFitMode").value;
+      if (fitMode) {
+        formData.append("fit_mode", fitMode);
+      }
     }
     
     try {
@@ -1420,6 +1423,17 @@
       $("testGenerateButton").textContent = "Generate";
     }
   };
+
+  const testRenderMode = $("testRenderMode");
+  if (testRenderMode) {
+    testRenderMode.onchange = () => {
+      const isAI = testRenderMode.value === "ai";
+      const fitContainer = $("testFitModeContainer");
+      if (fitContainer) {
+        fitContainer.classList.toggle("hidden", isAI);
+      }
+    };
+  }
   document.querySelectorAll(".provider-card").forEach((card) => {
     card.onclick = () => showProvider(card.dataset.provider);
   });

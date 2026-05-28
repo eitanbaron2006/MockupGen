@@ -372,13 +372,22 @@
           </div>
 
           <div class="test-options-row">
-            <div style="flex: 1;">
-              <label for="testFitMode">Fit Mode</label>
-              <select id="testFitMode">
-                <option value="cover">Cover (Crop)</option>
-                <option value="contain">Contain (Fit)</option>
-                <option value="stretch" selected>Stretch</option>
-              </select>
+            <div style="flex: 1; display: flex; gap: 15px;">
+              <div style="flex: 1;">
+                <label for="testRenderMode">Render Engine</label>
+                <select id="testRenderMode">
+                  <option value="simple" selected>Pillow (Classic)</option>
+                  <option value="ai">Vertex AI (Gemini 3.1 Flash Image)</option>
+                </select>
+              </div>
+              <div style="flex: 1;" id="testFitModeContainer">
+                <label for="testFitMode">Fit Mode</label>
+                <select id="testFitMode">
+                  <option value="cover">Cover (Crop)</option>
+                  <option value="contain">Contain (Fit)</option>
+                  <option value="stretch" selected>Stretch</option>
+                </select>
+              </div>
             </div>
             <button class="btn primary" id="testGenerateButton" disabled>Generate</button>
           </div>

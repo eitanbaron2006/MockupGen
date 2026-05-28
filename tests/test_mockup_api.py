@@ -255,11 +255,68 @@ def test_placeholder_modes_return_not_implemented_json(tmp_path):
     client, folders = build_client(tmp_path)
     write_template(folders["TEMPLATES_FOLDER"])
 
-    for mode in ("psd", "ai"):
+    for mode in ("psd",):
         response = post_render(client, mode=mode)
         assert response.status_code == 501
         assert response.get_json()["success"] is False
         assert response.get_json()["error"].startswith(f"{mode.upper()} rendering")
+
+
+def test_ai_render_mode_invokes_vertex_ai_generation(tmp_path: Path, monkeypatch):
+    client, folders = build_client(
+        tmp_path,
+        VERTEX_PROJECT_ID="test-project",
+        VERTEX_LOCATION="global",
+    )
+    write_template(folders["TEMPLATES_FOLDER"])
+
+    class FakePart:
+        def __init__(self, data, mime_type):
+            class InlineData:
+                def __init__(self, data, mime_type):
+                    self.data = data
+                    self.mime_type = mime_type
+            self.inline_data = InlineData(data, mime_type)
+            self.text = None
+
+    class FakeContent:
+        def __init__(self, data):
+            self.parts = [FakePart(data, "image/png")]
+
+    class FakeCandidate:
+        def __init__(self, data):
+            self.content = FakeContent(data)
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.candidates = [FakeCandidate(data)]
+
+    dummy_img_stream = io.BytesIO()
+    Image.new("RGBA", (10, 10), (255, 0, 0, 255)).save(dummy_img_stream, format="PNG")
+    dummy_bytes = dummy_img_stream.getvalue()
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return FakeResponse(dummy_bytes)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+
+    import google.genai
+    monkeypatch.setattr(google.genai, "Client", FakeClient)
+
+    response = post_render(client, mode="ai")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["mode"] == "ai"
+    assert payload["template_id"] == "template_001"
+    assert payload["width"] == 10
+    assert payload["height"] == 10
+    assert payload["output_url"].startswith("/outputs/mockup_ai_")
+
 
 
 def test_render_can_select_closest_template_by_product_type_and_artwork_ratio(tmp_path):
