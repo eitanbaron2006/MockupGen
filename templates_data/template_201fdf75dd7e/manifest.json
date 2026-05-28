@@ -1,0 +1,41 @@
+{
+  "template_id": "template_201fdf75dd7e",
+  "name": "ChatGPT Image May 28 2026 05 59 05 PM 3",
+  "product_type": "vertival-wall-art-frame",
+  "canvas_width": 1122,
+  "canvas_height": 1402,
+  "artwork_area": {
+    "x": 553,
+    "y": 203,
+    "width": 484,
+    "height": 506,
+    "corners": [
+      {
+        "x": 554,
+        "y": 252
+      },
+      {
+        "x": 1037,
+        "y": 203
+      },
+      {
+        "x": 1036,
+        "y": 709
+      },
+      {
+        "x": 553,
+        "y": 690
+      }
+    ]
+  },
+  "fit_mode": "cover",
+  "orientation": "square",
+  "background": "background.png",
+  "foreground": null,
+  "mask": null,
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png"
+}
