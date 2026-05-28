@@ -14,7 +14,7 @@
       <p class="nav-label">Workspace</p>
       <div class="nav-item active"><span class="nav-icon">&#9638;</span>Templates</div>
       <div class="nav-item"><span class="nav-icon">&#8635;</span>Render history</div>
-      <button class="nav-item nav-button" id="openTestDrawer"><span class="nav-icon">&#128247;</span>Test mockups</button>
+      <button class="nav-item nav-button" id="openTestModal"><span class="nav-icon">&#128247;</span>Test mockups</button>
       <button class="nav-item nav-button" id="openEngine"><span class="nav-icon">&#9881;</span>API settings</button>
       <div class="category-head">
         <p class="section-label">Categories</p>
@@ -293,35 +293,56 @@
       <div class="sub" id="settingsNotice"></div>
     </aside>
   </div>
-  <div class="drawer-backdrop" id="testDrawer">
-    <aside class="drawer engine-drawer test-drawer">
-      <div class="drawer-head">
-        <div><h2>Test mockups</h2><div class="sub">Upload an image and see how it looks on matching templates.</div></div>
-        <button class="icon-button" id="closeTestDrawer">&times;</button>
+  <div class="modal-backdrop" id="testModal">
+    <div class="modal test-modal">
+      <div class="modal-head">
+        <h2>Test mockups</h2>
+        <button class="icon-button" id="closeTestModal">&times;</button>
       </div>
-      <div class="test-config">
-        <label>1. Upload artwork</label>
-        <div class="test-upload-area" id="testUploadArea">
-          <input type="file" id="testArtworkFile" accept="image/png, image/jpeg, image/webp" class="hidden-input">
-          <div id="testUploadPlaceholder">Click to upload or drag image here</div>
-          <img id="testArtworkPreview" class="hidden" alt="Artwork preview">
+      <div class="modal-body test-layout">
+        <div class="test-col-left">
+          <label>1. Upload artwork (multiple allowed)</label>
+          <div class="test-upload-area" id="testUploadArea">
+            <input type="file" id="testArtworkFile" accept="image/png, image/jpeg, image/webp" class="hidden-input" multiple>
+            <div id="testUploadPlaceholder">Click to upload or drag images here</div>
+            <img id="testArtworkPreview" class="hidden" alt="Artwork preview">
+          </div>
+          <div class="test-gallery" id="testGallery"></div>
+          <div class="sub" id="testOrientationLabel"></div>
+          
+          <div class="config-row test-options-row">
+            <div style="flex: 2;">
+              <label for="testTemplateSelect">2. Choose matching mockup</label>
+              <select id="testTemplateSelect" disabled>
+                <option value="">Upload an image first</option>
+              </select>
+            </div>
+            <div style="flex: 1;">
+              <label for="testFitMode">Fit Mode</label>
+              <select id="testFitMode">
+                <option value="cover">Cover (Crop)</option>
+                <option value="contain">Contain (Fit)</option>
+                <option value="stretch">Stretch</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="engine-actions" style="margin-top: 25px;">
+            <button class="btn primary" id="testGenerateButton" disabled>Generate</button>
+          </div>
         </div>
-        <div class="sub" id="testOrientationLabel"></div>
-        
-        <label for="testTemplateSelect">2. Choose matching mockup</label>
-        <select id="testTemplateSelect" disabled>
-          <option value="">Upload an image first</option>
-        </select>
+
+        <div class="test-col-right test-result-area hidden" id="testResultArea">
+          <label>Result</label>
+          <div class="test-result-wrapper">
+            <img id="testResultImage" alt="Generated mockup">
+          </div>
+          <div class="test-result-actions">
+            <a id="testResultDownload" class="btn primary" download="mockup.png">Download Mockup</a>
+          </div>
+        </div>
       </div>
-      <div class="engine-actions">
-        <button class="btn primary" id="testGenerateButton" disabled>Generate</button>
-      </div>
-      <div class="test-result-area hidden" id="testResultArea">
-        <label>Result</label>
-        <img id="testResultImage" alt="Generated mockup">
-        <a id="testResultDownload" class="btn" download="mockup.png" style="margin-top: 10px; display: inline-block;">Download</a>
-      </div>
-    </aside>
+    </div>
   </div>
   <div class="toast" id="toast" aria-live="polite"></div>
   <script src="{{ url_for('static', filename='admin/admin.js') }}"></script>

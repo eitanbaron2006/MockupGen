@@ -59,6 +59,7 @@ def render_mockup():
     template_id = request.form.get("template_id", "").strip()
     product_type = request.form.get("product_type", "").strip()
     output_format = request.form.get("output_format", "png").strip().lower()
+    fit_mode = request.form.get("fit_mode", "").strip().lower() or None
     artwork = request.files.get("artwork")
 
     if mode not in {"simple", "psd", "ai"}:
@@ -89,6 +90,7 @@ def render_mockup():
                 output_format=output_format,
                 templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
                 output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
+                fit_mode=fit_mode,
             )
             return jsonify(result.as_response())
         if mode == "psd":

@@ -13,8 +13,8 @@
     selectedForBatch: new Set()
   };
   const testState = {
-    artworkFile: null,
-    orientation: null,
+    files: [],
+    activeIndex: -1,
     templates: []
   };
   const $ = (id) => document.getElementById(id);
@@ -704,66 +704,131 @@
   $("editEngine").onclick = openEngine;
   $("closeEngine").onclick = () => $("engineDrawer").classList.remove("open");
 
-  // Test Mockups Drawer Logic
-  $("openTestDrawer").onclick = () => $("testDrawer").classList.add("open");
-  $("closeTestDrawer").onclick = () => $("testDrawer").classList.remove("open");
+  // Test Mockups Modal Logic
+  $("openTestModal").onclick = () => $("testModal").classList.add("open");
+  $("closeTestModal").onclick = () => $("testModal").classList.remove("open");
+  $("testModal").onclick = (event) => {
+    if (event.target === $("testModal")) $("testModal").classList.remove("open");
+  };
   
   $("testUploadArea").onclick = () => $("testArtworkFile").click();
   $("testArtworkFile").onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    testState.artworkFile = file;
-    const url = URL.createObjectURL(file);
-    $("testArtworkPreview").src = url;
+    const newFiles = Array.from(e.target.files);
+    if (newFiles.length === 0) return;
+    
+    // Add new files to the list
+    testState.files = testState.files.concat(newFiles.map(file => ({
+      file,
+      url: URL.createObjectURL(file),
+      orientation: null
+    })));
+    
+    // Pre-calculate orientation for new files
+    testState.files.forEach(f => {
+      if (!f.orientation) {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width === img.height) f.orientation = "square";
+          else if (img.width > img.height) f.orientation = "landscape";
+          else f.orientation = "portrait";
+          
+          // If this is the active file and we just computed it, trigger select
+          if (testState.activeIndex !== -1 && testState.files[testState.activeIndex] === f) {
+            selectTestImage(testState.activeIndex);
+          }
+        };
+        img.src = f.url;
+      }
+    });
+
+    renderTestGallery();
+    
+    if (testState.activeIndex === -1) {
+      selectTestImage(0);
+    }
+  };
+
+  function renderTestGallery() {
+    const gallery = $("testGallery");
+    if (testState.files.length === 0) {
+      gallery.innerHTML = "";
+      return;
+    }
+    
+    gallery.innerHTML = testState.files.map((f, i) => `
+      <img src="${f.url}" class="test-gallery-item ${i === testState.activeIndex ? 'active' : ''}" data-index="${i}">
+    `).join('');
+    
+    gallery.querySelectorAll('.test-gallery-item').forEach(img => {
+      img.onclick = (e) => {
+        e.stopPropagation();
+        selectTestImage(Number(img.dataset.index));
+      };
+    });
+  }
+
+  async function selectTestImage(index) {
+    if (index < 0 || index >= testState.files.length) return;
+    testState.activeIndex = index;
+    const activeFile = testState.files[index];
+    
+    $("testArtworkPreview").src = activeFile.url;
     $("testArtworkPreview").classList.remove("hidden");
     $("testUploadPlaceholder").classList.add("hidden");
     
-    // Detect orientation
-    const img = new Image();
-    img.onload = async () => {
-      if (img.width === img.height) testState.orientation = "square";
-      else if (img.width > img.height) testState.orientation = "landscape";
-      else testState.orientation = "portrait";
+    renderTestGallery(); // Update active state class
+    
+    if (!activeFile.orientation) {
+      $("testOrientationLabel").textContent = "Detecting orientation...";
+      $("testTemplateSelect").innerHTML = `<option value="">Detecting orientation...</option>`;
+      $("testTemplateSelect").disabled = true;
+      $("testGenerateButton").disabled = true;
+      return; // Will be called again by the onload handler
+    }
+
+    $("testOrientationLabel").textContent = `Detected orientation: ${activeFile.orientation}`;
+    
+    // Fetch templates
+    try {
+      const payload = await api("/api/mockups/templates");
+      testState.templates = payload.filter(t => t.orientation === activeFile.orientation);
       
-      $("testOrientationLabel").textContent = `Detected orientation: ${testState.orientation}`;
-      
-      // Fetch templates
-      try {
-        const payload = await api("/api/mockups/templates");
-        testState.templates = payload.filter(t => t.orientation === testState.orientation);
-        
-        const select = $("testTemplateSelect");
-        select.innerHTML = "";
-        if (testState.templates.length === 0) {
-          select.innerHTML = `<option value="">No matching mockups found</option>`;
-          select.disabled = true;
-          $("testGenerateButton").disabled = true;
-        } else {
-          testState.templates.forEach(t => {
-            const opt = document.createElement("option");
-            opt.value = t.template_id;
-            opt.textContent = `${t.category || 'Uncategorized'} - ${t.template_id}`;
-            select.appendChild(opt);
-          });
-          select.disabled = false;
-          $("testGenerateButton").disabled = false;
-        }
-      } catch (err) {
-        toast("Failed to load templates");
+      const select = $("testTemplateSelect");
+      select.innerHTML = "";
+      if (testState.templates.length === 0) {
+        select.innerHTML = `<option value="">No matching mockups found</option>`;
+        select.disabled = true;
+        $("testGenerateButton").disabled = true;
+      } else {
+        testState.templates.forEach(t => {
+          const opt = document.createElement("option");
+          opt.value = t.template_id;
+          opt.textContent = `${t.name || t.template_id}`;
+          select.appendChild(opt);
+        });
+        select.disabled = false;
+        $("testGenerateButton").disabled = false;
       }
-    };
-    img.src = url;
-  };
+    } catch (err) {
+      toast("Failed to load templates");
+    }
+  }
 
   $("testGenerateButton").onclick = async () => {
-    if (!testState.artworkFile || !$("testTemplateSelect").value) return;
+    if (testState.activeIndex === -1 || !$("testTemplateSelect").value) return;
     $("testGenerateButton").disabled = true;
     $("testGenerateButton").textContent = "Generating...";
     
+    const activeFile = testState.files[testState.activeIndex];
     const formData = new FormData();
     formData.append("mode", "simple");
     formData.append("template_id", $("testTemplateSelect").value);
-    formData.append("artwork", testState.artworkFile);
+    formData.append("artwork", activeFile.file);
+    
+    const fitMode = $("testFitMode").value;
+    if (fitMode) {
+      formData.append("fit_mode", fitMode);
+    }
     
     try {
       const response = await fetch("/api/mockups/render", {

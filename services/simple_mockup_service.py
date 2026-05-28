@@ -219,6 +219,7 @@ def render_simple_mockup(
     output_format: str,
     templates_folder: Path,
     output_folder: Path,
+    fit_mode: str | None = None,
 ) -> RenderResult:
     if output_format.lower() != "png":
         raise RenderValidationError("Only png output format is currently supported")
@@ -234,10 +235,11 @@ def render_simple_mockup(
         raise InvalidTemplateError("Background must match canvas size")
 
     artwork = load_rgba(artwork_path)
+    final_fit_mode = fit_mode if fit_mode else str(manifest.get("fit_mode", "cover"))
     artwork_layer = fit_artwork(
         artwork,
         (area["width"], area["height"]),
-        str(manifest.get("fit_mode", "cover")),
+        final_fit_mode,
     )
     mask_name = manifest.get("mask")
     if mask_name:
