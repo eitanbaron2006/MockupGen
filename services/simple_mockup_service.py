@@ -143,12 +143,22 @@ def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
             _safe_asset_path(template_folder, preview_name)
         except InvalidTemplateError:
             continue
+        orientation = manifest.get("orientation")
+        if not orientation and "artwork_area" in manifest:
+            from services.catalog_service import orientation_for_size
+            orientation = orientation_for_size(
+                int(manifest["artwork_area"]["width"]),
+                int(manifest["artwork_area"]["height"])
+            )
+            
         templates.append(
             {
                 "template_id": manifest["template_id"],
                 "name": manifest["name"],
                 "preview_url": f"/templates/{template_folder.name}/{preview_name}",
                 "supported_modes": manifest["supported_modes"],
+                "orientation": orientation,
+                "product_type": manifest.get("product_type"),
             }
         )
     return templates

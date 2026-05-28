@@ -435,6 +435,22 @@ select, .text-input {
 .notice { color: var(--accent); font-size: 12px; min-height: 18px; margin: 0; }
 .login-secure { border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; line-height: 1.5; margin: 27px 0 0; padding-top: 19px; }
 
+/* Test Mockups Drawer */
+.test-drawer { width: 400px; right: -400px; }
+.drawer.open.test-drawer { right: 0; }
+.test-config { display: grid; gap: 15px; padding: 25px 22px; }
+.test-upload-area {
+  align-items: center; background: var(--page); border: 2px dashed var(--line); border-radius: 9px;
+  cursor: pointer; display: flex; flex-direction: column; justify-content: center;
+  min-height: 180px; overflow: hidden; padding: 10px; position: relative; text-align: center;
+}
+.test-upload-area:hover { border-color: var(--accent); }
+.hidden-input { display: none; }
+#testArtworkPreview { max-height: 100%; max-width: 100%; object-fit: contain; }
+#testUploadPlaceholder { color: var(--faint); font-family: var(--mono); font-size: 11px; letter-spacing: .03em; }
+.test-result-area { border-top: 1px solid var(--line); margin-top: 15px; padding: 25px 22px; text-align: center; }
+.test-result-area img { border: 1px solid var(--line); border-radius: 9px; max-width: 100%; margin-top: 10px; }
+
 @media (max-width: 1240px) {
   .app { grid-template-columns: 215px 1fr; }
   .content { grid-template-columns: 260px minmax(370px, 1fr) 272px; gap: 11px; padding: 12px; }

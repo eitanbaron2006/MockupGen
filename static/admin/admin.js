@@ -12,6 +12,11 @@
     queueFilter: "review",
     selectedForBatch: new Set()
   };
+  const testState = {
+    artworkFile: null,
+    orientation: null,
+    templates: []
+  };
   const $ = (id) => document.getElementById(id);
 
   async function api(url, options = {}) {
@@ -698,6 +703,87 @@
   $("engineButton").onclick = openEngine;
   $("editEngine").onclick = openEngine;
   $("closeEngine").onclick = () => $("engineDrawer").classList.remove("open");
+
+  // Test Mockups Drawer Logic
+  $("openTestDrawer").onclick = () => $("testDrawer").classList.add("open");
+  $("closeTestDrawer").onclick = () => $("testDrawer").classList.remove("open");
+  
+  $("testUploadArea").onclick = () => $("testArtworkFile").click();
+  $("testArtworkFile").onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    testState.artworkFile = file;
+    const url = URL.createObjectURL(file);
+    $("testArtworkPreview").src = url;
+    $("testArtworkPreview").classList.remove("hidden");
+    $("testUploadPlaceholder").classList.add("hidden");
+    
+    // Detect orientation
+    const img = new Image();
+    img.onload = async () => {
+      if (img.width === img.height) testState.orientation = "square";
+      else if (img.width > img.height) testState.orientation = "landscape";
+      else testState.orientation = "portrait";
+      
+      $("testOrientationLabel").textContent = `Detected orientation: ${testState.orientation}`;
+      
+      // Fetch templates
+      try {
+        const payload = await api("/api/mockups/templates");
+        testState.templates = payload.filter(t => t.orientation === testState.orientation);
+        
+        const select = $("testTemplateSelect");
+        select.innerHTML = "";
+        if (testState.templates.length === 0) {
+          select.innerHTML = `<option value="">No matching mockups found</option>`;
+          select.disabled = true;
+          $("testGenerateButton").disabled = true;
+        } else {
+          testState.templates.forEach(t => {
+            const opt = document.createElement("option");
+            opt.value = t.template_id;
+            opt.textContent = `${t.category || 'Uncategorized'} - ${t.template_id}`;
+            select.appendChild(opt);
+          });
+          select.disabled = false;
+          $("testGenerateButton").disabled = false;
+        }
+      } catch (err) {
+        toast("Failed to load templates");
+      }
+    };
+    img.src = url;
+  };
+
+  $("testGenerateButton").onclick = async () => {
+    if (!testState.artworkFile || !$("testTemplateSelect").value) return;
+    $("testGenerateButton").disabled = true;
+    $("testGenerateButton").textContent = "Generating...";
+    
+    const formData = new FormData();
+    formData.append("mode", "simple");
+    formData.append("template_id", $("testTemplateSelect").value);
+    formData.append("artwork", testState.artworkFile);
+    
+    try {
+      const response = await fetch("/api/mockups/render", {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrf },
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Generation failed");
+      
+      $("testResultImage").src = data.output_url;
+      $("testResultDownload").href = data.output_url;
+      $("testResultArea").classList.remove("hidden");
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      $("testGenerateButton").disabled = false;
+      $("testGenerateButton").textContent = "Generate";
+    }
+  };
   document.querySelectorAll(".provider-card").forEach((card) => {
     card.onclick = () => showProvider(card.dataset.provider);
   });
