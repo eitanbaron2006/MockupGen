@@ -62,6 +62,13 @@ def render_ai_mockup(
         raise RuntimeError("google-genai is not installed") from error
 
     try:
+        if model.startswith("imagen-"):
+            raise RuntimeError(
+                f"Imagen models (like {model}) are pure image generation/editing models that do not support multimodal image-to-image merging. "
+                "Please use Gemini models (such as gemini-3.1-flash-image or gemini-2.5-flash-image) which are designed to accept multiple input images "
+                "and merge them with correct perspective and shadows."
+            )
+
         client = genai.Client(
             vertexai=True,
             project=project_id,
