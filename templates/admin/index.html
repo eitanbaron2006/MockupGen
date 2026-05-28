@@ -372,15 +372,15 @@
           </div>
 
           <div class="test-options-row">
-            <div style="flex: 1; display: flex; gap: 15px;">
-              <div style="flex: 1;">
+            <div class="test-selectors-container">
+              <div class="test-select-wrapper">
                 <label for="testRenderMode">Render Engine</label>
                 <select id="testRenderMode">
                   <option value="simple" selected>Pillow (Classic)</option>
-                  <option value="ai">Vertex AI (Gemini 3.1 Flash Image)</option>
+                  <option value="ai">Vertex AI</option>
                 </select>
               </div>
-              <div style="flex: 1;" id="testFitModeContainer">
+              <div class="test-select-wrapper" id="testFitModeContainer">
                 <label for="testFitMode">Fit Mode</label>
                 <select id="testFitMode">
                   <option value="cover">Cover (Crop)</option>
@@ -388,7 +388,7 @@
                   <option value="stretch" selected>Stretch</option>
                 </select>
               </div>
-              <div style="flex: 1;" id="testAiModelContainer" class="hidden">
+              <div class="test-select-wrapper hidden" id="testAiModelContainer">
                 <label for="testAiModel">AI Model</label>
                 <select id="testAiModel">
                   <option value="gemini-3.1-flash-image" selected>gemini-3.1-flash-image</option>

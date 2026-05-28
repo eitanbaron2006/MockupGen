@@ -2203,30 +2203,81 @@ select,
   align-items: flex-end;
   gap: 16px;
   margin-top: auto;
-  padding-top: 0;
-  border-top: none;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
   flex-shrink: 0;
 }
 
-.test-options-row>div {
+.test-selectors-container {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 16px;
+  flex: 1;
+}
+
+.test-select-wrapper {
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
-.test-options-row label {
+.test-select-wrapper label {
   display: block;
   margin-bottom: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
 }
 
-.test-options-row select {
-  height: 39px;
+.test-select-wrapper select {
+  width: 100% !important;
+  height: 42px;
+  border: 1px solid var(--line);
+  background: var(--panel);
   border-radius: 8px;
-  width: 200px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+  cursor: pointer;
 }
 
-.test-options-row .btn {
-  height: 39px;
-  flex: 1;
+.test-select-wrapper select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#testGenerateButton {
+  height: 42px;
+  flex: 0 0 180px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+#testGenerateButton:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(237, 111, 92, 0.35);
+}
+
+#testGenerateButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+#testGenerateButton:disabled {
+  background: var(--line-soft);
+  color: var(--faint);
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .test-result-area {
