@@ -725,7 +725,7 @@ h2 {
   border-radius: 20px;
   padding: 4px 8px;
   box-shadow: 0 10px 30px -10px rgba(21, 20, 15, 0.2);
-  z-index: 100;
+  z-index: 15; /* Sits safely above workspace stage (z-index 10) but below side drawers */
   user-select: none;
   animation: slideInHUD 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
@@ -837,24 +837,38 @@ h2 {
 .selection-svg polygon {
   fill: rgba(237, 111, 92, 0.15);
   stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 4 4;
+  stroke-width: calc(2px / var(--zoom, 1));
+  stroke-dasharray: calc(4px / var(--zoom, 1)) calc(4px / var(--zoom, 1));
   cursor: move;
   pointer-events: auto;
 }
 
+/* Transparent target hitbox for easy manual corner grabs */
 .selection-svg .svg-handle {
-  fill: white;
-  stroke: var(--accent);
-  stroke-width: 2;
+  fill: transparent;
+  stroke: transparent;
   cursor: move;
   pointer-events: auto;
-  transition: r 0.15s;
+  transition: fill 0.15s ease, stroke 0.15s ease;
 }
 
 .selection-svg .svg-handle:hover {
-  r: 9;
-  fill: var(--accent-soft);
+  fill: rgba(237, 111, 92, 0.12);
+  stroke: rgba(237, 111, 92, 0.25);
+  stroke-width: calc(1px / var(--zoom, 1));
+}
+
+/* Custom Crosshair target lines for ultra-precise corner alignments */
+.selection-svg .cross-line {
+  stroke: var(--accent);
+  stroke-width: calc(1.5px / var(--zoom, 1));
+  pointer-events: none;
+  transition: stroke 0.15s ease, stroke-width 0.15s ease;
+}
+
+.handle-group:hover .cross-line {
+  stroke: var(--accent-hover);
+  stroke-width: calc(2.2px / var(--zoom, 1));
 }
 
 .selection-svg .svg-zone-tag {
@@ -1205,7 +1219,7 @@ select,
   display: none;
   inset: 0;
   position: fixed;
-  z-index: 20;
+  z-index: 200; /* Increased to ensure drawers overlay floating HUDs, sidebars, and panels */
 }
 
 .modal-backdrop.open {

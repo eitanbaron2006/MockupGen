@@ -76,10 +76,30 @@
               <img id="canvasImage" alt="Selected mockup image">
               <svg id="selectionSvg" class="selection-svg hidden">
                 <polygon id="selectionPolygon" points="" />
-                <circle class="svg-handle" id="handle_0" data-index="0" r="7" cx="0" cy="0"></circle>
-                <circle class="svg-handle" id="handle_1" data-index="1" r="7" cx="0" cy="0"></circle>
-                <circle class="svg-handle" id="handle_2" data-index="2" r="7" cx="0" cy="0"></circle>
-                <circle class="svg-handle" id="handle_3" data-index="3" r="7" cx="0" cy="0"></circle>
+                <!-- Corner 0 Handle (Crosshair) -->
+                <g class="handle-group" id="handle_group_0">
+                  <line class="cross-line h-line" id="h_line_0" pointer-events="none"></line>
+                  <line class="cross-line v-line" id="v_line_0" pointer-events="none"></line>
+                  <circle class="svg-handle handle-hitbox" id="handle_0" data-index="0" r="12" cx="0" cy="0"></circle>
+                </g>
+                <!-- Corner 1 Handle (Crosshair) -->
+                <g class="handle-group" id="handle_group_1">
+                  <line class="cross-line h-line" id="h_line_1" pointer-events="none"></line>
+                  <line class="cross-line v-line" id="v_line_1" pointer-events="none"></line>
+                  <circle class="svg-handle handle-hitbox" id="handle_1" data-index="1" r="12" cx="0" cy="0"></circle>
+                </g>
+                <!-- Corner 2 Handle (Crosshair) -->
+                <g class="handle-group" id="handle_group_2">
+                  <line class="cross-line h-line" id="h_line_2" pointer-events="none"></line>
+                  <line class="cross-line v-line" id="v_line_2" pointer-events="none"></line>
+                  <circle class="svg-handle handle-hitbox" id="handle_2" data-index="2" r="12" cx="0" cy="0"></circle>
+                </g>
+                <!-- Corner 3 Handle (Crosshair) -->
+                <g class="handle-group" id="handle_group_3">
+                  <line class="cross-line h-line" id="h_line_3" pointer-events="none"></line>
+                  <line class="cross-line v-line" id="v_line_3" pointer-events="none"></line>
+                  <circle class="svg-handle handle-hitbox" id="handle_3" data-index="3" r="12" cx="0" cy="0"></circle>
+                </g>
                 <text id="svgZoneTag" class="svg-zone-tag" x="0" y="0">Artwork area</text>
               </svg>
               <div id="analysisOverlay" class="analysis-overlay hidden">

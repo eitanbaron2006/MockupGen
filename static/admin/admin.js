@@ -371,6 +371,9 @@
     selectionSvg.style.width = `${rect.width}px`;
     selectionSvg.style.height = `${rect.height}px`;
     
+    // Inject the current zoom factor as a CSS custom property for non-scaling stroke effect calculations
+    selectionSvg.style.setProperty("--zoom", state.zoom);
+    
     // Map canvas coordinates to client display coordinates inside the rendered rect
     const pointsStr = corners.map(p => {
       const cx = (p.x / template.canvas_width) * rect.width;
@@ -380,7 +383,7 @@
     
     $("selectionPolygon").setAttribute("points", pointsStr);
     
-    // Position handles
+    // Position handles (crosshairs)
     corners.forEach((p, idx) => {
       const cx = (p.x / template.canvas_width) * rect.width;
       const cy = (p.y / template.canvas_height) * rect.height;
@@ -388,6 +391,24 @@
       if (handle) {
         handle.setAttribute("cx", cx);
         handle.setAttribute("cy", cy);
+        handle.setAttribute("r", 14 / state.zoom); // Dynamic interactive hitbox radius
+      }
+
+      // Draw crosshair lines centered at (cx, cy)
+      const hLine = $(`h_line_${idx}`);
+      const vLine = $(`v_line_${idx}`);
+      if (hLine && vLine) {
+        const halfSize = 12 / state.zoom; // Crosshair size on screen will always be 24px
+        
+        hLine.setAttribute("x1", cx - halfSize);
+        hLine.setAttribute("x2", cx + halfSize);
+        hLine.setAttribute("y1", cy);
+        hLine.setAttribute("y2", cy);
+
+        vLine.setAttribute("x1", cx);
+        vLine.setAttribute("x2", cx);
+        vLine.setAttribute("y1", cy - halfSize);
+        vLine.setAttribute("y2", cy + halfSize);
       }
     });
     
