@@ -77,14 +77,16 @@ def _inner_boundary_line(
 def refine_artwork_area(image_path: Path, proposed_area: dict[str, int]) -> dict[str, int]:
     """Snap an outer or approximate frame proposal to its visible inner opening."""
     with Image.open(image_path) as source:
-        image = source.convert("L")
-    width, height = image.size
+        # Apply a median filter to suppress fine high-frequency noise and textures (like wood grains)
+        # while preserving perfectly sharp structural borders for pixel-accurate snapping.
+        filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=3))
+    width, height = filtered.size
     x = int(proposed_area["x"])
     y = int(proposed_area["y"])
     area_width = int(proposed_area["width"])
     area_height = int(proposed_area["height"])
     radius = max(18, round(min(area_width, area_height) * 0.16))
-    edges = ImageOps.autocontrast(image.filter(ImageFilter.FIND_EDGES))
+    edges = ImageOps.autocontrast(filtered.filter(ImageFilter.FIND_EDGES))
     pixels = edges.load()
 
     vertical_start = max(0, y - radius // 2)

@@ -27,10 +27,24 @@ class ClassicDetectionProvider:
             "height": area_height,
         }
         refined_area = refine_artwork_area(background_path, initial_area)
+        
+        # Populate the 4 clockwise corner coordinates so the UI renders them immediately as perspective handles
+        corners = [
+            {"x": refined_area["x"], "y": refined_area["y"]},
+            {"x": refined_area["x"] + refined_area["width"], "y": refined_area["y"]},
+            {"x": refined_area["x"] + refined_area["width"], "y": refined_area["y"] + refined_area["height"]},
+            {"x": refined_area["x"], "y": refined_area["y"] + refined_area["height"]}
+        ]
+        
+        artwork_area = {
+            **refined_area,
+            "corners": corners
+        }
+        
         refined = refined_area != initial_area
         return validate_proposal(
             {
-                "artwork_area": refined_area,
+                "artwork_area": artwork_area,
                 "confidence": 0.7 if refined else 0.25,
                 "reason": (
                     "Visible inner or dashed artwork boundary detected locally; manual review required."

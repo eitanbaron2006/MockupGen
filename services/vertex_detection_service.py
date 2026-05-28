@@ -9,16 +9,18 @@ from services.frame_refinement_service import refine_artwork_area
 
 
 PROMPT = """Find the exact inner artwork replacement area in this product mockup.
-If the frame has perspective, skew, or is shot at an angle, detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
+You MUST detect the exact 4 inner corners of the frame opening (where the printable paper poster/artwork belongs) in clockwise order starting from the top-left corner:
 1. Top-Left corner [x, y]
 2. Top-Right corner [x, y]
 3. Bottom-Right corner [x, y]
 4. Bottom-Left corner [x, y]
-Return these 4 corners as an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (x represents horizontal percentage, y represents vertical percentage).
-A gray dashed placeholder rectangle (often around words like YOUR ARTWORK HERE or ART HERE) is the strongest signal.
 
-If the frame is a flat, non-rotated 2D rectangle, you can alternatively return the bounding box under the 'box_2d' key in the normalized format [y_min, x_min, y_max, x_max].
-Ignore overlapping decorations and shadows. Do not infer shape from the words themselves."""
+CRITICAL GUIDELINES FOR ABSOLUTE PRECISION:
+- ALWAYS return these 4 corners as an array under the 'corners' key in the normalized format 0-1000 (x is horizontal percentage, y is vertical percentage).
+- EXCLUDE the wood, metal, plastic, or plaster frame border entirely! The 4 corner points must sit exactly at the INNER corner boundary where the glass or poster meets the inner edge of the wood frame border.
+- If there is a white matte board (passe-partout) framing the picture inside the wood frame, detect the inner border of that matte board (the actual artwork opening), NOT the outer wood frame!
+- Ignore all glass reflections, overlapping shadows, plants, furniture, or other decorations.
+- A gray dashed placeholder line (often with text like 'YOUR DESIGN HERE', 'YOUR ARTWORK HERE', or 'ART HERE') is the absolute strongest signal. Detect the exact corners of this dashed rectangle."""
 
 
 def _safe_refinement(
@@ -94,10 +96,9 @@ class VertexDetectionProvider:
                             "required": ["x", "y"]
                         }
                     },
-                    "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
                     "label": {"type": "STRING"},
                 },
-                "required": ["label"],
+                "required": ["corners", "label"],
             },
         }
         resolutions = {
