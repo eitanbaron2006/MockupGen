@@ -1529,12 +1529,10 @@
         try {
           const cardElement = $(`batch-card-${templateId}`);
           const statusElement = $(`batch-status-${templateId}`);
-          const spinnerElement = $(`batch-spinner-${templateId}`);
           const imgElement = $(`batch-img-${templateId}`);
           const actionsElement = $(`batch-actions-${templateId}`);
-          const downloadElement = $(`batch-download-${templateId}`);
           
-          if (!cardElement || !statusElement || !imgElement) {
+          if (!cardElement || !statusElement || !imgElement || !actionsElement) {
             console.error(`UI elements not found for mockup: ${templateId}`);
             return;
           }
@@ -1543,6 +1541,24 @@
           const prevError = cardElement.querySelector('.batch-error-message');
           if (prevError) prevError.remove();
           cardElement.classList.remove("success", "error");
+          
+          // Hide actions during rendering
+          actionsElement.classList.add("hidden");
+          
+          // Restore / ensure spinner exists for retries
+          let spinnerElement = cardElement.querySelector('.batch-card-spinner');
+          if (!spinnerElement) {
+            spinnerElement = document.createElement("div");
+            spinnerElement.className = "batch-card-spinner";
+            spinnerElement.id = `batch-spinner-${templateId}`;
+            
+            const body = cardElement.querySelector('.batch-card-body');
+            if (body) {
+              // Hide image during retry
+              imgElement.classList.add("hidden");
+              body.appendChild(spinnerElement);
+            }
+          }
           
           statusElement.textContent = retryCount > 0 ? `Retrying (${retryCount}/2)...` : "Generating...";
           
@@ -1597,7 +1613,8 @@
             imgElement.src = data.output_url;
             imgElement.classList.remove("hidden");
             
-            downloadElement.href = data.output_url;
+            // Dynamically inject the Download button
+            actionsElement.innerHTML = `<a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="${data.output_url}">Download</a>`;
             actionsElement.classList.remove("hidden");
           } catch (err) {
             clearTimeout(timeoutId);
@@ -1621,6 +1638,16 @@
               ? "Request timed out (120s limit)" 
               : (err.message || "Rendering failed");
             imgElement.parentNode.appendChild(errorDiv);
+            
+            // Dynamically inject the Retry button
+            actionsElement.innerHTML = `<button class="btn accent batch-retry-btn" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px;" type="button">Retry</button>`;
+            actionsElement.classList.remove("hidden");
+            
+            const retryBtn = actionsElement.querySelector('.batch-retry-btn');
+            retryBtn.onclick = (e) => {
+              e.stopPropagation();
+              renderBatchItem(templateId);
+            };
           }
         } catch (globalErr) {
           console.error("Global promise exception in batch item:", globalErr);
@@ -1631,6 +1658,18 @@
             if (statusElement) statusElement.textContent = "Failed";
             const spinnerElement = $(`batch-spinner-${templateId}`);
             if (spinnerElement) spinnerElement.remove();
+            
+            const actionsElement = $(`batch-actions-${templateId}`);
+            if (actionsElement) {
+              actionsElement.innerHTML = `<button class="btn accent batch-retry-btn" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px;" type="button">Retry</button>`;
+              actionsElement.classList.remove("hidden");
+              
+              const retryBtn = actionsElement.querySelector('.batch-retry-btn');
+              retryBtn.onclick = (e) => {
+                e.stopPropagation();
+                renderBatchItem(templateId);
+              };
+            }
           }
         }
       };
