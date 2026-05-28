@@ -934,6 +934,7 @@
       testState.templates = payload.filter(t => t.orientation === activeFile.orientation);
       
       const select = $("testTemplateSelect");
+      const currentSelectedTemplateId = select.value;
       select.innerHTML = "";
       if (testState.templates.length === 0) {
         select.innerHTML = `<option value="">No matching mockups found</option>`;
@@ -951,13 +952,18 @@
           opt.textContent = `${t.name || t.template_id}`;
           select.appendChild(opt);
         });
-        select.value = testState.templates[0].template_id; // Auto-select first template
+        
+        // Preserve template selection if the newly filtered list contains the same template ID
+        const hasSameTemplate = currentSelectedTemplateId && testState.templates.some(t => t.template_id === currentSelectedTemplateId);
+        const activeTemplateId = hasSameTemplate ? currentSelectedTemplateId : testState.templates[0].template_id;
+        
+        select.value = activeTemplateId;
         select.disabled = false;
         $("testGenerateButton").disabled = false;
         
         // Render mockup preview
-        const firstT = testState.templates[0];
-        const previewUrl = firstT.preview_url || `/api/admin/templates/${firstT.template_id}/asset/preview.png`;
+        const activeT = testState.templates.find(t => t.template_id === activeTemplateId);
+        const previewUrl = activeT.preview_url || `/api/admin/templates/${activeT.template_id}/asset/preview.png`;
         $("testMockupPreview").src = previewUrl;
         $("testMockupPreview").classList.remove("hidden");
         $("testMockupPlaceholder").classList.add("hidden");
