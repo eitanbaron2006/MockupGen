@@ -696,6 +696,101 @@ h2 {
   min-height: 0;
   overflow: hidden;
   padding: 18px;
+  position: relative; /* Enabled for absolute HUD positioning */
+}
+
+/* Panning mode cursor adjustments */
+.canvas-workspace.panning-mode {
+  cursor: grab !important;
+}
+.canvas-workspace.panning-mode * {
+  cursor: grab !important;
+}
+.canvas-workspace.panning-mode:active,
+.canvas-workspace.panning-mode:active * {
+  cursor: grabbing !important;
+}
+
+/* Glassmorphism Floating Zoom HUD */
+.zoom-hud {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  background: rgba(247, 241, 222, 0.76); /* Glass background matching matching the page theme color var(--panel) */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(21, 20, 15, 0.12);
+  border-radius: 20px;
+  padding: 4px 8px;
+  box-shadow: 0 10px 30px -10px rgba(21, 20, 15, 0.2);
+  z-index: 100;
+  user-select: none;
+  animation: slideInHUD 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.zoom-hud:hover {
+  border-color: rgba(237, 111, 92, 0.3); /* Subtle accent color on hover */
+  box-shadow: 0 12px 35px -8px rgba(21, 20, 15, 0.25);
+}
+
+@keyframes slideInHUD {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.zoom-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 48px;
+  text-align: center;
+  letter-spacing: -0.02em;
+}
+
+.zoom-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.zoom-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  transform: scale(1.1);
+}
+
+.zoom-btn:active {
+  transform: scale(0.9);
+}
+
+.zoom-btn.reset-btn {
+  font-size: 12px;
+  margin-left: 4px;
+  border-left: 1px solid rgba(21, 20, 15, 0.08);
+  border-radius: 0;
+  border-top-right-radius: 50%;
+  border-bottom-right-radius: 50%;
+  padding-left: 6px;
+  width: 32px;
 }
 
 .workspace-empty {

@@ -10,7 +10,13 @@
     drag: null,
     pendingDelete: null,
     queueFilter: "review",
-    selectedForBatch: new Set()
+    selectedForBatch: new Set(),
+    zoom: 1,
+    pan: { x: 0, y: 0 },
+    isPanning: false,
+    panStart: { x: 0, y: 0 },
+    spacePressed: false,
+    lastSelectedTemplateId: null
   };
   const testState = {
     files: [],
@@ -232,8 +238,19 @@
       $("coordY").textContent = "-";
       $("coordW").textContent = "-";
       $("coordH").textContent = "-";
+      $("zoomHud").classList.add("hidden");
       return;
     }
+    
+    // Reset zoom and pan if template has changed
+    if (state.lastSelectedTemplateId !== template.template_id) {
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+      state.lastSelectedTemplateId = template.template_id;
+      applyZoomPan();
+    }
+    $("zoomHud").classList.remove("hidden");
+
     $("currentTitle").textContent = template.name;
     $("editorSub").textContent = template.status === "active"
       ? "Published template. Detection changes remain proposals until approved again."
@@ -307,6 +324,18 @@
       left: left,
       top: top
     };
+  }
+
+  function applyZoomPan() {
+    const stage = $("stage");
+    if (!stage) return;
+    stage.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+    stage.style.transformOrigin = "0 0";
+    
+    const textEl = $("zoomText");
+    if (textEl) {
+      textEl.textContent = `${Math.round(state.zoom * 100)}%`;
+    }
   }
 
   function drawSelection() {
@@ -420,8 +449,8 @@
     const image = $("canvasImage");
     const rect = getRenderedImageRect(image);
     if (!rect) return;
-    const dx = Math.round((event.clientX - state.drag.startX) * template.canvas_width / rect.width);
-    const dy = Math.round((event.clientY - state.drag.startY) * template.canvas_height / rect.height);
+    const dx = Math.round(((event.clientX - state.drag.startX) / state.zoom) * template.canvas_width / rect.width);
+    const dy = Math.round(((event.clientY - state.drag.startY) / state.zoom) * template.canvas_height / rect.height);
     
     let nextCorners = state.drag.corners.map(c => ({...c}));
     
@@ -819,6 +848,187 @@
     $("dropzone").classList.remove("drag");
   }));
   $("dropzone").addEventListener("drop", (event) => importFiles(event.dataTransfer.files));
+  // Spacebar key detection for panning mode
+  window.addEventListener("keydown", (event) => {
+    if (event.code === "Space" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "SELECT") {
+      event.preventDefault();
+      if (!state.spacePressed) {
+        state.spacePressed = true;
+        const ws = document.querySelector(".canvas-workspace");
+        if (ws) ws.classList.add("panning-mode");
+      }
+    }
+  });
+
+  window.addEventListener("keyup", (event) => {
+    if (event.code === "Space") {
+      state.spacePressed = false;
+      const ws = document.querySelector(".canvas-workspace");
+      if (ws && !state.isPanning) {
+        ws.classList.remove("panning-mode");
+      }
+    }
+  });
+
+  // Mouse scroll wheel zooming anchored to cursor
+  const workspace = document.querySelector(".canvas-workspace");
+  if (workspace) {
+    workspace.addEventListener("wheel", (event) => {
+      if (!state.selected) return;
+      event.preventDefault();
+
+      const rect = workspace.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      const zoomFactor = 1.15;
+      const oldZoom = state.zoom;
+      let newZoom = oldZoom;
+
+      if (event.deltaY < 0) {
+        newZoom = Math.min(10, oldZoom * zoomFactor);
+      } else {
+        newZoom = Math.max(1, oldZoom / zoomFactor);
+      }
+
+      if (newZoom === oldZoom) return;
+
+      const newPanX = mouseX - ((mouseX - state.pan.x) / oldZoom) * newZoom;
+      const newPanY = mouseY - ((mouseY - state.pan.y) / oldZoom) * newZoom;
+
+      state.zoom = newZoom;
+      state.pan = { x: newPanX, y: newPanY };
+
+      if (newZoom <= 1.02) {
+        state.zoom = 1;
+        state.pan = { x: 0, y: 0 };
+      }
+
+      applyZoomPan();
+    }, { passive: false });
+
+    // Pointer down event to begin panning
+    workspace.addEventListener("pointerdown", (event) => {
+      if (!state.selected) return;
+      
+      const isMiddleClick = event.button === 1;
+      const isSpacePan = event.button === 0 && state.spacePressed;
+      const isCanvasBgClick = event.button === 0 && (
+        event.target === workspace || 
+        event.target === $("stage") || 
+        event.target === $("canvasImage") ||
+        event.target === $("selectionSvg")
+      );
+
+      if (isMiddleClick || isSpacePan || isCanvasBgClick) {
+        event.preventDefault();
+        state.isPanning = true;
+        state.panStart = {
+          x: event.clientX - state.pan.x,
+          y: event.clientY - state.pan.y
+        };
+        workspace.classList.add("panning-mode");
+        workspace.setPointerCapture(event.pointerId);
+      }
+    });
+
+    // Pointer move event to pan
+    workspace.addEventListener("pointermove", (event) => {
+      if (!state.isPanning) return;
+      event.preventDefault();
+      
+      state.pan = {
+        x: event.clientX - state.panStart.x,
+        y: event.clientY - state.panStart.y
+      };
+      
+      // Bounding pan limits to prevent the image from disappearing completely
+      const maxOffset = 1800;
+      state.pan.x = Math.max(-maxOffset, Math.min(maxOffset, state.pan.x));
+      state.pan.y = Math.max(-maxOffset, Math.min(maxOffset, state.pan.y));
+      
+      applyZoomPan();
+    });
+
+    // Pointer up event to stop panning
+    const endPanning = (event) => {
+      if (state.isPanning) {
+        state.isPanning = false;
+        try {
+          workspace.releasePointerCapture(event.pointerId);
+        } catch (_err) {}
+        if (!state.spacePressed) {
+          workspace.classList.remove("panning-mode");
+        }
+      }
+    };
+
+    workspace.addEventListener("pointerup", endPanning);
+    workspace.addEventListener("pointercancel", endPanning);
+
+    // Double click empty workspace area to reset zoom & pan
+    workspace.addEventListener("dblclick", (event) => {
+      if (event.target === workspace || event.target === $("stage") || event.target === $("canvasImage")) {
+        resetZoomPan();
+      }
+    });
+  }
+
+  // Zoom HUD button controls
+  $("zoomOutBtn").onclick = (e) => {
+    e.stopPropagation();
+    zoomIncrementally(-1);
+  };
+  
+  $("zoomInBtn").onclick = (e) => {
+    e.stopPropagation();
+    zoomIncrementally(1);
+  };
+  
+  $("zoomResetBtn").onclick = (e) => {
+    e.stopPropagation();
+    resetZoomPan();
+  };
+
+  function zoomIncrementally(direction) {
+    const oldZoom = state.zoom;
+    const zoomFactor = 1.3;
+    let newZoom = oldZoom;
+    
+    if (direction > 0) {
+      newZoom = Math.min(10, oldZoom * zoomFactor);
+    } else {
+      newZoom = Math.max(1, oldZoom / zoomFactor);
+    }
+    
+    if (newZoom === oldZoom) return;
+    
+    const ws = document.querySelector(".canvas-workspace");
+    const wWidth = ws ? ws.clientWidth : 800;
+    const wHeight = ws ? ws.clientHeight : 600;
+    const centerX = wWidth / 2;
+    const centerY = wHeight / 2;
+    
+    const newPanX = centerX - ((centerX - state.pan.x) / oldZoom) * newZoom;
+    const newPanY = centerY - ((centerY - state.pan.y) / oldZoom) * newZoom;
+    
+    state.zoom = newZoom;
+    state.pan = { x: newPanX, y: newPanY };
+    
+    if (newZoom <= 1.02) {
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+    }
+    
+    applyZoomPan();
+  }
+
+  function resetZoomPan() {
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    applyZoomPan();
+  }
+
   $("selectionSvg").addEventListener("pointerdown", beginDrag);
   $("selectionSvg").addEventListener("pointermove", continueDrag);
   $("selectionSvg").addEventListener("pointerup", endDrag);
