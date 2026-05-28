@@ -128,6 +128,8 @@ def test_templates_list_returns_valid_manifests_only(tmp_path):
             "name": "Minimal wall frame mockup",
             "preview_url": "/templates/template_001/preview.png",
             "supported_modes": ["simple"],
+            "orientation": "square",
+            "product_type": None,
         }
     ]
 
@@ -287,3 +289,43 @@ def test_render_can_select_closest_template_by_product_type_and_artwork_ratio(tm
 
     assert response.status_code == 200
     assert response.get_json()["template_id"] == "portrait"
+
+
+def test_perspective_render_warps_quadrilateral(tmp_path):
+    client, folders = build_client(tmp_path)
+    template_folder = folders["TEMPLATES_FOLDER"] / "perspective_001"
+    template_folder.mkdir(parents=True)
+    manifest = {
+        "template_id": "perspective_001",
+        "name": "Perspective mockup",
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "artwork_area": {
+            "x": 2,
+            "y": 2,
+            "width": 6,
+            "height": 6,
+            "corners": [
+                {"x": 2, "y": 2},
+                {"x": 8, "y": 3},
+                {"x": 7, "y": 8},
+                {"x": 3, "y": 7}
+            ]
+        },
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    save_image(template_folder / "background.png", (10, 10), (200, 20, 20, 255))
+    save_image(template_folder / "preview.png", (10, 10), (200, 20, 20, 255))
+
+    response = post_render(client, template_id="perspective_001")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    generated_path = folders["OUTPUT_FOLDER"] / Path(payload["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((2, 2)) == (20, 220, 40, 255)
+        assert output.getpixel((0, 0)) == (200, 20, 20, 255)

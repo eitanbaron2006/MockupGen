@@ -104,16 +104,31 @@ def load_manifest(templates_folder: Path, template_id: str) -> tuple[Path, dict[
 
 def _validated_canvas_and_area(
     manifest: dict[str, Any],
-) -> tuple[tuple[int, int], dict[str, int]]:
+) -> tuple[tuple[int, int], dict[str, Any]]:
     try:
         canvas = (int(manifest["canvas_width"]), int(manifest["canvas_height"]))
         area_source = manifest["artwork_area"]
-        area = {
-            "x": int(area_source["x"]),
-            "y": int(area_source["y"]),
-            "width": int(area_source["width"]),
-            "height": int(area_source["height"]),
-        }
+        if "corners" in area_source:
+            corners = area_source["corners"]
+            normalized_corners = [{"x": int(p["x"]), "y": int(p["y"])} for p in corners]
+            xs = [p["x"] for p in normalized_corners]
+            ys = [p["y"] for p in normalized_corners]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            area = {
+                "x": min_x,
+                "y": min_y,
+                "width": max_x - min_x,
+                "height": max_y - min_y,
+                "corners": normalized_corners
+            }
+        else:
+            area = {
+                "x": int(area_source["x"]),
+                "y": int(area_source["y"]),
+                "width": int(area_source["width"]),
+                "height": int(area_source["height"]),
+            }
     except (KeyError, TypeError, ValueError) as error:
         raise InvalidTemplateError("Invalid canvas or artwork area in manifest") from error
 
@@ -246,8 +261,26 @@ def render_simple_mockup(
         mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
         artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))
 
-    artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-    artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
+    if "corners" in area:
+        from services.image_utils import get_perspective_coefficients
+        src_coords = [
+            (0.0, 0.0),
+            (float(area["width"]), 0.0),
+            (float(area["width"]), float(area["height"])),
+            (0.0, float(area["height"]))
+        ]
+        dst_coords = [(float(p["x"]), float(p["y"])) for p in area["corners"]]
+        coefficients = get_perspective_coefficients(src_coords, dst_coords)
+        artwork_canvas = artwork_layer.transform(
+            canvas_size,
+            Image.Transform.PERSPECTIVE,
+            coefficients,
+            Image.Resampling.BICUBIC
+        )
+    else:
+        artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+        artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
+
     composed = Image.alpha_composite(background, artwork_canvas)
     if foreground_path:
         foreground = load_rgba(foreground_path)

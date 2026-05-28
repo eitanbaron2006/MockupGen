@@ -274,28 +274,96 @@
   function drawSelection() {
     const template = state.selected;
     const image = $("canvasImage");
-    const selection = $("selection");
+    const selectionSvg = $("selectionSvg");
     if (!template || !template.artwork_area || !image.naturalWidth) {
-      selection.classList.add("hidden");
+      selectionSvg.classList.add("hidden");
       return;
     }
-    const area = template.artwork_area;
-    selection.style.left = `${area.x / template.canvas_width * image.clientWidth}px`;
-    selection.style.top = `${area.y / template.canvas_height * image.clientHeight}px`;
-    selection.style.width = `${area.width / template.canvas_width * image.clientWidth}px`;
-    selection.style.height = `${area.height / template.canvas_height * image.clientHeight}px`;
-    selection.classList.remove("hidden");
+    
+    // Ensure template.artwork_area has corners. If not, generate them on the fly!
+    if (!template.artwork_area.corners) {
+      const area = template.artwork_area;
+      template.artwork_area.corners = [
+        { x: area.x, y: area.y },
+        { x: area.x + area.width, y: area.y },
+        { x: area.x + area.width, y: area.y + area.height },
+        { x: area.x, y: area.y + area.height }
+      ];
+    }
+    
+    const corners = template.artwork_area.corners;
+    const clientWidth = image.clientWidth;
+    const clientHeight = image.clientHeight;
+    
+    // Map canvas coordinates to client display coordinates
+    const pointsStr = corners.map(p => {
+      const cx = (p.x / template.canvas_width) * clientWidth;
+      const cy = (p.y / template.canvas_height) * clientHeight;
+      return `${cx},${cy}`;
+    }).join(" ");
+    
+    $("selectionPolygon").setAttribute("points", pointsStr);
+    
+    // Position handles
+    corners.forEach((p, idx) => {
+      const cx = (p.x / template.canvas_width) * clientWidth;
+      const cy = (p.y / template.canvas_height) * clientHeight;
+      const handle = $(`handle_${idx}`);
+      if (handle) {
+        handle.setAttribute("cx", cx);
+        handle.setAttribute("cy", cy);
+      }
+    });
+    
+    // Position the text tag slightly above or near the first corner
+    if (corners.length > 0) {
+      const tX = (corners[0].x / template.canvas_width) * clientWidth;
+      const tY = (corners[0].y / template.canvas_height) * clientHeight - 10;
+      const tag = $("svgZoneTag");
+      if (tag) {
+        tag.setAttribute("x", tX);
+        tag.setAttribute("y", tY);
+      }
+    }
+    
+    selectionSvg.classList.remove("hidden");
   }
 
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
     event.preventDefault();
-    $("selection").setPointerCapture(event.pointerId);
+    
+    const target = event.target;
+    let handle = "move";
+    let index = -1;
+    
+    if (target.classList.contains("svg-handle")) {
+      handle = "corner";
+      index = Number(target.dataset.index);
+    } else if (target.id !== "selectionPolygon") {
+      // Don't drag if it's clicking outside
+      return;
+    }
+    
+    target.setPointerCapture(event.pointerId);
+    
+    // Ensure corners are populated
+    if (!state.selected.artwork_area.corners) {
+      const area = state.selected.artwork_area;
+      state.selected.artwork_area.corners = [
+        { x: area.x, y: area.y },
+        { x: area.x + area.width, y: area.y },
+        { x: area.x + area.width, y: area.y + area.height },
+        { x: area.x, y: area.y + area.height }
+      ];
+    }
+    
     state.drag = {
-      x: event.clientX,
-      y: event.clientY,
-      area: {...state.selected.artwork_area},
-      handle: event.target.dataset.handle || "move"
+      startX: event.clientX,
+      startY: event.clientY,
+      corners: state.selected.artwork_area.corners.map(c => ({...c})),
+      handle: handle,
+      cornerIndex: index
     };
   }
 
@@ -303,34 +371,54 @@
     if (!state.drag || !state.selected) return;
     const template = state.selected;
     const image = $("canvasImage");
-    const dx = Math.round((event.clientX - state.drag.x) * template.canvas_width / image.clientWidth);
-    const dy = Math.round((event.clientY - state.drag.y) * template.canvas_height / image.clientHeight);
-    const start = state.drag.area;
-    const minimum = 20;
-    let next = {...start};
+    const dx = Math.round((event.clientX - state.drag.startX) * template.canvas_width / image.clientWidth);
+    const dy = Math.round((event.clientY - state.drag.startY) * template.canvas_height / image.clientHeight);
+    
+    let nextCorners = state.drag.corners.map(c => ({...c}));
+    
     if (state.drag.handle === "move") {
-      next.x = Math.max(0, Math.min(template.canvas_width - start.width, start.x + dx));
-      next.y = Math.max(0, Math.min(template.canvas_height - start.height, start.y + dy));
-    } else {
-      if (state.drag.handle.includes("w")) {
-        next.x = Math.max(0, Math.min(start.x + start.width - minimum, start.x + dx));
-        next.width = start.width + start.x - next.x;
+      // Move all corners by dx, dy, ensuring they remain inside the canvas bounds
+      let canMove = true;
+      for (const p of nextCorners) {
+        const nx = p.x + dx;
+        const ny = p.y + dy;
+        if (nx < 0 || nx > template.canvas_width || ny < 0 || ny > template.canvas_height) {
+          canMove = false;
+          break;
+        }
       }
-      if (state.drag.handle.includes("e")) {
-        next.width = Math.max(minimum, Math.min(template.canvas_width - start.x, start.width + dx));
+      if (canMove) {
+        nextCorners.forEach(p => {
+          p.x += dx;
+          p.y += dy;
+        });
       }
-      if (state.drag.handle.includes("n")) {
-        next.y = Math.max(0, Math.min(start.y + start.height - minimum, start.y + dy));
-        next.height = start.height + start.y - next.y;
-      }
-      if (state.drag.handle.includes("s")) {
-        next.height = Math.max(minimum, Math.min(template.canvas_height - start.y, start.height + dy));
-      }
+    } else if (state.drag.handle === "corner") {
+      const idx = state.drag.cornerIndex;
+      const nx = Math.max(0, Math.min(template.canvas_width, state.drag.corners[idx].x + dx));
+      const ny = Math.max(0, Math.min(template.canvas_height, state.drag.corners[idx].y + dy));
+      nextCorners[idx].x = nx;
+      nextCorners[idx].y = ny;
     }
-    template.artwork_area = next;
+    
+    // Update active area and template details
+    template.artwork_area.corners = nextCorners;
+    
+    // Update bbox x, y, width, height for backward-compatible rendering/labels
+    const xs = nextCorners.map(c => c.x);
+    const ys = nextCorners.map(c => c.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    template.artwork_area.x = minX;
+    template.artwork_area.y = minY;
+    template.artwork_area.width = maxX - minX;
+    template.artwork_area.height = maxY - minY;
+    
     updateCoordinateLabels();
     drawSelection();
-    $("proposalState").textContent = "Adjusted locally. Save draft or approve to keep this rectangle.";
+    $("proposalState").textContent = "Adjusted locally. Save draft or approve to keep this perspective frame.";
   }
 
   function endDrag() {
@@ -681,10 +769,10 @@
     $("dropzone").classList.remove("drag");
   }));
   $("dropzone").addEventListener("drop", (event) => importFiles(event.dataTransfer.files));
-  $("selection").addEventListener("pointerdown", beginDrag);
-  $("selection").addEventListener("pointermove", continueDrag);
-  $("selection").addEventListener("pointerup", endDrag);
-  $("selection").addEventListener("pointercancel", endDrag);
+  $("selectionSvg").addEventListener("pointerdown", beginDrag);
+  $("selectionSvg").addEventListener("pointermove", continueDrag);
+  $("selectionSvg").addEventListener("pointerup", endDrag);
+  $("selectionSvg").addEventListener("pointercancel", endDrag);
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {
     try {

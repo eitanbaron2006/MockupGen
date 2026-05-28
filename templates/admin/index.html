@@ -74,13 +74,14 @@
             </div>
             <div id="stage" class="hidden">
               <img id="canvasImage" alt="Selected mockup image">
-              <div id="selection" class="hidden">
-                <div class="zone-tag">Artwork area</div>
-                <div class="handle nw" data-handle="nw"></div>
-                <div class="handle ne" data-handle="ne"></div>
-                <div class="handle sw" data-handle="sw"></div>
-                <div class="handle se" data-handle="se"></div>
-              </div>
+              <svg id="selectionSvg" class="selection-svg hidden">
+                <polygon id="selectionPolygon" points="" />
+                <circle class="svg-handle" id="handle_0" data-index="0" r="7" cx="0" cy="0"></circle>
+                <circle class="svg-handle" id="handle_1" data-index="1" r="7" cx="0" cy="0"></circle>
+                <circle class="svg-handle" id="handle_2" data-index="2" r="7" cx="0" cy="0"></circle>
+                <circle class="svg-handle" id="handle_3" data-index="3" r="7" cx="0" cy="0"></circle>
+                <text id="svgZoneTag" class="svg-zone-tag" x="0" y="0">Artwork area</text>
+              </svg>
               <div id="analysisOverlay" class="analysis-overlay hidden">
                 <span class="spinner"></span>
                 <strong id="analysisLabel">Detection is analyzing the frame</strong>

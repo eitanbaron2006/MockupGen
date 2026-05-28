@@ -29,13 +29,37 @@ def validate_proposal(
 ) -> DetectionProposal:
     area = payload.get("artwork_area", payload)
     try:
-        normalized = {
-            "x": int(area["x"]),
-            "y": int(area["y"]),
-            "width": int(area["width"]),
-            "height": int(area["height"]),
-        }
+        if "corners" in area:
+            corners = area["corners"]
+            if not isinstance(corners, list) or len(corners) != 4:
+                raise DetectionError("Quadrilateral corners must contain exactly 4 points")
+            normalized_corners = []
+            for p in corners:
+                normalized_corners.append({
+                    "x": int(p["x"]),
+                    "y": int(p["y"])
+                })
+            xs = [p["x"] for p in normalized_corners]
+            ys = [p["y"] for p in normalized_corners]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            normalized = {
+                "x": min_x,
+                "y": min_y,
+                "width": max_x - min_x,
+                "height": max_y - min_y,
+                "corners": normalized_corners
+            }
+        else:
+            normalized = {
+                "x": int(area["x"]),
+                "y": int(area["y"]),
+                "width": int(area["width"]),
+                "height": int(area["height"]),
+            }
     except (KeyError, TypeError, ValueError) as error:
+        if isinstance(error, DetectionError):
+            raise
         raise DetectionError("Detector did not return a valid artwork area") from error
     if (
         normalized["x"] < 0

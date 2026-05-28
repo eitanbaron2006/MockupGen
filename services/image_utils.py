@@ -75,3 +75,48 @@ def fit_artwork(
         layer.alpha_composite(contained, dest=offset)
         return layer
     raise ImageProcessingError(f"Unsupported fit mode: {fit_mode}")
+
+
+def get_perspective_coefficients(
+    src_coords: list[tuple[float, float]],
+    dst_coords: list[tuple[float, float]],
+) -> list[float]:
+    """
+    Calculate the perspective transform coefficients mapping dst_coords to src_coords.
+    Pillow's transform expects the mapping from the destination (output canvas) to the source (input artwork).
+    """
+    A = []
+    B = []
+    for i in range(4):
+        x, y = dst_coords[i]
+        u, v = src_coords[i]
+        A.append([x, y, 1, 0, 0, 0, -x * u, -y * u])
+        B.append(u)
+        A.append([0, 0, 0, x, y, 1, -x * v, -y * v])
+        B.append(v)
+    
+    n = 8
+    M = [A[i] + [B[i]] for i in range(n)]
+    for i in range(n):
+        # Pivot
+        pivot_row = i
+        for r in range(i + 1, n):
+            if abs(M[r][i]) > abs(M[pivot_row][i]):
+                pivot_row = r
+        if i != pivot_row:
+            M[i], M[pivot_row] = M[pivot_row], M[i]
+        
+        pivot = M[i][i]
+        if abs(pivot) < 1e-9:
+            raise ImageProcessingError("Collinear or invalid points for perspective transform")
+        
+        for j in range(i, n + 1):
+            M[i][j] /= pivot
+            
+        for r in range(n):
+            if r != i:
+                factor = M[r][i]
+                for j in range(i, n + 1):
+                    M[r][j] -= factor * M[i][j]
+                    
+    return [M[i][n] for i in range(n)]
