@@ -45,6 +45,8 @@ SETTINGS_KEYS = {
     "DETECTION_REFINEMENT",
     "LOCAL_DETECTION_URL",
     "LOCAL_DETECTION_MODEL",
+    "CLASSIC_BLUR_SIZE",
+    "CLASSIC_SEARCH_RADIUS",
 }
 def catalog() -> CatalogService:
     return current_app.extensions["catalog_service"]
@@ -273,15 +275,28 @@ def detect_admin_template(template_id: str):
     try:
         provider = build_provider(catalog().get_settings(), current_app.config)
         proposal = provider.detect(background)
-        preview = {
-            **template,
-            "artwork_area": proposal.artwork_area,
-            "orientation": orientation_for_size(
-                proposal.artwork_area["width"], proposal.artwork_area["height"]
-            ),
-            "detection_provider": proposal.provider,
-            "detection_confidence": proposal.confidence,
-        }
+        if template.get("status") == "draft":
+            preview = catalog().update_template(
+                template_id,
+                {
+                    "artwork_area": proposal.artwork_area,
+                    "orientation": orientation_for_size(
+                        proposal.artwork_area["width"], proposal.artwork_area["height"]
+                    ),
+                    "detection_provider": proposal.provider,
+                    "detection_confidence": proposal.confidence,
+                }
+            )
+        else:
+            preview = {
+                **template,
+                "artwork_area": proposal.artwork_area,
+                "orientation": orientation_for_size(
+                    proposal.artwork_area["width"], proposal.artwork_area["height"]
+                ),
+                "detection_provider": proposal.provider,
+                "detection_confidence": proposal.confidence,
+            }
     except DetectionError as error:
         return json_error(str(error), 422)
     return jsonify(

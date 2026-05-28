@@ -4,11 +4,15 @@ from PIL import Image
 
 from services.catalog_service import orientation_for_size
 from services.detection_service import DetectionProposal, validate_proposal
-from services.frame_refinement_service import refine_artwork_area
+from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
 
 
 class ClassicDetectionProvider:
     """Conservative offline fallback; review its proposed rectangle before activation."""
+
+    def __init__(self, blur_size: int = 3, search_radius: int = 20):
+        self.blur_size = blur_size
+        self.search_radius = search_radius
 
     def detect(self, background_path: Path) -> DetectionProposal:
         with Image.open(background_path) as image:
@@ -26,7 +30,7 @@ class ClassicDetectionProvider:
             "width": area_width,
             "height": area_height,
         }
-        refined_area = refine_artwork_area(background_path, initial_area)
+        refined_area = refine_artwork_area(background_path, initial_area, blur_size=self.blur_size)
         
         # Populate the 4 clockwise corner coordinates so the UI renders them immediately as perspective handles
         corners = [
@@ -35,6 +39,14 @@ class ClassicDetectionProvider:
             {"x": refined_area["x"] + refined_area["width"], "y": refined_area["y"] + refined_area["height"]},
             {"x": refined_area["x"], "y": refined_area["y"] + refined_area["height"]}
         ]
+        
+        # Refine corners for perspective quads
+        corners = refine_perspective_corners(
+            background_path, 
+            corners, 
+            search_radius=self.search_radius, 
+            blur_size=self.blur_size
+        )
         
         artwork_area = {
             **refined_area,

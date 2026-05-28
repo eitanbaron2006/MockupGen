@@ -313,7 +313,17 @@
             <div class="cost-meta">Pixel and contour scan. No AI model and no external cost.</div>
           </div>
         </div>
-        <div class="guide-note">Classic detection runs entirely in this backend without credentials. A gray dashed artwork rectangle is ideal because the local edge scan can snap directly to it, independently of AI.</div>
+        <div class="guide-note">Classic detection runs entirely in this backend without credentials. Adjust the parameters below if the automatic edge scan fails to snap to the correct boundaries.</div>
+        <div class="config-row">
+          <div>
+            <label for="classicBlurSize">Blur Size (Noise reduction)</label>
+            <input type="number" id="classicBlurSize" class="text-input" value="3" min="1" max="9" step="2">
+          </div>
+          <div>
+            <label for="classicSearchRadius">Search Radius (px)</label>
+            <input type="number" id="classicSearchRadius" class="text-input" value="20" min="5" max="100">
+          </div>
+        </div>
       </section>
       <div class="engine-actions">
         <button class="btn" id="testEngine">Test connection</button>

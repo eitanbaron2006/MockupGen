@@ -132,7 +132,7 @@ def _global_frame_detect(source_image: Image.Image) -> dict[str, int] | None:
     return None
 
 
-def refine_artwork_area(image_path: Path, proposed_area: dict[str, int]) -> dict[str, int]:
+def refine_artwork_area(image_path: Path, proposed_area: dict[str, int], blur_size: int = 3) -> dict[str, int]:
     """Snap an outer or approximate frame proposal to its visible inner opening."""
     with Image.open(image_path) as source:
         # Try global coarse frame detection first to handle off-center frames beautifully!
@@ -142,7 +142,7 @@ def refine_artwork_area(image_path: Path, proposed_area: dict[str, int]) -> dict
             
         # Apply a median filter to suppress fine high-frequency noise and textures (like wood grains)
         # while preserving perfectly sharp structural borders for pixel-accurate snapping.
-        filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=3))
+        filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=blur_size))
     width, height = filtered.size
     x = int(proposed_area["x"])
     y = int(proposed_area["y"])
@@ -302,12 +302,13 @@ def _inner_strongest_line(
 def refine_perspective_corners(
     image_path: Path,
     corners: list[dict[str, int]],
-    search_radius: int = 10
+    search_radius: int = 10,
+    blur_size: int = 3
 ) -> list[dict[str, int]]:
     """Refine each of the 4 perspective corners locally using classic edge detection."""
     try:
         with Image.open(image_path) as source:
-            filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=3))
+            filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=blur_size))
             
         width, height = filtered.size
         edges = ImageOps.autocontrast(filtered.filter(ImageFilter.FIND_EDGES))

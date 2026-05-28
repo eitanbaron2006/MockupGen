@@ -5,10 +5,28 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 280,
-    "y": 286,
-    "width": 698,
-    "height": 515
+    "x": 286,
+    "y": 293,
+    "width": 683,
+    "height": 500,
+    "corners": [
+      {
+        "x": 286,
+        "y": 293
+      },
+      {
+        "x": 969,
+        "y": 294
+      },
+      {
+        "x": 966,
+        "y": 793
+      },
+      {
+        "x": 293,
+        "y": 793
+      }
+    ]
   },
   "fit_mode": "cover",
   "orientation": "landscape",

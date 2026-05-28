@@ -111,4 +111,7 @@ def build_provider(settings: dict[str, str], config: dict[str, Any]) -> Detectio
         )
     from services.classic_detection_service import ClassicDetectionProvider
 
-    return ClassicDetectionProvider()
+    return ClassicDetectionProvider(
+        blur_size=int(settings.get("CLASSIC_BLUR_SIZE", config.get("CLASSIC_BLUR_SIZE", 3))),
+        search_radius=int(settings.get("CLASSIC_SEARCH_RADIUS", config.get("CLASSIC_SEARCH_RADIUS", 20))),
+    )

@@ -82,6 +82,7 @@
     $("breadcrumb").textContent = state.selectedCategory ? state.selectedCategory.name : "Select category";
     document.querySelectorAll(".category").forEach((button) => {
       button.onclick = async () => {
+        autoSaveCurrent();
         state.selectedCategory = state.categories.find((category) => category.id === Number(button.dataset.category));
         renderCategories();
         await loadTemplates();
@@ -135,6 +136,7 @@
     `).join("") || '<div class="empty">No templates match this filter.</div>';
     document.querySelectorAll(".queue-select").forEach((button) => {
       button.onclick = () => {
+        autoSaveCurrent();
         state.selected = state.templates.find((template) => template.template_id === button.dataset.template);
         renderQueue();
         renderEditor();
@@ -575,6 +577,40 @@
     return state.selected;
   }
 
+  async function persistTemplateState(template) {
+    if (!template || !template.artwork_area || state.busy) return;
+    try {
+      const payload = await api(`/api/admin/templates/${template.template_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: template.name,
+          category_id: template.category_id,
+          artwork_area: template.artwork_area,
+          fit_mode: template.fit_mode
+        })
+      });
+      const idx = state.templates.findIndex(t => t.template_id === template.template_id);
+      if (idx !== -1) {
+        state.templates[idx] = payload.template;
+      }
+    } catch (e) {
+      console.error("Auto-save failed:", e);
+    }
+  }
+
+  function autoSaveCurrent() {
+    if (state.selected && !state.busy) {
+      const nameInput = $("templateName");
+      const catSelect = $("categorySelect");
+      const fitModeSelect = $("fitMode");
+      if (nameInput) state.selected.name = nameInput.value;
+      if (catSelect) state.selected.category_id = Number(catSelect.value);
+      if (fitModeSelect) state.selected.fit_mode = fitModeSelect.value;
+      persistTemplateState(state.selected);
+    }
+  }
+
+
   async function approveTemplate() {
     if (!state.selected) return;
     try {
@@ -760,8 +796,9 @@
     await loadVertexModels(state.settings.VERTEX_MODEL || "gemini-2.5-flash");
     $("vertexLocation").value = state.settings.VERTEX_LOCATION || "global";
     $("vertexResolution").value = state.settings.VERTEX_MEDIA_RESOLUTION || "high";
-    $("vertexAuth").value = state.settings.VERTEX_AUTH_MODE || "adc";
     $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
+    $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
+    $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
     $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
     await loadLocalModels(false);
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
@@ -780,6 +817,8 @@
           VERTEX_MEDIA_RESOLUTION: $("vertexResolution").value,
           VERTEX_AUTH_MODE: $("vertexAuth").value,
           DETECTION_REFINEMENT: $("refinementMode").value,
+          CLASSIC_BLUR_SIZE: $("classicBlurSize").value,
+          CLASSIC_SEARCH_RADIUS: $("classicSearchRadius").value,
           LOCAL_DETECTION_URL: $("localUrl").value,
           LOCAL_DETECTION_MODEL: $("localModel").value
         })
@@ -1399,6 +1438,111 @@
     window.location.href = "/admin/login";
   };
   window.addEventListener("resize", drawSelection);
+
+  // --- Zoom and Pan Logic ---
+  const stageWorkspace = document.querySelector('.canvas-workspace');
+  if (stageWorkspace) {
+    stageWorkspace.addEventListener('wheel', (e) => {
+      if (!state.selected) return;
+      e.preventDefault();
+      
+      const zoomSensitivity = 0.001;
+      const oldZoom = state.zoom;
+      
+      // Calculate new zoom
+      let newZoom = state.zoom - e.deltaY * zoomSensitivity;
+      newZoom = Math.max(0.1, Math.min(newZoom, 5)); // Clamp zoom between 10% and 500%
+      
+      if (newZoom === oldZoom) return;
+      
+      // Calculate mouse position relative to stage origin
+      const stage = $("stage");
+      const stageRect = stage.getBoundingClientRect();
+      
+      // Pointer position inside the stage's raw coordinate space
+      const pointerX = (e.clientX - stageRect.left) / oldZoom;
+      const pointerY = (e.clientY - stageRect.top) / oldZoom;
+      
+      // Adjust pan to keep the point under the mouse stable
+      state.pan.x -= pointerX * (newZoom - oldZoom);
+      state.pan.y -= pointerY * (newZoom - oldZoom);
+      state.zoom = newZoom;
+      
+      applyZoomPan();
+      drawSelection(); // to update stroke widths and handle sizes
+    }, { passive: false });
+
+    // Panning with mouse drag (Middle click or Space+Left click)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        state.spacePressed = true;
+        if (state.selected) stageWorkspace.classList.add('panning-mode');
+        e.preventDefault();
+      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') {
+        state.spacePressed = false;
+        stageWorkspace.classList.remove('panning-mode');
+      }
+    });
+
+    stageWorkspace.addEventListener('mousedown', (e) => {
+      if (!state.selected) return;
+      // Allow panning if middle button clicked, or space is held
+      if (e.button === 1 || (e.button === 0 && state.spacePressed)) {
+        e.preventDefault();
+        state.isPanning = true;
+        state.panStart = { x: e.clientX, y: e.clientY };
+        stageWorkspace.classList.add('panning-mode');
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (state.isPanning) {
+        const dx = e.clientX - state.panStart.x;
+        const dy = e.clientY - state.panStart.y;
+        state.pan.x += dx;
+        state.pan.y += dy;
+        state.panStart = { x: e.clientX, y: e.clientY };
+        applyZoomPan();
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (state.isPanning) {
+        state.isPanning = false;
+        if (!state.spacePressed) {
+          stageWorkspace.classList.remove('panning-mode');
+        }
+      }
+    });
+  }
+
+  // Zoom HUD Buttons
+  if ($("zoomInBtn")) {
+    $("zoomInBtn").onclick = () => {
+      state.zoom = Math.min(state.zoom + 0.25, 5);
+      applyZoomPan();
+      drawSelection();
+    };
+  }
+  if ($("zoomOutBtn")) {
+    $("zoomOutBtn").onclick = () => {
+      state.zoom = Math.max(state.zoom - 0.25, 0.1);
+      applyZoomPan();
+      drawSelection();
+    };
+  }
+  if ($("zoomResetBtn")) {
+    $("zoomResetBtn").onclick = () => {
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+      applyZoomPan();
+      drawSelection();
+    };
+  }
 
   (async () => {
     try {

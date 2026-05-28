@@ -398,3 +398,39 @@ def test_ai_detection_is_a_preview_until_admin_saves_or_approves(
     assert detection.status_code == 200
     assert detection.get_json()["template"]["artwork_area"] == proposed_area
     assert stored["artwork_area"] == approved_area
+
+
+def test_draft_ai_detection_is_saved_immediately(tmp_path: Path, monkeypatch):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    template_id = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]["template_id"]
+    proposed_area = {"x": 120, "y": 130, "width": 230, "height": 330}
+
+    class ProposedProvider:
+        def detect(self, _background):
+            return DetectionProposal(
+                artwork_area=proposed_area,
+                confidence=0.93,
+                reason="detected proposal",
+                provider="vertex",
+            )
+
+    monkeypatch.setattr("routes.admin_routes.build_provider", lambda *_args: ProposedProvider())
+
+    detection = client.post(f"/api/admin/templates/{template_id}/detect", headers=headers)
+    stored = client.get("/api/admin/templates?product_type=wall-art").get_json()["templates"][0]
+
+    assert detection.status_code == 200
+    assert detection.get_json()["template"]["artwork_area"] == proposed_area
+    assert stored["artwork_area"] == proposed_area
+

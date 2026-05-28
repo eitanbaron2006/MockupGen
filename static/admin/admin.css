@@ -528,9 +528,15 @@ h2 {
 }
 
 .queue-select:disabled,
-.queue-delete:disabled {
+.queue-delete:disabled,
+.queue-checkbox:disabled {
   cursor: wait;
   opacity: .55;
+}
+
+.queue-item:has(button:disabled) {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .thumb {
@@ -725,7 +731,7 @@ h2 {
   border-radius: 20px;
   padding: 4px 8px;
   box-shadow: 0 10px 30px -10px rgba(21, 20, 15, 0.2);
-  z-index: 15; /* Sits safely above workspace stage (z-index 10) but below side drawers */
+  z-index: 5; /* Adjusted to prevent overlap with drawers (which are 10+) */
   user-select: none;
   animation: slideInHUD 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
@@ -853,9 +859,16 @@ h2 {
 }
 
 .selection-svg .svg-handle:hover {
-  fill: rgba(237, 111, 92, 0.12);
-  stroke: rgba(237, 111, 92, 0.25);
-  stroke-width: calc(1px / var(--zoom, 1));
+  fill: transparent;
+  cursor: grab;
+}
+
+.svg-handle:hover {
+  r: calc(18px / var(--zoom, 1));
+}
+
+.svg-handle:active {
+  cursor: grabbing;
 }
 
 /* Custom Crosshair target lines for ultra-precise corner alignments */
