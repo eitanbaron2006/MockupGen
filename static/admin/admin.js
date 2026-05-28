@@ -21,7 +21,8 @@
   const testState = {
     files: [],
     activeIndex: -1,
-    templates: []
+    templates: [],
+    selectedTemplates: new Set()
   };
   const $ = (id) => document.getElementById(id);
 
@@ -1237,6 +1238,7 @@
     if (testState.files.length === 0) {
       testState.activeIndex = -1;
       testState.templates = [];
+      testState.selectedTemplates.clear();
       $("testArtworkPreview").src = "";
       $("testArtworkPreview").classList.add("hidden");
       $("testUploadPlaceholder").classList.remove("hidden");
@@ -1245,6 +1247,7 @@
       $("testTemplateSelect").innerHTML = `<option value="">Upload an image first</option>`;
       $("testTemplateSelect").disabled = true;
       $("testGenerateButton").disabled = true;
+      $("testGenerateButton").textContent = "Generate";
       
       // Reset mockup preview
       $("testMockupPreview").src = "";
@@ -1252,6 +1255,8 @@
       $("testMockupPlaceholder").classList.remove("hidden");
       
       resetTestResult();
+      $("testBatchResults").classList.add("hidden");
+      $("testBatchResults").innerHTML = "";
     } else {
       if (testState.activeIndex === index) {
         const nextActive = Math.max(0, index - 1);
@@ -1270,42 +1275,72 @@
       return;
     }
     
-    const selectValue = $("testTemplateSelect").value;
     gallery.innerHTML = testState.templates.map((t) => {
       const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
-      const isActive = t.template_id === selectValue;
+      const isSelected = testState.selectedTemplates.has(t.template_id);
       return `
-        <img src="${previewUrl}" class="test-mockup-card ${isActive ? 'active' : ''}" data-id="${t.template_id}" title="${escapeHtml(t.name)}" alt="${escapeHtml(t.name)}">
+        <div class="test-mockup-card-wrapper ${isSelected ? 'selected' : ''}" data-id="${t.template_id}" title="${escapeHtml(t.name)}">
+          <img src="${previewUrl}" class="test-mockup-card-img" alt="${escapeHtml(t.name)}">
+          <div class="test-mockup-card-checkbox">
+            ${isSelected ? '&#10004;' : ''}
+          </div>
+          <div class="test-mockup-card-title">${escapeHtml(t.name)}</div>
+        </div>
       `;
     }).join('');
     
-    gallery.querySelectorAll('.test-mockup-card').forEach(img => {
-      img.onclick = (e) => {
+    gallery.querySelectorAll('.test-mockup-card-wrapper').forEach(card => {
+      card.onclick = (e) => {
         e.stopPropagation();
-        selectMockupTemplate(img.dataset.id);
+        toggleMockupSelection(card.dataset.id);
       };
     });
   }
 
-  function selectMockupTemplate(templateId) {
-    const select = $("testTemplateSelect");
-    select.value = templateId;
-    
+  function toggleMockupSelection(templateId) {
+    if (testState.selectedTemplates.has(templateId)) {
+      testState.selectedTemplates.delete(templateId);
+    } else {
+      testState.selectedTemplates.add(templateId);
+    }
+
     const activeFile = testState.files[testState.activeIndex];
-    if (activeFile && activeFile.orientation && templateId) {
-      $("testGenerateButton").disabled = false;
+    const hasSelection = testState.selectedTemplates.size > 0;
+    $("testGenerateButton").disabled = !activeFile || !activeFile.orientation || !hasSelection;
+
+    // Update generate button text based on selection count
+    if (testState.selectedTemplates.size > 1) {
+      $("testGenerateButton").textContent = `Generate (${testState.selectedTemplates.size} mockups)`;
+    } else {
+      $("testGenerateButton").textContent = "Generate";
     }
-    
-    // Render mockup preview
-    const t = testState.templates.find(x => x.template_id === templateId);
-    if (t) {
-      const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
-      $("testMockupPreview").src = previewUrl;
-      $("testMockupPreview").classList.remove("hidden");
-      $("testMockupPlaceholder").classList.add("hidden");
+
+    // Synchronize select element and active mockup preview
+    const select = $("testTemplateSelect");
+    if (hasSelection) {
+      const firstId = Array.from(testState.selectedTemplates)[0];
+      select.value = firstId;
+
+      const t = testState.templates.find(x => x.template_id === templateId);
+      if (t && testState.selectedTemplates.has(templateId)) {
+        const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
+        $("testMockupPreview").src = previewUrl;
+        $("testMockupPreview").classList.remove("hidden");
+        $("testMockupPlaceholder").classList.add("hidden");
+      }
+    } else {
+      select.value = "";
+      $("testMockupPreview").src = "";
+      $("testMockupPreview").classList.add("hidden");
+      $("testMockupPlaceholder").classList.remove("hidden");
     }
-    
+
     renderMockupGallery();
+  }
+
+  function selectMockupTemplate(templateId) {
+    // Legacy support: redirects to toggle selection
+    toggleMockupSelection(templateId);
   }
 
   async function selectTestImage(index) {
@@ -1319,18 +1354,22 @@
     
     renderTestGallery(); // Update active state class
     resetTestResult();   // Switch active image resets result state
+    $("testBatchResults").classList.add("hidden");
+    $("testBatchResults").innerHTML = "";
     
     if (!activeFile.orientation) {
       $("testOrientationLabel").textContent = "Detecting orientation...";
       $("testTemplateSelect").innerHTML = `<option value="">Detecting orientation...</option>`;
       $("testTemplateSelect").disabled = true;
       $("testGenerateButton").disabled = true;
+      $("testGenerateButton").textContent = "Generate";
       $("testMockupGallery").innerHTML = `<div class="gallery-empty">Detecting orientation...</div>`;
       
       // Reset mockup preview
       $("testMockupPreview").src = "";
       $("testMockupPreview").classList.add("hidden");
       $("testMockupPlaceholder").classList.remove("hidden");
+      testState.selectedTemplates.clear();
       return; // Will be called again by the onload handler
     }
 
@@ -1348,6 +1387,8 @@
         select.innerHTML = `<option value="">No matching mockups found</option>`;
         select.disabled = true;
         $("testGenerateButton").disabled = true;
+        $("testGenerateButton").textContent = "Generate";
+        testState.selectedTemplates.clear();
         
         // Reset mockup preview
         $("testMockupPreview").src = "";
@@ -1365,9 +1406,13 @@
         const hasSameTemplate = currentSelectedTemplateId && testState.templates.some(t => t.template_id === currentSelectedTemplateId);
         const activeTemplateId = hasSameTemplate ? currentSelectedTemplateId : testState.templates[0].template_id;
         
+        testState.selectedTemplates.clear();
+        testState.selectedTemplates.add(activeTemplateId);
+
         select.value = activeTemplateId;
         select.disabled = false;
         $("testGenerateButton").disabled = false;
+        $("testGenerateButton").textContent = "Generate";
         
         // Render mockup preview
         const activeT = testState.templates.find(t => t.template_id === activeTemplateId);
@@ -1383,44 +1428,151 @@
   }
 
   $("testGenerateButton").onclick = async () => {
-    if (testState.activeIndex === -1 || !$("testTemplateSelect").value) return;
-    $("testGenerateButton").disabled = true;
-    $("testGenerateButton").textContent = "Generating...";
+    if (testState.activeIndex === -1 || testState.selectedTemplates.size === 0) return;
     
     const activeFile = testState.files[testState.activeIndex];
-    const formData = new FormData();
     const renderMode = $("testRenderMode").value;
-    formData.append("mode", renderMode);
-    formData.append("template_id", $("testTemplateSelect").value);
-    formData.append("artwork", activeFile.file);
+    const aiModel = $("testAiModel").value;
+    const fitMode = $("testFitMode").value;
+    const selectedIds = Array.from(testState.selectedTemplates);
     
-    if (renderMode === "simple") {
-      const fitMode = $("testFitMode").value;
-      if (fitMode) {
+    // Single Mockup Generation Workflow
+    if (selectedIds.length === 1) {
+      const templateId = selectedIds[0];
+      $("testGenerateButton").disabled = true;
+      $("testGenerateButton").textContent = "Generating...";
+      
+      const formData = new FormData();
+      formData.append("mode", renderMode);
+      formData.append("template_id", templateId);
+      formData.append("artwork", activeFile.file);
+      
+      if (renderMode === "simple" && fitMode) {
         formData.append("fit_mode", fitMode);
+      } else if (renderMode === "ai" && aiModel) {
+        formData.append("model", aiModel);
       }
-    }
-    
-    try {
-      const response = await fetch("/api/mockups/render", {
-        method: "POST",
-        headers: { "X-CSRF-Token": csrf },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Generation failed");
       
-      $("testResultImage").src = data.output_url;
-      $("testResultDownload").href = data.output_url;
+      try {
+        const response = await fetch("/api/mockups/render", {
+          method: "POST",
+          headers: { "X-CSRF-Token": csrf },
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Generation failed");
+        
+        $("testResultImage").src = data.output_url;
+        $("testResultDownload").href = data.output_url;
+        
+        // Switch view to single result
+        $("testBatchResults").classList.add("hidden");
+        $("testResultPlaceholder").classList.add("hidden");
+        $("testResultWrapper").classList.remove("hidden");
+        $("testResultActions").classList.remove("hidden");
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        $("testGenerateButton").disabled = false;
+        $("testGenerateButton").textContent = "Generate";
+      }
+    } 
+    // Multi-Mockup Batch Generation Workflow
+    else {
+      $("testGenerateButton").disabled = true;
+      $("testGenerateButton").textContent = "Generating batch...";
       
+      // Hide single preview, show batch container
       $("testResultPlaceholder").classList.add("hidden");
-      $("testResultWrapper").classList.remove("hidden");
-      $("testResultActions").classList.remove("hidden");
-    } catch (err) {
-      toast(err.message);
-    } finally {
+      $("testResultWrapper").classList.add("hidden");
+      $("testResultActions").classList.add("hidden");
+      
+      const batchContainer = $("testBatchResults");
+      batchContainer.classList.remove("hidden");
+      
+      // Populate placeholder loader cards for each selected mockup
+      batchContainer.innerHTML = selectedIds.map(templateId => {
+        const t = testState.templates.find(x => x.template_id === templateId);
+        const name = t ? (t.name || templateId) : templateId;
+        return `
+          <div class="batch-result-card" id="batch-card-${templateId}">
+            <div class="batch-card-header">
+              <span class="batch-card-title" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+              <span class="batch-card-status" id="batch-status-${templateId}">Pending...</span>
+            </div>
+            <div class="batch-card-body">
+              <div class="batch-card-spinner" id="batch-spinner-${templateId}"></div>
+              <img class="batch-card-img hidden" id="batch-img-${templateId}" alt="${escapeHtml(name)}">
+            </div>
+            <div class="batch-card-actions hidden" id="batch-actions-${templateId}">
+              <a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="#">Download</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      // Trigger all rendering promises concurrently
+      const promises = selectedIds.map(async (templateId) => {
+        const cardElement = $(`batch-card-${templateId}`);
+        const statusElement = $(`batch-status-${templateId}`);
+        const spinnerElement = $(`batch-spinner-${templateId}`);
+        const imgElement = $(`batch-img-${templateId}`);
+        const actionsElement = $(`batch-actions-${templateId}`);
+        const downloadElement = $(`batch-download-${templateId}`);
+        
+        statusElement.textContent = "Generating...";
+        
+        const formData = new FormData();
+        formData.append("mode", renderMode);
+        formData.append("template_id", templateId);
+        formData.append("artwork", activeFile.file);
+        
+        if (renderMode === "simple" && fitMode) {
+          formData.append("fit_mode", fitMode);
+        } else if (renderMode === "ai" && aiModel) {
+          formData.append("model", aiModel);
+        }
+        
+        try {
+          const response = await fetch("/api/mockups/render", {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrf },
+            body: formData
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Failed");
+          
+          // Render success details
+          cardElement.classList.add("success");
+          statusElement.textContent = "Ready";
+          if (spinnerElement) spinnerElement.remove();
+          
+          imgElement.src = data.output_url;
+          imgElement.classList.remove("hidden");
+          
+          downloadElement.href = data.output_url;
+          actionsElement.classList.remove("hidden");
+        } catch (err) {
+          cardElement.classList.add("error");
+          statusElement.textContent = "Failed";
+          if (spinnerElement) spinnerElement.remove();
+          
+          // Display elegant error label
+          const errorDiv = document.createElement("div");
+          errorDiv.className = "sub";
+          errorDiv.style.color = "var(--accent)";
+          errorDiv.style.textAlign = "center";
+          errorDiv.style.padding = "10px";
+          errorDiv.textContent = err.message || "Rendering failed";
+          imgElement.parentNode.appendChild(errorDiv);
+        }
+      });
+      
+      // Wait for all rendering pipelines to settle
+      await Promise.allSettled(promises);
+      
       $("testGenerateButton").disabled = false;
-      $("testGenerateButton").textContent = "Generate";
+      $("testGenerateButton").textContent = `Generate (${testState.selectedTemplates.size} mockups)`;
     }
   };
 
@@ -1431,6 +1583,10 @@
       const fitContainer = $("testFitModeContainer");
       if (fitContainer) {
         fitContainer.classList.toggle("hidden", isAI);
+      }
+      const aiModelContainer = $("testAiModelContainer");
+      if (aiModelContainer) {
+        aiModelContainer.classList.toggle("hidden", !isAI);
       }
     };
   }

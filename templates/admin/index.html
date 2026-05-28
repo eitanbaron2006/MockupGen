@@ -388,6 +388,13 @@
                   <option value="stretch" selected>Stretch</option>
                 </select>
               </div>
+              <div style="flex: 1;" id="testAiModelContainer" class="hidden">
+                <label for="testAiModel">AI Model</label>
+                <select id="testAiModel">
+                  <option value="gemini-3.1-flash-image" selected>gemini-3.1-flash-image</option>
+                  <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</option>
+                </select>
+              </div>
             </div>
             <button class="btn primary" id="testGenerateButton" disabled>Generate</button>
           </div>
@@ -398,13 +405,16 @@
           <div class="test-result-placeholder" id="testResultPlaceholder">
             <div class="placeholder-icon">&#127912;</div>
             <h3>Generated Mockup Preview</h3>
-            <p>Select your artwork and choose a mockup template on the left, then click Generate to preview the high-quality mockup here.</p>
+            <p>Select your artwork and choose one or more mockup templates on the left, then click Generate to preview the high-quality mockup here.</p>
           </div>
           <div class="test-result-wrapper hidden" id="testResultWrapper">
             <img id="testResultImage" alt="Generated mockup">
           </div>
           <div class="test-result-actions hidden" id="testResultActions">
             <a id="testResultDownload" class="btn primary" download="mockup.png">Download Mockup</a>
+          </div>
+          <div class="test-batch-results hidden" id="testBatchResults">
+            <!-- Grid of multi mockup renders will be generated here dynamically -->
           </div>
         </div>
       </div>

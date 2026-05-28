@@ -318,6 +318,59 @@ def test_ai_render_mode_invokes_vertex_ai_generation(tmp_path: Path, monkeypatch
     assert payload["output_url"].startswith("/outputs/mockup_ai_")
 
 
+def test_ai_render_mode_passes_custom_model_parameter(tmp_path: Path, monkeypatch):
+    client, folders = build_client(
+        tmp_path,
+        VERTEX_PROJECT_ID="test-project",
+        VERTEX_LOCATION="global",
+    )
+    write_template(folders["TEMPLATES_FOLDER"])
+
+    class FakePart:
+        def __init__(self, data, mime_type):
+            class InlineData:
+                def __init__(self, data, mime_type):
+                    self.data = data
+                    self.mime_type = mime_type
+            self.inline_data = InlineData(data, mime_type)
+            self.text = None
+
+    class FakeContent:
+        def __init__(self, data):
+            self.parts = [FakePart(data, "image/png")]
+
+    class FakeCandidate:
+        def __init__(self, data):
+            self.content = FakeContent(data)
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.candidates = [FakeCandidate(data)]
+
+    dummy_img_stream = io.BytesIO()
+    Image.new("RGBA", (10, 10), (255, 0, 0, 255)).save(dummy_img_stream, format="PNG")
+    dummy_bytes = dummy_img_stream.getvalue()
+
+    captured_model = None
+
+    class FakeModels:
+        def generate_content(self, model, **kwargs):
+            nonlocal captured_model
+            captured_model = model
+            return FakeResponse(dummy_bytes)
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.models = FakeModels()
+
+    import google.genai
+    monkeypatch.setattr(google.genai, "Client", FakeClient)
+
+    response = post_render(client, mode="ai", model="gemini-3.1-flash-image-preview")
+
+    assert response.status_code == 200
+    assert captured_model == "gemini-3.1-flash-image-preview"
+
 
 def test_render_can_select_closest_template_by_product_type_and_artwork_ratio(tmp_path):
     client, folders = build_client(tmp_path)

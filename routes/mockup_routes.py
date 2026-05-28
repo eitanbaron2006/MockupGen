@@ -102,6 +102,7 @@ def render_mockup():
             if not project_id:
                 return error_response("Vertex Project ID is not configured. Please set it in .env or Settings.", 400)
 
+            model = request.form.get("model", "gemini-3.1-flash-image").strip()
             result = render_ai_mockup(
                 template_id=template_id,
                 artwork_path=artwork_path,
@@ -109,6 +110,7 @@ def render_mockup():
                 output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
                 project_id=project_id,
                 location=current_app.config.get("VERTEX_LOCATION", "global"),
+                model=model,
             )
             return jsonify(result.as_response())
         elif mode == "psd":

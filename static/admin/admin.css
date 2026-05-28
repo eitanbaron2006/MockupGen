@@ -1883,30 +1883,196 @@ select,
   transform: scale(1.1);
 }
 
-/* Mockup Template Card in Grid */
-.test-mockup-card {
+/* Mockup Template Card in Grid with Multi-Select */
+.test-mockup-card-wrapper {
+  position: relative;
   border: 2px solid transparent;
   border-radius: 8px;
   cursor: pointer;
   height: 80px;
   width: 80px;
   flex-shrink: 0;
-  object-fit: cover;
-  opacity: 0.65;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
-.test-mockup-card:hover {
-  opacity: 0.95;
+.test-mockup-card-wrapper:hover {
   transform: translateY(-2px);
 }
 
-.test-mockup-card.active {
+.test-mockup-card-wrapper.selected {
   border-color: var(--accent);
-  opacity: 1;
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(237, 111, 92, 0.25);
+}
+
+.test-mockup-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  opacity: 0.65;
+  transition: opacity 0.2s ease;
+}
+
+.test-mockup-card-wrapper.selected .test-mockup-card-img,
+.test-mockup-card-wrapper:hover .test-mockup-card-img {
+  opacity: 1;
+}
+
+.test-mockup-card-checkbox {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(21, 20, 15, 0.6);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.15s ease;
+  pointer-events: none;
+}
+
+.test-mockup-card-wrapper.selected .test-mockup-card-checkbox {
+  opacity: 1;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.test-mockup-card-wrapper:hover .test-mockup-card-checkbox {
+  opacity: 1;
+}
+
+.test-mockup-card-title {
+  display: none;
+}
+
+/* Batch Results Grid Styles */
+.test-batch-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 4px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.batch-result-card {
+  background: var(--page);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s ease;
+}
+
+.batch-result-card.success {
+  border-color: var(--success);
+  background: rgba(110, 116, 72, 0.04);
+}
+
+.batch-result-card.error {
+  border-color: var(--accent);
+  background: rgba(237, 111, 92, 0.04);
+}
+
+.batch-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-card-title {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.batch-card-status {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--faint);
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.batch-result-card.success .batch-card-status {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.batch-result-card.error .batch-card-status {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.batch-card-body {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(236, 228, 207, 0.25);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--line-soft);
+}
+
+.batch-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.batch-card-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--line-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: batch-spin 0.8s linear infinite;
+}
+
+@keyframes batch-spin {
+  to { transform: rotate(360deg); }
+}
+
+.batch-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-card-actions .btn {
+  font-size: 11px;
+  height: 28px;
+  padding: 0 8px;
+  line-height: 28px;
+  text-align: center;
+  flex: 1;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Active Upload Dropzone & Previews */

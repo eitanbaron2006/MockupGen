@@ -33,6 +33,7 @@ def render_ai_mockup(
     output_folder: Path,
     project_id: str,
     location: str = "global",
+    model: str = "gemini-3.1-flash-image",
 ) -> RenderResult:
     # 1. Load the mockup template details to locate the background image
     template_folder, manifest = load_manifest(templates_folder, template_id)
@@ -75,7 +76,7 @@ def render_ai_mockup(
         )
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-image",
+            model=model,
             contents=[
                 types.Part.from_bytes(data=background_bytes, mime_type=bg_mime),
                 types.Part.from_bytes(data=artwork_bytes, mime_type=art_mime),
