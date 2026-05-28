@@ -5,7 +5,7 @@ from typing import Any
 from PIL import Image
 
 from services.detection_service import DetectionError, DetectionProposal, validate_proposal
-from services.frame_refinement_service import refine_artwork_area
+from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
 
 
 PROMPT = """Find the exact inner artwork replacement area in this product mockup.
@@ -135,6 +135,15 @@ class VertexDetectionProvider:
                         "x": round(int(p["x"]) * width / 1000),
                         "y": round(int(p["y"]) * height / 1000)
                     })
+                
+                # Apply local edge refinement to all 4 corners!
+                if self.refine:
+                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=10)
+                    refined = refined_corners != normalized_corners
+                    normalized_corners = refined_corners
+                else:
+                    refined = False
+                
                 xs = [p["x"] for p in normalized_corners]
                 ys = [p["y"] for p in normalized_corners]
                 min_x, max_x = min(xs), max(xs)
@@ -165,12 +174,14 @@ class VertexDetectionProvider:
                 raise DetectionError("Vertex did not return perspective corners or a 2D bounding box")
 
             reason = str(box_data.get("label", "inner artwork area"))
-            if refined:
+            if "corners" in box_data:
+                reason = f"{reason}; custom 3D perspective corners detected"
+                if refined:
+                    reason = f"{reason} (snapped to visible edges)"
+            elif refined:
                 reason = f"{reason}; boundary refinement snapped the proposal to visible edges"
             elif refinement_rejected:
                 reason = f"{reason}; boundary refinement ignored because it distorted the AI box"
-            elif "corners" in box_data:
-                reason = f"{reason}; custom 3D perspective corners detected"
 
             proposal_payload = {
                 "artwork_area": proposal_area,

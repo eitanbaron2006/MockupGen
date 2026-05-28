@@ -241,3 +241,104 @@ def test_vertex_provider_handles_skewed_corners_response(tmp_path: Path):
     
     assert proposal.provider == "vertex"
     assert "perspective" in proposal.reason
+
+
+def test_vertex_provider_refines_skewed_corners(tmp_path: Path, monkeypatch):
+    background = tmp_path / "background.png"
+    Image.new("RGB", (300, 400), (250, 245, 238)).save(background)
+    
+    class FakeCornersModels:
+        def generate_content(self, **kwargs):
+            payload = {
+                "corners": [
+                    {"x": 100, "y": 100},
+                    {"x": 900, "y": 150},
+                    {"x": 800, "y": 800},
+                    {"x": 200, "y": 750}
+                ],
+                "label": "inner picture opening in perspective",
+            }
+            return type("Response", (), {"text": json.dumps([payload])})()
+
+    class FakeCornersClient:
+        def __init__(self):
+            self.models = FakeCornersModels()
+
+    monkeypatch.setattr(
+        "services.vertex_detection_service.refine_perspective_corners",
+        lambda _path, corners, **_kwargs: [
+            {"x": corners[0]["x"] - 5, "y": corners[0]["y"] - 5},
+            corners[1],
+            corners[2],
+            corners[3]
+        ]
+    )
+
+    client = FakeCornersClient()
+    provider = VertexDetectionProvider(
+        project_id="vertextai-project-497513",
+        location="global",
+        model="gemini-2.5-flash",
+        client=client,
+        refine=True,
+    )
+
+    proposal = provider.detect(background)
+    
+    corners = proposal.artwork_area["corners"]
+    assert corners[0] == {"x": 25, "y": 35}
+    assert corners[1] == {"x": 270, "y": 60}
+    assert corners[2] == {"x": 240, "y": 320}
+    assert corners[3] == {"x": 60, "y": 300}
+    
+    assert proposal.artwork_area["x"] == 25
+    assert proposal.artwork_area["y"] == 35
+    assert proposal.artwork_area["width"] == 245
+    assert proposal.artwork_area["height"] == 285
+    
+    assert "snapped to visible edges" in proposal.reason
+
+
+def test_refine_perspective_corners_prefers_inner_opening_and_rejects_boundary(tmp_path: Path):
+    from services.frame_refinement_service import refine_perspective_corners
+    
+    image_path = tmp_path / "double-edge.png"
+    # Create an image representing a double edge:
+    # Outer high-contrast edge at y = 100 (gradient 255)
+    # Inner lower-contrast edge at y = 113 (gradient 120)
+    image = Image.new("RGB", (300, 300), (244, 238, 226))
+    draw = ImageDraw.Draw(image)
+    
+    # Draw outer horizontal high-contrast wood border
+    draw.line((0, 100, 300, 100), fill=(20, 20, 20), width=4)
+    # Draw inner horizontal lower-contrast opening boundary
+    draw.line((0, 113, 300, 113), fill=(100, 100, 100), width=2)
+    image.save(image_path)
+    
+    # Case 1: Start at y = 113 (inner opening). Search radius = 10.
+    # The search range is y = 103 to 123.
+    # The outer edge is at 100, which is outside the range.
+    # The inner edge at 113 is inside the range and should snap cleanly.
+    corners_1 = [{"x": 150, "y": 113}]
+    refined_1 = refine_perspective_corners(image_path, corners_1, search_radius=10)
+    assert abs(refined_1[0]["y"] - 113) <= 1 # Stays at inner opening!
+    
+    # Case 2: Start at y = 113 (inner opening). Search radius = 15.
+    # The search range is y = 98 to 128.
+    # Both the outer edge (y = 100) and inner edge (y = 113) are inside the window.
+    # Since Top-Left corner (index 0) prefers larger Y coordinate (inner opening),
+    # the snapper must prefer the inner edge (113) over the outer edge (100)
+    # despite the outer edge having much higher contrast!
+    corners_2 = [{"x": 150, "y": 113}]
+    refined_2 = refine_perspective_corners(image_path, corners_2, search_radius=15)
+    assert abs(refined_2[0]["y"] - 113) <= 1 # Perfectly prefers the inner opening over the outer frame!
+    
+    # Case 3: Start at y = 125. Search radius = 10.
+    # The search range is y = 115 to 135.
+    # The inner edge at 113 is outside the range but its gradient bleeds to 115 (boundary).
+    # Since the peak is outside the window, it gets pulled to the boundary 115 (shift = 10).
+    # The boundary safety gate must reject this shift and reset to the raw coordinates.
+    corners_3 = [{"x": 150, "y": 125}]
+    refined_3 = refine_perspective_corners(image_path, corners_3, search_radius=10)
+    assert refined_3[0]["y"] == 125 # Safety gate falls back to raw coordinate!
+

@@ -234,3 +234,141 @@ def refine_artwork_area(image_path: Path, proposed_area: dict[str, int]) -> dict
     if right - left < 20 or bottom - top < 20:
         return proposed_area
     return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
+def _inner_strongest_line(
+    pixels,
+    *,
+    vertical: bool,
+    center: int,
+    radius: int,
+    span_start: int,
+    span_end: int,
+    boundary: int,
+    prefer_high: bool,
+) -> int:
+    """Scan local candidates and prefer the inner boundary when multiple edge clusters are present."""
+    candidates: list[tuple[int, int]] = []
+    start = max(1, center - radius)
+    end = min(boundary - 2, center + radius)
+    for position in range(start, end + 1):
+        if vertical:
+            score = sum(pixels[position, offset] for offset in range(span_start, span_end))
+        else:
+            score = sum(pixels[offset, position] for offset in range(span_start, span_end))
+        candidates.append((score, position))
+    if not candidates:
+        return center
+    
+    max_score = max(score for score, _ in candidates)
+    if max_score < 100:  # Noise threshold
+        return center
+    
+    # Filter qualified coordinates with at least 45% of maximum edge contrast
+    threshold = max(200, round(max_score * 0.45))
+    qualified = [pos for score, pos in candidates if score >= threshold]
+    if not qualified:
+        return center
+    
+    # Group coordinates into separate physical edge clusters
+    clusters: list[list[int]] = []
+    for pos in sorted(qualified):
+        if not clusters or pos - clusters[-1][-1] > 3:
+            clusters.append([pos])
+        else:
+            clusters[-1].append(pos)
+            
+    # Find the peak coordinate inside each cluster
+    best_positions = []
+    for cluster in clusters:
+        best_pos = cluster[0]
+        best_val = -1
+        for pos in cluster:
+            val = next(score for score, p in candidates if p == pos)
+            if val > best_val:
+                best_val = val
+                best_pos = pos
+        best_positions.append(best_pos)
+        
+    if not best_positions:
+        return center
+        
+    # If multiple separate boundary edges exist, prefer the inner opening edge
+    if len(best_positions) > 1:
+        return best_positions[-1] if prefer_high else best_positions[0]
+    return best_positions[0]
+
+
+def refine_perspective_corners(
+    image_path: Path,
+    corners: list[dict[str, int]],
+    search_radius: int = 10
+) -> list[dict[str, int]]:
+    """Refine each of the 4 perspective corners locally using classic edge detection."""
+    try:
+        with Image.open(image_path) as source:
+            filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=3))
+            
+        width, height = filtered.size
+        edges = ImageOps.autocontrast(filtered.filter(ImageFilter.FIND_EDGES))
+        pixels = edges.load()
+        
+        refined_corners = []
+        for idx, p in enumerate(corners):
+            cx = int(p["x"])
+            cy = int(p["y"])
+            
+            # Local span range for edge alignment
+            span_start_v = max(0, cy - search_radius)
+            span_end_v = min(height, cy + search_radius)
+            
+            span_start_h = max(0, cx - search_radius)
+            span_end_h = min(width, cx + search_radius)
+            
+            # Map corner index to directional inner edge preferences:
+            # Corner 0 (Top-Left): inner opening is at larger x, larger y (True, True)
+            # Corner 1 (Top-Right): inner opening is at smaller x, larger y (False, True)
+            # Corner 2 (Bottom-Right): inner opening is at smaller x, smaller y (False, False)
+            # Corner 3 (Bottom-Left): inner opening is at larger x, smaller y (True, False)
+            prefer_high_x = idx in (0, 3)
+            prefer_high_y = idx in (0, 1)
+            
+            # 1. Snap vertical boundary (X coordinate)
+            snapped_x = _inner_strongest_line(
+                pixels,
+                vertical=True,
+                center=cx,
+                radius=search_radius,
+                span_start=span_start_v,
+                span_end=span_end_v,
+                boundary=width,
+                prefer_high=prefer_high_x
+            )
+            
+            # 2. Snap horizontal boundary (Y coordinate)
+            snapped_y = _inner_strongest_line(
+                pixels,
+                vertical=False,
+                center=cy,
+                radius=search_radius,
+                span_start=span_start_h,
+                span_end=span_end_h,
+                boundary=height,
+                prefer_high=prefer_high_y
+            )
+            
+            # Safety gate: if snapping shifts the coordinate by more than or equal to search_radius, reject
+            if abs(snapped_x - cx) >= search_radius:
+                snapped_x = cx
+            if abs(snapped_y - cy) >= search_radius:
+                snapped_y = cy
+                
+            refined_corners.append({
+                "x": snapped_x,
+                "y": snapped_y
+            })
+            
+        return refined_corners
+    except Exception:
+        # Fallback to unrefined corners if anything fails
+        return corners
