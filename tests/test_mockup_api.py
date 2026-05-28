@@ -439,3 +439,67 @@ def test_perspective_render_warps_quadrilateral(tmp_path):
     with Image.open(generated_path).convert("RGBA") as output:
         assert output.getpixel((2, 2)) == (20, 220, 40, 255)
         assert output.getpixel((0, 0)) == (200, 20, 20, 255)
+
+
+def test_pillow_rendering_applies_realism_filters_and_feathering(tmp_path):
+    # Tests that the realism filter (color mapping/grain) and border feathering are applied during PIL rendering
+    client, folders = build_client(tmp_path)
+    template_folder = folders["TEMPLATES_FOLDER"] / "realism_test"
+    template_folder.mkdir(parents=True)
+    manifest = {
+        "template_id": "realism_test",
+        "name": "Realism test mockup",
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "artwork_area": {
+            "x": 2,
+            "y": 2,
+            "width": 6,
+            "height": 6
+        },
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    # Clean solid blue background
+    save_image(template_folder / "background.png", (10, 10), (0, 0, 255, 255))
+    save_image(template_folder / "preview.png", (10, 10), (0, 0, 255, 255))
+
+    # Render with pure solid white artwork (255, 255, 255, 255)
+    response = client.post(
+        "/api/mockups/render",
+        data={
+            "template_id": "realism_test",
+            "mode": "simple",
+            "output_format": "png",
+            "artwork": (image_bytes((6, 6), (255, 255, 255, 255)), "artwork.png"),
+            "realism": "true",
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    
+    generated_path = folders["OUTPUT_FOLDER"] / Path(payload["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        # 1. Verify White Point Mapping & Paper Noise:
+        # Pure white artwork (255, 255, 255) should be compressed to soft-print (max value around 246)
+        # And introduce slight noise fluctuations.
+        inner_pixel = output.getpixel((5, 5))
+        assert inner_pixel[0] < 250  # Must be compressed below 250 (white point is ~246)
+        assert inner_pixel[1] < 250
+        assert inner_pixel[2] < 250
+        
+        # 2. Verify Edge Feathering (Soften border):
+        # The boundary pixel at (2, 2) is a corner pixel and should be blended (alpha channel diluted)
+        # It should contain a blend of blue background and soft white artwork
+        border_pixel = output.getpixel((2, 2))
+        # Blue channel should be partially visible (from the blurred background blend)
+        assert border_pixel[2] > 0
+        # Red/Green channels should be partially visible (from the feathered white artwork)
+        assert border_pixel[0] > 0
+        # The pixel is not fully opaque blue nor fully opaque white - it's a feathered blend!
+        assert border_pixel != (0, 0, 255, 255)

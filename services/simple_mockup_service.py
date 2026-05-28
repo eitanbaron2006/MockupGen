@@ -1,12 +1,13 @@
 import json
 import math
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter
 
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 
@@ -227,6 +228,84 @@ def _mask_for_artwork(
     raise InvalidTemplateError("Mask size must match the canvas or artwork area")
 
 
+def _apply_realism_filter(artwork_layer: Image.Image) -> Image.Image:
+    # 1. Convert to RGBA
+    img = artwork_layer.convert("RGBA")
+    r, g, b, a = img.split()
+    
+    # 2. Black & White Point Compression (Print Mapping)
+    # Compress luminance range slightly to map pure screen black/white to physical print (0->8, 255->246)
+    lut = [int(i * (246 - 8) / 255 + 8) for i in range(256)]
+    r = r.point(lut)
+    g = g.point(lut)
+    b = b.point(lut)
+    img = Image.merge("RGBA", (r, g, b, a))
+    
+    # 3. High-Frequency Fine Paper Grain
+    width, height = img.size
+    # Generate a tiny pre-cached 128x128 noise patch with values in [250, 255]
+    noise_bytes = bytes(random.randint(250, 255) for _ in range(128 * 128))
+    noise_patch = Image.frombytes("L", (128, 128), noise_bytes)
+    
+    # Tile the patch to match target size
+    noise_tile = Image.new("L", (width, height))
+    for x in range(0, width, 128):
+        for y in range(0, height, 128):
+            noise_tile.paste(noise_patch, (x, y))
+            
+    noise_rgba = Image.merge("RGBA", (noise_tile, noise_tile, noise_tile, Image.new("L", (width, height), 255)))
+    img = ImageChops.multiply(img, noise_rgba)
+    
+    # 4. Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
+    # Generate diagonal gradient starting at 3/255 opacity (1.1%) and ending at 13/255 opacity (5.1%)
+    grad_data = []
+    for row in range(8):
+        for col in range(8):
+            val = int(3 + 10 * ((col + row) / 14.0))
+            grad_data.append(val)
+    grad_small = Image.frombytes("L", (8, 8), bytes(grad_data))
+    grad_large = grad_small.resize((width, height), Image.Resampling.BILINEAR)
+    
+    sheen = Image.merge("RGBA", (
+        Image.new("L", (width, height), 255),
+        Image.new("L", (width, height), 255),
+        Image.new("L", (width, height), 255),
+        grad_large
+    ))
+    img = Image.alpha_composite(img, sheen)
+    return img
+
+
+def _apply_edge_feathering(
+    artwork_canvas: Image.Image,
+    area: dict[str, Any],
+    canvas_size: tuple[int, int],
+    coefficients: list[float] | None = None,
+) -> Image.Image:
+    width, height = area["width"], area["height"]
+    mask_base = Image.new("L", (width, height), 255)
+    
+    # Warp or place the mask identically to the artwork placement
+    if coefficients is not None:
+        mask_canvas = mask_base.transform(
+            canvas_size,
+            Image.Transform.PERSPECTIVE,
+            coefficients,
+            Image.Resampling.BICUBIC
+        )
+    else:
+        mask_canvas = Image.new("L", canvas_size, 0)
+        mask_canvas.paste(mask_base, (area["x"], area["y"]))
+        
+    # Apply soft blur to mask boundary
+    feathered_mask = mask_canvas.filter(ImageFilter.GaussianBlur(radius=1.2))
+    
+    # Soften outer boundary of poster alpha channel
+    r, g, b, a = artwork_canvas.split()
+    a_feathered = ImageChops.multiply(a, feathered_mask)
+    return Image.merge("RGBA", (r, g, b, a_feathered))
+
+
 def render_simple_mockup(
     *,
     template_id: str,
@@ -235,6 +314,7 @@ def render_simple_mockup(
     templates_folder: Path,
     output_folder: Path,
     fit_mode: str | None = None,
+    realism: bool = True,
 ) -> RenderResult:
     if output_format.lower() != "png":
         raise RenderValidationError("Only png output format is currently supported")
@@ -261,6 +341,10 @@ def render_simple_mockup(
         mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
         artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))
 
+    # Apply scene integration filters (Print contrast, Paper Grain, Diagonal glass reflection sheen) if enabled
+    if realism:
+        artwork_layer = _apply_realism_filter(artwork_layer)
+
     if "corners" in area:
         from services.image_utils import get_perspective_coefficients
         src_coords = [
@@ -277,9 +361,15 @@ def render_simple_mockup(
             coefficients,
             Image.Resampling.BICUBIC
         )
+        # Apply boundary feathering to soften sharp perspective quad edges if enabled
+        if realism:
+            artwork_canvas = _apply_edge_feathering(artwork_canvas, area, canvas_size, coefficients)
     else:
         artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         artwork_canvas.alpha_composite(artwork_layer, dest=(area["x"], area["y"]))
+        # Apply boundary feathering to soften flat edges if enabled
+        if realism:
+            artwork_canvas = _apply_edge_feathering(artwork_canvas, area, canvas_size, None)
 
     composed = Image.alpha_composite(background, artwork_canvas)
     if foreground_path:
