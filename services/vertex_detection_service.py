@@ -8,14 +8,17 @@ from services.detection_service import DetectionError, DetectionProposal, valida
 from services.frame_refinement_service import refine_artwork_area
 
 
-PROMPT = """Return one bounding box for the exact inner artwork replacement area in this
-product mockup. A gray dashed placeholder rectangle (often around words such as YOUR
-ARTWORK HERE) is the strongest signal and must take precedence over an outer wood frame,
-mat border, or printed ratio text. If a visible dashed or solid inner placeholder
-rectangle exists, follow its four visible boundary lines. Ignore decorations and shadows.
-Do not infer shape from words in the image.
-Return the bounding box in the documented normalized 0-1000 format
-[y_min, x_min, y_max, x_max]."""
+PROMPT = """Find the exact inner artwork replacement area in this product mockup.
+If the frame has perspective, skew, or is shot at an angle, detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
+1. Top-Left corner [x, y]
+2. Top-Right corner [x, y]
+3. Bottom-Right corner [x, y]
+4. Bottom-Left corner [x, y]
+Return these 4 corners as an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (x represents horizontal percentage, y represents vertical percentage).
+A gray dashed placeholder rectangle (often around words like YOUR ARTWORK HERE or ART HERE) is the strongest signal.
+
+If the frame is a flat, non-rotated 2D rectangle, you can alternatively return the bounding box under the 'box_2d' key in the normalized format [y_min, x_min, y_max, x_max].
+Ignore overlapping decorations and shadows. Do not infer shape from the words themselves."""
 
 
 def _safe_refinement(
@@ -80,10 +83,21 @@ class VertexDetectionProvider:
             "items": {
                 "type": "OBJECT",
                 "properties": {
+                    "corners": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "x": {"type": "INTEGER"},
+                                "y": {"type": "INTEGER"}
+                            },
+                            "required": ["x", "y"]
+                        }
+                    },
                     "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
                     "label": {"type": "STRING"},
                 },
-                "required": ["box_2d", "label"],
+                "required": ["label"],
             },
         }
         resolutions = {
@@ -107,31 +121,59 @@ class VertexDetectionProvider:
             payload = getattr(response, "parsed", None) or json.loads(response.text)
             if payload and hasattr(payload[0], "model_dump"):
                 payload = [box.model_dump() for box in payload]
-            box = payload[0]["box_2d"]
-            if not isinstance(box, list) or len(box) != 4:
-                raise DetectionError("Vertex did not return a bounding box")
-            raw_area = {
-                "x": round(int(box[1]) * width / 1000),
-                "y": round(int(box[0]) * height / 1000),
-                "width": round((int(box[3]) - int(box[1])) * width / 1000),
-                "height": round((int(box[2]) - int(box[0])) * height / 1000),
-            }
+            
+            box_data = payload[0]
+            refined = False
             refinement_rejected = False
-            if self.refine:
-                candidate_area = refine_artwork_area(background_path, raw_area)
-                proposal_area = _safe_refinement(raw_area, candidate_area) or raw_area
-                refinement_rejected = proposal_area == raw_area and candidate_area != raw_area
+            
+            if "corners" in box_data and box_data["corners"] and len(box_data["corners"]) == 4:
+                corners = box_data["corners"]
+                normalized_corners = []
+                for p in corners:
+                    normalized_corners.append({
+                        "x": round(int(p["x"]) * width / 1000),
+                        "y": round(int(p["y"]) * height / 1000)
+                    })
+                xs = [p["x"] for p in normalized_corners]
+                ys = [p["y"] for p in normalized_corners]
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+                proposal_area = {
+                    "x": min_x,
+                    "y": min_y,
+                    "width": max_x - min_x,
+                    "height": max_y - min_y,
+                    "corners": normalized_corners
+                }
+            elif "box_2d" in box_data and box_data["box_2d"] and len(box_data["box_2d"]) == 4:
+                box = box_data["box_2d"]
+                raw_area = {
+                    "x": round(int(box[1]) * width / 1000),
+                    "y": round(int(box[0]) * height / 1000),
+                    "width": round((int(box[3]) - int(box[1])) * width / 1000),
+                    "height": round((int(box[2]) - int(box[0])) * height / 1000),
+                }
+                if self.refine:
+                    candidate_area = refine_artwork_area(background_path, raw_area)
+                    proposal_area = _safe_refinement(raw_area, candidate_area) or raw_area
+                    refinement_rejected = proposal_area == raw_area and candidate_area != raw_area
+                else:
+                    proposal_area = raw_area
+                refined = proposal_area != raw_area
             else:
-                proposal_area = raw_area
-            refined = proposal_area != raw_area
-            reason = str(payload[0].get("label", "inner artwork area"))
+                raise DetectionError("Vertex did not return perspective corners or a 2D bounding box")
+
+            reason = str(box_data.get("label", "inner artwork area"))
             if refined:
                 reason = f"{reason}; boundary refinement snapped the proposal to visible edges"
             elif refinement_rejected:
                 reason = f"{reason}; boundary refinement ignored because it distorted the AI box"
+            elif "corners" in box_data:
+                reason = f"{reason}; custom 3D perspective corners detected"
+
             proposal_payload = {
                 "artwork_area": proposal_area,
-                "confidence": 0.9 if refined else 0.75,
+                "confidence": 0.95 if "corners" in box_data else (0.9 if refined else 0.75),
                 "reason": reason,
             }
         except DetectionError:

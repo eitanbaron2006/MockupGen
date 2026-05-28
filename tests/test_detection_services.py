@@ -193,3 +193,51 @@ def test_vertex_model_discovery_lists_live_vision_compatible_models_only():
         "gemini-3.5-flash",
         "gemini-3.1-pro-preview",
     ]
+
+
+def test_vertex_provider_handles_skewed_corners_response(tmp_path: Path):
+    background = tmp_path / "background.png"
+    Image.new("RGB", (300, 400), (250, 245, 238)).save(background)
+    
+    class FakeCornersModels:
+        def generate_content(self, **kwargs):
+            payload = {
+                "corners": [
+                    {"x": 100, "y": 100},
+                    {"x": 900, "y": 150},
+                    {"x": 800, "y": 800},
+                    {"x": 200, "y": 750}
+                ],
+                "label": "inner picture opening in perspective",
+            }
+            return type("Response", (), {"text": json.dumps([payload])})()
+
+    class FakeCornersClient:
+        def __init__(self):
+            self.models = FakeCornersModels()
+
+    client = FakeCornersClient()
+    provider = VertexDetectionProvider(
+        project_id="vertextai-project-497513",
+        location="global",
+        model="gemini-2.5-flash",
+        client=client,
+        refine=False,
+    )
+
+    proposal = provider.detect(background)
+
+    assert proposal.artwork_area["x"] == 30
+    assert proposal.artwork_area["y"] == 40
+    assert proposal.artwork_area["width"] == 240
+    assert proposal.artwork_area["height"] == 280
+    
+    corners = proposal.artwork_area["corners"]
+    assert len(corners) == 4
+    assert corners[0] == {"x": 30, "y": 40}
+    assert corners[1] == {"x": 270, "y": 60}
+    assert corners[2] == {"x": 240, "y": 320}
+    assert corners[3] == {"x": 60, "y": 300}
+    
+    assert proposal.provider == "vertex"
+    assert "perspective" in proposal.reason

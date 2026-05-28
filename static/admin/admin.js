@@ -242,6 +242,10 @@
     $("proposalState").textContent = template.status === "active"
       ? "Approved rectangle is active. Run Detect frame to compare safely."
       : "Detect frame or adjust the artwork area before approval.";
+    $("selectionSvg").classList.add("hidden");
+    $("canvasImage").onload = () => {
+      requestAnimationFrame(drawSelection);
+    };
     $("canvasImage").src = `/api/admin/templates/${template.template_id}/asset/background.png`;
     $("templateName").value = template.name;
     $("categorySelect").innerHTML = state.categories.map((category) =>
@@ -259,8 +263,9 @@
       $("confidence").textContent = "Manual selection";
     }
     updateCoordinateLabels();
-    $("canvasImage").onload = drawSelection;
-    drawSelection();
+    if ($("canvasImage").complete) {
+      requestAnimationFrame(drawSelection);
+    }
   }
 
   function updateCoordinateLabels() {
@@ -269,6 +274,39 @@
     $("coordY").textContent = area ? area.y : "-";
     $("coordW").textContent = area ? area.width : "-";
     $("coordH").textContent = area ? area.height : "-";
+  }
+
+  function getRenderedImageRect(img) {
+    const naturalWidth = img.naturalWidth;
+    const naturalHeight = img.naturalHeight;
+    if (!naturalWidth || !naturalHeight) return null;
+    
+    const clientWidth = img.clientWidth;
+    const clientHeight = img.clientHeight;
+    
+    const imageRatio = naturalWidth / naturalHeight;
+    const clientRatio = clientWidth / clientHeight;
+    
+    let renderedWidth, renderedHeight, left, top;
+    
+    if (clientRatio > imageRatio) {
+      renderedHeight = clientHeight;
+      renderedWidth = clientHeight * imageRatio;
+      left = (clientWidth - renderedWidth) / 2;
+      top = 0;
+    } else {
+      renderedWidth = clientWidth;
+      renderedHeight = clientWidth / imageRatio;
+      left = 0;
+      top = (clientHeight - renderedHeight) / 2;
+    }
+    
+    return {
+      width: renderedWidth,
+      height: renderedHeight,
+      left: left,
+      top: top
+    };
   }
 
   function drawSelection() {
@@ -292,13 +330,22 @@
     }
     
     const corners = template.artwork_area.corners;
-    const clientWidth = image.clientWidth;
-    const clientHeight = image.clientHeight;
+    const rect = getRenderedImageRect(image);
+    if (!rect) {
+      selectionSvg.classList.add("hidden");
+      return;
+    }
     
-    // Map canvas coordinates to client display coordinates
+    // Align SVG overlay exactly with the rendered pixels of the background image
+    selectionSvg.style.left = `${rect.left}px`;
+    selectionSvg.style.top = `${rect.top}px`;
+    selectionSvg.style.width = `${rect.width}px`;
+    selectionSvg.style.height = `${rect.height}px`;
+    
+    // Map canvas coordinates to client display coordinates inside the rendered rect
     const pointsStr = corners.map(p => {
-      const cx = (p.x / template.canvas_width) * clientWidth;
-      const cy = (p.y / template.canvas_height) * clientHeight;
+      const cx = (p.x / template.canvas_width) * rect.width;
+      const cy = (p.y / template.canvas_height) * rect.height;
       return `${cx},${cy}`;
     }).join(" ");
     
@@ -306,8 +353,8 @@
     
     // Position handles
     corners.forEach((p, idx) => {
-      const cx = (p.x / template.canvas_width) * clientWidth;
-      const cy = (p.y / template.canvas_height) * clientHeight;
+      const cx = (p.x / template.canvas_width) * rect.width;
+      const cy = (p.y / template.canvas_height) * rect.height;
       const handle = $(`handle_${idx}`);
       if (handle) {
         handle.setAttribute("cx", cx);
@@ -317,8 +364,8 @@
     
     // Position the text tag slightly above or near the first corner
     if (corners.length > 0) {
-      const tX = (corners[0].x / template.canvas_width) * clientWidth;
-      const tY = (corners[0].y / template.canvas_height) * clientHeight - 10;
+      const tX = (corners[0].x / template.canvas_width) * rect.width;
+      const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
       const tag = $("svgZoneTag");
       if (tag) {
         tag.setAttribute("x", tX);
@@ -371,8 +418,10 @@
     if (!state.drag || !state.selected) return;
     const template = state.selected;
     const image = $("canvasImage");
-    const dx = Math.round((event.clientX - state.drag.startX) * template.canvas_width / image.clientWidth);
-    const dy = Math.round((event.clientY - state.drag.startY) * template.canvas_height / image.clientHeight);
+    const rect = getRenderedImageRect(image);
+    if (!rect) return;
+    const dx = Math.round((event.clientX - state.drag.startX) * template.canvas_width / rect.width);
+    const dy = Math.round((event.clientY - state.drag.startY) * template.canvas_height / rect.height);
     
     let nextCorners = state.drag.corners.map(c => ({...c}));
     
