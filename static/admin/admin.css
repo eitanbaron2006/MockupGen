@@ -445,7 +445,7 @@ select, .text-input {
 .test-modal {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: var(--shadow); display: flex; flex-direction: column;
-  height: 640px; max-height: 90vh; width: 1080px; max-width: 95vw;
+  height: 820px; max-height: 88vh; width: 1320px; max-width: 96vw;
 }
 .modal-head {
   align-items: center; border-bottom: 1px solid var(--line); display: flex;
@@ -457,42 +457,45 @@ select, .text-input {
   display: flex; flex-direction: row; height: 100%; overflow: hidden; gap: 0; padding: 20px 24px 24px;
 }
 .test-col-left {
-  width: 500px; flex-shrink: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden;
+  width: 620px; flex-shrink: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden;
 }
 .test-col-left label { margin-bottom: 6px; flex-shrink: 0; }
-.test-upload-area {
-  align-items: center; background: rgba(236, 228, 207, 0.42); border: 1px dashed var(--line); border-radius: 10px;
-  cursor: pointer; display: flex; flex-direction: column; justify-content: center;
-  height: 120px; flex-shrink: 0; overflow: hidden; padding: 10px; position: relative; text-align: center;
-  transition: border-color 0.2s, background-color 0.2s;
-}
-.test-upload-area:hover { border-color: var(--accent); background: rgba(236, 228, 207, 0.6); }
-.hidden-input { display: none; }
-#testUploadPlaceholder { color: var(--muted); font-family: var(--body); font-size: 13px; font-weight: 500; line-height: 1.45; }
-#testArtworkPreview { max-height: 100px; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
 
-.test-gallery { display: flex; gap: 8px; margin-top: 6px; overflow-x: auto; padding: 4px 2px; flex-shrink: 0; scrollbar-width: thin; min-height: 60px; }
-.test-gallery-item {
-  border: 2px solid transparent; border-radius: 8px; cursor: pointer;
-  height: 52px; object-fit: cover; opacity: 0.6; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); width: 52px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.04); flex-shrink: 0;
+/* Nested Split Selection Layout */
+.test-artwork-selection, .test-mockup-selection {
+  display: flex; flex-direction: row; flex: 1; min-height: 150px; gap: 16px; margin-top: 6px; overflow: hidden; flex-shrink: 0;
 }
-.test-gallery-item:hover { opacity: 0.9; transform: translateY(-2px); }
-.test-gallery-item.active { border-color: var(--accent); opacity: 1; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(237, 111, 92, 0.2); }
-
-#testOrientationLabel {
-  margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
-}
-
-.test-mockup-gallery {
-  display: flex; gap: 10px; margin-top: 6px; overflow-x: auto; padding: 8px;
-  flex-shrink: 0; scrollbar-width: thin; min-height: 100px; height: 100px;
+.test-gallery-grid, .test-mockup-gallery {
+  width: 320px; flex-shrink: 0; height: 100%; display: grid; grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 80px; gap: 8px; overflow-y: auto; scrollbar-width: thin; padding: 8px;
   background: rgba(236, 228, 207, 0.25); border: 1px solid var(--line-soft); border-radius: 10px;
 }
 .gallery-empty {
-  color: var(--faint); font-family: var(--mono); font-size: 11px; text-align: center; width: 100%;
-  padding: 28px 0; text-transform: uppercase; letter-spacing: 0.05em;
+  grid-column: span 3; color: var(--faint); font-family: var(--mono); font-size: 9px; text-align: center; width: 100%;
+  padding: 68px 0; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.45;
 }
+
+.hidden-input { display: none; }
+
+/* Grid Gallery Items */
+.test-gallery-item-wrapper {
+  position: relative; border: 2px solid transparent; border-radius: 8px; cursor: pointer;
+  height: 80px; width: 80px; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.test-gallery-item-wrapper:hover { transform: translateY(-2px); }
+.test-gallery-item-wrapper.active { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 10px rgba(237, 111, 92, 0.25); }
+.test-gallery-item-img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.test-gallery-item-delete {
+  position: absolute; top: -4px; right: -4px; background: var(--accent); color: #fff; border: none;
+  border-radius: 50%; width: 16px; height: 16px; font-size: 11px; line-height: 14px; text-align: center;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15); opacity: 0; transition: opacity 0.15s ease;
+}
+.test-gallery-item-wrapper:hover .test-gallery-item-delete { opacity: 1; }
+.test-gallery-item-delete:hover { background: var(--accent-hover); transform: scale(1.1); }
+
+/* Mockup Template Card in Grid */
 .test-mockup-card {
   border: 2px solid transparent; border-radius: 8px; cursor: pointer;
   height: 80px; width: 80px; flex-shrink: 0; object-fit: cover;
@@ -501,6 +504,43 @@ select, .text-input {
 }
 .test-mockup-card:hover { opacity: 0.95; transform: translateY(-2px); }
 .test-mockup-card.active { border-color: var(--accent); opacity: 1; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(237, 111, 92, 0.25); }
+
+/* Active Upload Dropzone & Previews */
+.test-active-artwork-wrapper {
+  flex: 1; height: 100%; background: rgba(236, 228, 207, 0.38); border: 2px dashed var(--line); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; padding: 8px;
+  cursor: pointer; transition: all 0.2s ease;
+}
+.test-active-artwork-wrapper:hover { border-color: var(--accent); background: rgba(236, 228, 207, 0.58); }
+.test-active-artwork-wrapper.drag { border-color: var(--accent); background: var(--accent-soft); }
+
+.test-active-mockup-wrapper {
+  flex: 1; height: 100%; background: var(--page); border: 1px solid var(--line-soft); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; padding: 8px;
+}
+.test-active-artwork-wrapper img, .test-active-mockup-wrapper img { max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+
+/* Upload Placeholder Graphic inside active artwork area */
+.test-upload-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  color: var(--muted); pointer-events: none; padding: 10px;
+}
+.test-upload-placeholder .placeholder-icon {
+  font-size: 26px; color: var(--accent); margin-bottom: 8px; line-height: 1;
+}
+.test-upload-placeholder strong {
+  display: block; font-family: var(--serif); font-size: 13px; font-weight: 500; color: var(--ink); margin-bottom: 4px;
+}
+.test-upload-placeholder p {
+  font-size: 11px; color: var(--faint); margin: 0; line-height: 1.4;
+}
+#testMockupPlaceholder { color: var(--faint); font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
+.test-active-artwork-wrapper img, .test-active-mockup-wrapper img { max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+#testUploadPlaceholder, #testMockupPlaceholder { color: var(--faint); font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
+
+#testOrientationLabel {
+  margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;
+}
 
 .test-options-row {
   display: flex; align-items: flex-end; gap: 16px; margin-top: auto; padding-top: 15px;

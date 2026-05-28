@@ -301,21 +301,35 @@
       </div>
       <div class="modal-body test-layout">
         <div class="test-col-left">
-          <label>1. Upload artwork (multiple allowed)</label>
-          <div class="test-upload-area" id="testUploadArea">
+          <label>1. Upload artwork (click or drag onto preview to add)</label>
+          <div class="test-artwork-selection">
             <input type="file" id="testArtworkFile" accept="image/png, image/jpeg, image/webp" class="hidden-input" multiple>
-            <div id="testUploadPlaceholder">Click to upload or drag images here</div>
-            <img id="testArtworkPreview" class="hidden" alt="Artwork preview">
+            <div class="test-gallery-grid" id="testGallery">
+              <!-- Grid will be rendered dynamically -->
+            </div>
+            <div class="test-active-artwork-wrapper" id="testArtworkPreviewContainer">
+              <img id="testArtworkPreview" class="hidden" alt="Artwork preview">
+              <div id="testUploadPlaceholder" class="test-upload-placeholder">
+                <div class="placeholder-icon">&#8593;</div>
+                <strong>Upload Artwork</strong>
+                <p>Click or drag images here</p>
+              </div>
+            </div>
           </div>
-          <div class="test-gallery" id="testGallery"></div>
           <div class="sub" id="testOrientationLabel"></div>
           
           <label style="margin-top: 15px;">2. Choose matching mockup</label>
           <select id="testTemplateSelect" class="hidden" disabled>
             <option value="">Upload an image first</option>
           </select>
-          <div class="test-mockup-gallery" id="testMockupGallery">
-            <div class="gallery-empty">Upload artwork to load matching templates</div>
+          <div class="test-mockup-selection">
+            <div class="test-mockup-gallery" id="testMockupGallery">
+              <div class="gallery-empty">Upload artwork to load matching templates</div>
+            </div>
+            <div class="test-active-mockup-wrapper">
+              <img id="testMockupPreview" class="hidden" alt="Mockup preview">
+              <div id="testMockupPlaceholder">No mockup selected</div>
+            </div>
           </div>
 
           <div class="test-options-row">

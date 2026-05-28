@@ -707,6 +707,8 @@
   // Test Mockups Modal Logic
   $("openTestModal").onclick = () => {
     $("testModal").classList.add("open");
+    renderTestGallery();
+    renderMockupGallery();
     if (testState.activeIndex === -1) {
       resetTestResult();
     }
@@ -716,6 +718,35 @@
     if (event.target === $("testModal")) $("testModal").classList.remove("open");
   };
 
+  // Bind upload triggers on the active artwork container (Click & Drag-and-drop)
+  const artworkContainer = $("testArtworkPreviewContainer");
+  if (artworkContainer) {
+    artworkContainer.onclick = () => $("testArtworkFile").click();
+    
+    ["dragenter", "dragover"].forEach((eventName) => {
+      artworkContainer.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        artworkContainer.classList.add("drag");
+      });
+    });
+    
+    ["dragleave", "drop"].forEach((eventName) => {
+      artworkContainer.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        artworkContainer.classList.remove("drag");
+      });
+    });
+    
+    artworkContainer.addEventListener("drop", (event) => {
+      const files = event.dataTransfer.files;
+      if (files.length > 0) {
+        handleTestArtworkUpload(files);
+      }
+    });
+  }
+
   function resetTestResult() {
     $("testResultPlaceholder").classList.remove("hidden");
     $("testResultWrapper").classList.add("hidden");
@@ -724,9 +755,13 @@
     $("testResultDownload").href = "";
   }
   
-  $("testUploadArea").onclick = () => $("testArtworkFile").click();
   $("testArtworkFile").onchange = (e) => {
-    const newFiles = Array.from(e.target.files);
+    handleTestArtworkUpload(e.target.files);
+    e.target.value = "";
+  };
+
+  function handleTestArtworkUpload(filesList) {
+    const newFiles = Array.from(filesList);
     if (newFiles.length === 0) return;
     
     // Add new files to the list
@@ -759,25 +794,65 @@
     if (testState.activeIndex === -1) {
       selectTestImage(0);
     }
-  };
+  }
 
   function renderTestGallery() {
     const gallery = $("testGallery");
     if (testState.files.length === 0) {
-      gallery.innerHTML = "";
+      gallery.innerHTML = `<div class="gallery-empty">No artworks uploaded</div>`;
       return;
     }
     
     gallery.innerHTML = testState.files.map((f, i) => `
-      <img src="${f.url}" class="test-gallery-item ${i === testState.activeIndex ? 'active' : ''}" data-index="${i}">
+      <div class="test-gallery-item-wrapper ${i === testState.activeIndex ? 'active' : ''}" data-index="${i}">
+        <img src="${f.url}" class="test-gallery-item-img">
+        <button class="test-gallery-item-delete" data-index="${i}">&times;</button>
+      </div>
     `).join('');
     
-    gallery.querySelectorAll('.test-gallery-item').forEach(img => {
-      img.onclick = (e) => {
-        e.stopPropagation();
-        selectTestImage(Number(img.dataset.index));
+    gallery.querySelectorAll('.test-gallery-item-wrapper').forEach(item => {
+      item.onclick = (e) => {
+        if (e.target.classList.contains('test-gallery-item-delete')) {
+          e.stopPropagation();
+          deleteTestImage(Number(item.dataset.index));
+          return;
+        }
+        selectTestImage(Number(item.dataset.index));
       };
     });
+  }
+
+  function deleteTestImage(index) {
+    URL.revokeObjectURL(testState.files[index].url);
+    testState.files.splice(index, 1);
+    
+    if (testState.files.length === 0) {
+      testState.activeIndex = -1;
+      testState.templates = [];
+      $("testArtworkPreview").src = "";
+      $("testArtworkPreview").classList.add("hidden");
+      $("testUploadPlaceholder").classList.remove("hidden");
+      $("testOrientationLabel").textContent = "";
+      $("testMockupGallery").innerHTML = `<div class="gallery-empty">Upload artwork to load matching templates</div>`;
+      $("testTemplateSelect").innerHTML = `<option value="">Upload an image first</option>`;
+      $("testTemplateSelect").disabled = true;
+      $("testGenerateButton").disabled = true;
+      
+      // Reset mockup preview
+      $("testMockupPreview").src = "";
+      $("testMockupPreview").classList.add("hidden");
+      $("testMockupPlaceholder").classList.remove("hidden");
+      
+      resetTestResult();
+    } else {
+      if (testState.activeIndex === index) {
+        const nextActive = Math.max(0, index - 1);
+        selectTestImage(nextActive);
+      } else if (testState.activeIndex > index) {
+        testState.activeIndex--;
+      }
+    }
+    renderTestGallery();
   }
 
   function renderMockupGallery() {
@@ -813,6 +888,15 @@
       $("testGenerateButton").disabled = false;
     }
     
+    // Render mockup preview
+    const t = testState.templates.find(x => x.template_id === templateId);
+    if (t) {
+      const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
+      $("testMockupPreview").src = previewUrl;
+      $("testMockupPreview").classList.remove("hidden");
+      $("testMockupPlaceholder").classList.add("hidden");
+    }
+    
     renderMockupGallery();
   }
 
@@ -834,6 +918,11 @@
       $("testTemplateSelect").disabled = true;
       $("testGenerateButton").disabled = true;
       $("testMockupGallery").innerHTML = `<div class="gallery-empty">Detecting orientation...</div>`;
+      
+      // Reset mockup preview
+      $("testMockupPreview").src = "";
+      $("testMockupPreview").classList.add("hidden");
+      $("testMockupPlaceholder").classList.remove("hidden");
       return; // Will be called again by the onload handler
     }
 
@@ -850,6 +939,11 @@
         select.innerHTML = `<option value="">No matching mockups found</option>`;
         select.disabled = true;
         $("testGenerateButton").disabled = true;
+        
+        // Reset mockup preview
+        $("testMockupPreview").src = "";
+        $("testMockupPreview").classList.add("hidden");
+        $("testMockupPlaceholder").classList.remove("hidden");
       } else {
         testState.templates.forEach(t => {
           const opt = document.createElement("option");
@@ -860,6 +954,13 @@
         select.value = testState.templates[0].template_id; // Auto-select first template
         select.disabled = false;
         $("testGenerateButton").disabled = false;
+        
+        // Render mockup preview
+        const firstT = testState.templates[0];
+        const previewUrl = firstT.preview_url || `/api/admin/templates/${firstT.template_id}/asset/preview.png`;
+        $("testMockupPreview").src = previewUrl;
+        $("testMockupPreview").classList.remove("hidden");
+        $("testMockupPlaceholder").classList.add("hidden");
       }
       renderMockupGallery(); // Render visual gallery
     } catch (err) {
@@ -930,6 +1031,8 @@
       await loadCategories();
       await loadTemplates();
       setBusy(false);
+      renderTestGallery();
+      renderMockupGallery();
     } catch (error) {
       setStatus("Unable to load workspace", true);
       toast(error.message);
