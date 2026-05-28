@@ -1452,13 +1452,20 @@
       } else if (renderMode === "ai" && aiModel) {
         formData.append("model", aiModel);
       }
+
+      // Safe request timeout of 120 seconds
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
       
       try {
         const response = await fetch("/api/mockups/render", {
           method: "POST",
           headers: { "X-CSRF-Token": csrf },
-          body: formData
+          body: formData,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
+        
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Generation failed");
         
@@ -1471,7 +1478,12 @@
         $("testResultWrapper").classList.remove("hidden");
         $("testResultActions").classList.remove("hidden");
       } catch (err) {
-        toast(err.message);
+        clearTimeout(timeoutId);
+        if (err.name === "AbortError") {
+          toast("Request timed out (120s limit)");
+        } else {
+          toast(err.message);
+        }
       } finally {
         $("testGenerateButton").disabled = false;
         $("testGenerateButton").textContent = "Generate";
@@ -1511,65 +1523,128 @@
         `;
       }).join('');
       
-      // Trigger all rendering promises concurrently
-      const promises = selectedIds.map(async (templateId) => {
-        const cardElement = $(`batch-card-${templateId}`);
-        const statusElement = $(`batch-status-${templateId}`);
-        const spinnerElement = $(`batch-spinner-${templateId}`);
-        const imgElement = $(`batch-img-${templateId}`);
-        const actionsElement = $(`batch-actions-${templateId}`);
-        const downloadElement = $(`batch-download-${templateId}`);
-        
-        statusElement.textContent = "Generating...";
-        
-        const formData = new FormData();
-        formData.append("mode", renderMode);
-        formData.append("template_id", templateId);
-        formData.append("artwork", activeFile.file);
-        
-        if (renderMode === "simple" && fitMode) {
-          formData.append("fit_mode", fitMode);
-        } else if (renderMode === "ai" && aiModel) {
-          formData.append("model", aiModel);
-        }
-        
+      // Helper function to render a single batch mockup item (with retry support)
+      const renderBatchItem = async (templateId, retryCount = 0) => {
+        // Wrap everything in a top-level try-catch block to guarantee no hanging promise
         try {
-          const response = await fetch("/api/mockups/render", {
-            method: "POST",
-            headers: { "X-CSRF-Token": csrf },
-            body: formData
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Failed");
+          const cardElement = $(`batch-card-${templateId}`);
+          const statusElement = $(`batch-status-${templateId}`);
+          const spinnerElement = $(`batch-spinner-${templateId}`);
+          const imgElement = $(`batch-img-${templateId}`);
+          const actionsElement = $(`batch-actions-${templateId}`);
+          const downloadElement = $(`batch-download-${templateId}`);
           
-          // Render success details
-          cardElement.classList.add("success");
-          statusElement.textContent = "Ready";
-          if (spinnerElement) spinnerElement.remove();
+          if (!cardElement || !statusElement || !imgElement) {
+            console.error(`UI elements not found for mockup: ${templateId}`);
+            return;
+          }
           
-          imgElement.src = data.output_url;
-          imgElement.classList.remove("hidden");
+          // Clear any previous error elements from prior retries
+          const prevError = cardElement.querySelector('.batch-error-message');
+          if (prevError) prevError.remove();
+          cardElement.classList.remove("success", "error");
           
-          downloadElement.href = data.output_url;
-          actionsElement.classList.remove("hidden");
-        } catch (err) {
-          cardElement.classList.add("error");
-          statusElement.textContent = "Failed";
-          if (spinnerElement) spinnerElement.remove();
+          statusElement.textContent = retryCount > 0 ? `Retrying (${retryCount}/2)...` : "Generating...";
           
-          // Display elegant error label
-          const errorDiv = document.createElement("div");
-          errorDiv.className = "sub";
-          errorDiv.style.color = "var(--accent)";
-          errorDiv.style.textAlign = "center";
-          errorDiv.style.padding = "10px";
-          errorDiv.textContent = err.message || "Rendering failed";
-          imgElement.parentNode.appendChild(errorDiv);
+          const formData = new FormData();
+          formData.append("mode", renderMode);
+          formData.append("template_id", templateId);
+          formData.append("artwork", activeFile.file);
+          
+          if (renderMode === "simple" && fitMode) {
+            formData.append("fit_mode", fitMode);
+          } else if (renderMode === "ai" && aiModel) {
+            formData.append("model", aiModel);
+          }
+          
+          // Safe request timeout of 120 seconds
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 120000);
+          
+          try {
+            const response = await fetch("/api/mockups/render", {
+              method: "POST",
+              headers: { "X-CSRF-Token": csrf },
+              body: formData,
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+              // Check if rate limited / resource exhausted
+              const isRateLimited = response.status === 429 || 
+                                    (data.error && data.error.toLowerCase().includes("resource")) ||
+                                    (data.error && data.error.toLowerCase().includes("exhausted")) ||
+                                    (data.error && data.error.toLowerCase().includes("quota"));
+                                    
+              if (isRateLimited && retryCount < 2) {
+                statusElement.textContent = "Rate limited. Waiting...";
+                // Wait for 3.5s on first retry, 7s on second retry
+                const delay = (retryCount + 1) * 3500;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return await renderBatchItem(templateId, retryCount + 1);
+              }
+              throw new Error(data.error || "Failed");
+            }
+            
+            // Render success details
+            cardElement.classList.add("success");
+            statusElement.textContent = "Ready";
+            if (spinnerElement) spinnerElement.remove();
+            
+            imgElement.src = data.output_url;
+            imgElement.classList.remove("hidden");
+            
+            downloadElement.href = data.output_url;
+            actionsElement.classList.remove("hidden");
+          } catch (err) {
+            clearTimeout(timeoutId);
+            cardElement.classList.add("error");
+            
+            if (err.name === "AbortError") {
+              statusElement.textContent = "Timeout";
+            } else {
+              statusElement.textContent = "Failed";
+            }
+            
+            if (spinnerElement) spinnerElement.remove();
+            
+            // Display elegant error label
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "sub batch-error-message";
+            errorDiv.style.color = "var(--accent)";
+            errorDiv.style.textAlign = "center";
+            errorDiv.style.padding = "10px";
+            errorDiv.textContent = err.name === "AbortError" 
+              ? "Request timed out (120s limit)" 
+              : (err.message || "Rendering failed");
+            imgElement.parentNode.appendChild(errorDiv);
+          }
+        } catch (globalErr) {
+          console.error("Global promise exception in batch item:", globalErr);
+          const cardElement = $(`batch-card-${templateId}`);
+          if (cardElement) {
+            cardElement.classList.add("error");
+            const statusElement = $(`batch-status-${templateId}`);
+            if (statusElement) statusElement.textContent = "Failed";
+            const spinnerElement = $(`batch-spinner-${templateId}`);
+            if (spinnerElement) spinnerElement.remove();
+          }
         }
-      });
+      };
       
-      // Wait for all rendering pipelines to settle
-      await Promise.allSettled(promises);
+      if (renderMode === "ai") {
+        // AI Mode: Process sequentially to completely avoid concurrent rate limits on Vertex AI (QPM limits)
+        for (const templateId of selectedIds) {
+          await renderBatchItem(templateId);
+        }
+      } else {
+        // Simple Mode: Process concurrently in parallel for maximum local CPU speed
+        const promises = selectedIds.map(templateId => renderBatchItem(templateId));
+        await Promise.allSettled(promises);
+      }
       
       $("testGenerateButton").disabled = false;
       $("testGenerateButton").textContent = `Generate (${testState.selectedTemplates.size} mockups)`;

@@ -123,5 +123,7 @@ def render_mockup():
         return error_response(str(error), 500)
     except NotImplementedError as error:
         return error_response(str(error), 501)
+    except Exception as error:
+        return error_response(str(error), 500)
 
     return error_response("Rendering did not produce an output", 500)
