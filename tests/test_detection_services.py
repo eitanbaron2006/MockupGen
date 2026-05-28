@@ -342,3 +342,70 @@ def test_refine_perspective_corners_prefers_inner_opening_and_rejects_boundary(t
     refined_3 = refine_perspective_corners(image_path, corners_3, search_radius=10)
     assert refined_3[0]["y"] == 125 # Safety gate falls back to raw coordinate!
 
+
+# ─── Uniform-region detection tests ──────────────────────────────────────────
+
+def test_uniform_region_detection_finds_white_screen_on_dark_bezel(tmp_path: Path):
+    """
+    A phone-style mockup: dark charcoal bezel surrounding a flat white screen.
+    _detect_uniform_region_pil must find the screen area even when there is no
+    explicit border drawn around it — just a stark colour contrast.
+
+    Tolerances are intentionally based on overlap rather than exact coordinates:
+    the function works at 80x80 internal resolution (step=4), so each grid step
+    equals ~30 px at 600x900 scale. What matters is that a region is found that
+    meaningfully overlaps the actual screen area.
+    """
+    from services.frame_refinement_service import _detect_uniform_region_pil
+
+    image = Image.new("RGB", (600, 900), (45, 45, 45))   # Dark bezel
+    draw = ImageDraw.Draw(image)
+    screen_x1, screen_y1, screen_x2, screen_y2 = 80, 140, 520, 760
+    draw.rectangle((screen_x1, screen_y1, screen_x2, screen_y2), fill=(245, 245, 245))
+
+    result = _detect_uniform_region_pil(image)
+
+    assert result is not None, "Should detect the uniform white screen on a dark bezel"
+    rx2 = result["x"] + result["width"]
+    ry2 = result["y"] + result["height"]
+    assert result["x"] < screen_x2 and rx2 > screen_x1, "Detected region must overlap screen horizontally"
+    assert result["y"] < screen_y2 and ry2 > screen_y1, "Detected region must overlap screen vertically"
+    # Overlap must cover at least 25 % of the actual screen
+    overlap_w = min(rx2, screen_x2) - max(result["x"], screen_x1)
+    overlap_h = min(ry2, screen_y2) - max(result["y"], screen_y1)
+    screen_area = (screen_x2 - screen_x1) * (screen_y2 - screen_y1)
+    assert overlap_w * overlap_h >= 0.25 * screen_area, "Overlap with screen must be at least 25 %"
+
+
+def test_uniform_region_detection_returns_none_for_single_colour_image():
+    """
+    A completely flat single-colour image has no distinct uniform region —
+    _detect_uniform_region_pil must return None to avoid false positives.
+    """
+    from services.frame_refinement_service import _detect_uniform_region_pil
+
+    image = Image.new("RGB", (600, 600), (200, 200, 200))  # Uniform grey
+    assert _detect_uniform_region_pil(image) is None
+
+
+def test_global_frame_detect_uniformity_bonus_preserves_correct_frame_detection(tmp_path: Path):
+    """
+    Regression guard: the 20 % uniformity bonus added to _global_frame_detect
+    must not cause it to ignore a real frame with strong edges.  Uses the same
+    double-border image already exercised by the classic detection test.
+    """
+    from services.frame_refinement_service import _global_frame_detect
+
+    image = Image.new("RGB", (700, 700), (244, 238, 226))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((125, 105, 575, 600), outline=(35, 35, 35), width=5)   # outer frame
+    draw.rectangle((195, 185, 505, 520), fill=(250, 250, 250))             # white placeholder
+
+    result = _global_frame_detect(image)
+
+    assert result is not None, "_global_frame_detect should detect a valid frame"
+    # The outer frame edges dominate; the detected box should cover the inner area
+    assert 80 <= result["x"] <= 260, f"x={result['x']} outside expected range"
+    assert 60 <= result["y"] <= 260, f"y={result['y']} outside expected range"
+    assert result["width"] > 200, "Frame width should be substantial"
+    assert result["height"] > 200, "Frame height should be substantial"

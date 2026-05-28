@@ -116,30 +116,153 @@ def _global_frame_detect(source_image: Image.Image) -> dict[str, int] | None:
                     
                     # Normalize by border length to avoid bias towards large boxes
                     total_score = (l_score + r_score) / box_h + (t_score + b_score) / box_w
-                    
+
+                    # Uniformity bonus: prefer boxes whose interior has low edge-energy
+                    # (a flat / solid-colour placeholder has near-zero edge values inside,
+                    # whereas a textured region or already-filled artwork has high edge energy).
+                    # Bonus is at most +20 %, avoiding any reversal of clearly stronger frames.
+                    sample_xs = range(
+                        left + max(2, box_w // 8),
+                        right - max(2, box_w // 8),
+                        max(1, box_w // 6),
+                    )
+                    sample_ys = range(
+                        top + max(2, box_h // 8),
+                        bottom - max(2, box_h // 8),
+                        max(1, box_h // 6),
+                    )
+                    inner_edge_vals = [pixels[x, y] for x in sample_xs for y in sample_ys]
+                    if inner_edge_vals:
+                        mean_inner_edge = sum(inner_edge_vals) / len(inner_edge_vals)
+                        # mean_inner_edge ≈ 0  → very uniform interior → full bonus
+                        # mean_inner_edge ≥ 40 → noisy interior         → no bonus
+                        uniformity_bonus = max(0.0, (40.0 - mean_inner_edge) / 40.0) * 0.20
+                        total_score *= 1.0 + uniformity_bonus
+
                     if total_score > best_score:
                         best_score = total_score
                         best_box = (left, top, box_w, box_h)
                         
-    if best_box and best_score > 60: # Coarse threshold
-        left, top, box_w, box_h = best_box
+    if best_box and best_score > 60:  # Coarse threshold
+        left, top, bw, bh = best_box
         return {
             "x": round(left * scale_x),
             "y": round(top * scale_y),
-            "width": round(box_w * scale_x),
-            "height": round(box_h * scale_y)
+            "width": round(bw * scale_x),
+            "height": round(bh * scale_y),
         }
     return None
+
+
+def _detect_uniform_region_pil(
+    source_image: Image.Image,
+    min_area_ratio: float = 0.04,
+    max_area_ratio: float = 0.90,
+) -> dict[str, int] | None:
+    """
+    Detect the most uniformly-coloured rectangular region in the image.
+
+    Designed for device mockups (phone / tablet / laptop screens) where the
+    placeholder is a flat white, light-grey or dark rectangle surrounded by a
+    differently-tinted bezel.  The function **only returns a result** when the
+    found region is at least 2.5× more uniform than the image average —
+    preventing false positives on single-colour or already-filled mockups.
+
+    Uses PIL only — no OpenCV dependency.
+    """
+    target_size = 80
+    w, h = source_image.size
+    scale_x = w / target_size
+    scale_y = h / target_size
+
+    small = source_image.convert("L").resize(
+        (target_size, target_size), Image.Resampling.BILINEAR
+    )
+    pixels = small.load()
+
+    # Measure the global image standard deviation at reduced resolution.
+    all_vals = [
+        pixels[x, y]
+        for x in range(0, target_size, 2)
+        for y in range(0, target_size, 2)
+    ]
+    global_mean = sum(all_vals) / len(all_vals)
+    global_std = (
+        sum((v - global_mean) ** 2 for v in all_vals) / len(all_vals)
+    ) ** 0.5
+
+    # If the image itself is nearly uniform there is no distinct region to isolate.
+    if global_std < 8:
+        return None
+
+    best_box: tuple[int, int, int, int] | None = None
+    best_std = float("inf")
+    step = 4
+    min_pix = min_area_ratio * target_size * target_size
+    max_pix = max_area_ratio * target_size * target_size
+
+    for x1 in range(step, target_size // 2 - step, step):
+        for y1 in range(step, target_size // 2 - step, step):
+            for x2 in range(target_size // 2, target_size - step, step):
+                for y2 in range(target_size // 2, target_size - step, step):
+                    box_w = x2 - x1
+                    box_h = y2 - y1
+                    if not (min_pix <= box_w * box_h <= max_pix):
+                        continue
+                    if box_w < 8 or box_h < 8:
+                        continue
+
+                    # Sample interior pixels inset by ~15 % to avoid border bleed.
+                    inset_x = max(1, box_w // 6)
+                    inset_y = max(1, box_h // 6)
+                    sx = max(1, box_w // 8)
+                    sy = max(1, box_h // 8)
+
+                    interior = [
+                        pixels[x, y]
+                        for x in range(x1 + inset_x, x2 - inset_x, sx)
+                        for y in range(y1 + inset_y, y2 - inset_y, sy)
+                    ]
+                    if len(interior) < 6:
+                        continue
+
+                    mean_v = sum(interior) / len(interior)
+                    std = (
+                        sum((v - mean_v) ** 2 for v in interior) / len(interior)
+                    ) ** 0.5
+
+                    if std < best_std:
+                        best_std = std
+                        best_box = (x1, y1, box_w, box_h)
+
+    # Only return if the found region is clearly more uniform than the overall image.
+    # A ratio of 2.5 means the interior is ≥2.5× flatter than the mean — strong signal.
+    if best_box is None or best_std * 2.5 >= global_std:
+        return None
+
+    x1, y1, bw, bh = best_box
+    return {
+        "x": round(x1 * scale_x),
+        "y": round(y1 * scale_y),
+        "width": round(bw * scale_x),
+        "height": round(bh * scale_y),
+    }
 
 
 def refine_artwork_area(image_path: Path, proposed_area: dict[str, int], blur_size: int = 3) -> dict[str, int]:
     """Snap an outer or approximate frame proposal to its visible inner opening."""
     with Image.open(image_path) as source:
-        # Try global coarse frame detection first to handle off-center frames beautifully!
+        # Stage 1 — edge-projection global search (handles off-centre frames, posters, etc.)
         coarse = _global_frame_detect(source)
         if coarse:
             proposed_area = coarse
-            
+        else:
+            # Stage 2 — uniform-region search (device screens: phone / tablet / laptop).
+            # Only used when the edge-projection search found nothing convincing.
+            uniform = _detect_uniform_region_pil(source)
+            if uniform:
+                proposed_area = uniform
+
         # Apply a median filter to suppress fine high-frequency noise and textures (like wood grains)
         # while preserving perfectly sharp structural borders for pixel-accurate snapping.
         filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=blur_size))
