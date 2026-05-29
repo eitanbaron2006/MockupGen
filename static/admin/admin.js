@@ -1,5 +1,37 @@
 (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  const SELECTION_STYLE_STORAGE_KEY = "mockupStudio.selectionStyle";
+  const DEFAULT_SELECTION_STYLE = {
+    polygonColor: "#ed6f5c",
+    crossColor: "#ed6f5c",
+    polygonOpacity: 15,
+    crossOpacity: 100,
+    polygonWidth: 2,
+    crossWidth: 1.5
+  };
+
+  function clampStyleNumber(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, number));
+  }
+
+  function loadSelectionStylePreference() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SELECTION_STYLE_STORAGE_KEY) || "{}");
+      return {
+        polygonColor: typeof saved.polygonColor === "string" ? saved.polygonColor : DEFAULT_SELECTION_STYLE.polygonColor,
+        crossColor: typeof saved.crossColor === "string" ? saved.crossColor : DEFAULT_SELECTION_STYLE.crossColor,
+        polygonOpacity: clampStyleNumber(saved.polygonOpacity, 0, 100, DEFAULT_SELECTION_STYLE.polygonOpacity),
+        crossOpacity: clampStyleNumber(saved.crossOpacity, 0, 100, DEFAULT_SELECTION_STYLE.crossOpacity),
+        polygonWidth: clampStyleNumber(saved.polygonWidth, 1, 8, DEFAULT_SELECTION_STYLE.polygonWidth),
+        crossWidth: clampStyleNumber(saved.crossWidth, 0.5, 8, DEFAULT_SELECTION_STYLE.crossWidth)
+      };
+    } catch (_error) {
+      return {...DEFAULT_SELECTION_STYLE};
+    }
+  }
+
   const state = {
     categories: [],
     templates: [],
@@ -12,13 +44,7 @@
     queueFilter: "all",
     selectedForBatch: new Set(),
     switchingProvider: false,
-    selectionStyle: {
-      polygonColor: "#ed6f5c",
-      crossColor: "#ed6f5c",
-      polygonOpacity: 15,
-      crossOpacity: 100,
-      polygonWidth: 2
-    },
+    selectionStyle: loadSelectionStylePreference(),
     zoom: 1,
     pan: { x: 0, y: 0 },
     isPanning: false,
@@ -405,9 +431,10 @@
     if (svg) {
       svg.style.setProperty("--selection-color", style.polygonColor);
       svg.style.setProperty("--selection-fill-opacity", style.polygonOpacity / 100);
-      svg.style.setProperty("--selection-stroke-width", style.polygonWidth);
+      svg.style.setProperty("--selection-stroke-width", `${style.polygonWidth}px`);
       svg.style.setProperty("--cross-color", style.crossColor);
       svg.style.setProperty("--cross-opacity", style.crossOpacity / 100);
+      svg.style.setProperty("--cross-stroke-width", `${style.crossWidth}px`);
     }
     if ($("polygonColorSwatch")) $("polygonColorSwatch").style.background = style.polygonColor;
     if ($("crossColorIcon")) $("crossColorIcon").style.color = style.crossColor;
@@ -416,9 +443,19 @@
     if ($("polygonOpacityInput")) $("polygonOpacityInput").value = style.polygonOpacity;
     if ($("crossOpacityInput")) $("crossOpacityInput").value = style.crossOpacity;
     if ($("polygonWidthInput")) $("polygonWidthInput").value = style.polygonWidth;
+    if ($("crossWidthInput")) $("crossWidthInput").value = style.crossWidth;
     if ($("polygonOpacityValue")) $("polygonOpacityValue").textContent = `${style.polygonOpacity}%`;
     if ($("crossOpacityValue")) $("crossOpacityValue").textContent = `${style.crossOpacity}%`;
     if ($("polygonWidthValue")) $("polygonWidthValue").textContent = `${style.polygonWidth}px`;
+    if ($("crossWidthValue")) $("crossWidthValue").textContent = `${style.crossWidth}px`;
+  }
+
+  function saveSelectionStylePreference() {
+    try {
+      localStorage.setItem(SELECTION_STYLE_STORAGE_KEY, JSON.stringify(state.selectionStyle));
+    } catch (_error) {
+      // Style preferences are non-critical UI state.
+    }
   }
 
   function openSelectionStylePanel(panelId, button) {
@@ -1621,22 +1658,32 @@
   $("polygonColorInput").oninput = (event) => {
     state.selectionStyle.polygonColor = event.target.value;
     applySelectionStyle();
+    saveSelectionStylePreference();
   };
   $("crossColorInput").oninput = (event) => {
     state.selectionStyle.crossColor = event.target.value;
     applySelectionStyle();
+    saveSelectionStylePreference();
   };
   $("polygonOpacityInput").oninput = (event) => {
     state.selectionStyle.polygonOpacity = Number(event.target.value);
     applySelectionStyle();
+    saveSelectionStylePreference();
   };
   $("crossOpacityInput").oninput = (event) => {
     state.selectionStyle.crossOpacity = Number(event.target.value);
     applySelectionStyle();
+    saveSelectionStylePreference();
   };
   $("polygonWidthInput").oninput = (event) => {
     state.selectionStyle.polygonWidth = Number(event.target.value);
     applySelectionStyle();
+    saveSelectionStylePreference();
+  };
+  $("crossWidthInput").oninput = (event) => {
+    state.selectionStyle.crossWidth = Number(event.target.value);
+    applySelectionStyle();
+    saveSelectionStylePreference();
   };
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;

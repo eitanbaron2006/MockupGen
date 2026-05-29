@@ -917,7 +917,8 @@ h2 {
   --selection-color: var(--accent);
   --selection-fill-opacity: .15;
   --selection-stroke-opacity: 1;
-  --selection-stroke-width: 2;
+  --selection-stroke-width: 2px;
+  --cross-stroke-width: 1.5px;
   position: absolute;
   top: 0;
   left: 0;
@@ -938,7 +939,7 @@ h2 {
   fill-opacity: var(--selection-fill-opacity);
   stroke: var(--selection-color);
   stroke-opacity: var(--selection-stroke-opacity);
-  stroke-width: calc(var(--selection-stroke-width) * 1px / var(--zoom, 1));
+  stroke-width: calc(var(--selection-stroke-width) / var(--zoom, 1));
   stroke-dasharray: calc(4px / var(--zoom, 1)) calc(4px / var(--zoom, 1));
   cursor: move;
   pointer-events: auto;
@@ -979,14 +980,14 @@ h2 {
 .selection-svg .cross-line {
   opacity: var(--cross-opacity);
   stroke: var(--cross-color);
-  stroke-width: calc(1.5px / var(--zoom, 1));
+  stroke-width: calc(var(--cross-stroke-width) / var(--zoom, 1));
   pointer-events: none;
   transition: stroke 0.15s ease, stroke-width 0.15s ease;
 }
 
 .handle-group:hover .cross-line {
   stroke: var(--cross-color);
-  stroke-width: calc(2.2px / var(--zoom, 1));
+  stroke-width: calc(var(--cross-stroke-width) / var(--zoom, 1));
 }
 
 .selection-svg .svg-zone-tag {
@@ -1082,6 +1083,7 @@ h2 {
 
 .style-cross-icon,
 .style-cross-opacity-icon,
+.style-cross-width-icon,
 .style-width-icon,
 .style-opacity-icon {
   display: block;
@@ -1093,7 +1095,9 @@ h2 {
 .style-cross-icon::before,
 .style-cross-icon::after,
 .style-cross-opacity-icon::before,
-.style-cross-opacity-icon::after {
+.style-cross-opacity-icon::after,
+.style-cross-width-icon::before,
+.style-cross-width-icon::after {
   background: currentColor;
   content: "";
   left: 50%;
@@ -1103,15 +1107,25 @@ h2 {
 }
 
 .style-cross-icon::before,
-.style-cross-opacity-icon::before {
+.style-cross-opacity-icon::before,
+.style-cross-width-icon::before {
   height: 2px;
   width: 16px;
 }
 
 .style-cross-icon::after,
-.style-cross-opacity-icon::after {
+.style-cross-opacity-icon::after,
+.style-cross-width-icon::after {
   height: 16px;
   width: 2px;
+}
+
+.style-cross-width-icon::before {
+  height: 5px;
+}
+
+.style-cross-width-icon::after {
+  width: 5px;
 }
 
 .style-cross-opacity-icon {
