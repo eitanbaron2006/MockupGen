@@ -849,6 +849,15 @@ h2 {
   pointer-events: auto;
 }
 
+.selection-svg .raw-selection-polygon {
+  fill: rgba(0, 150, 255, 0.05);
+  stroke: rgba(0, 150, 255, 0.55);
+  stroke-width: calc(2px / var(--zoom, 1));
+  stroke-dasharray: calc(4px / var(--zoom, 1)) calc(4px / var(--zoom, 1));
+  pointer-events: none;
+  cursor: default;
+}
+
 /* Transparent target hitbox for easy manual corner grabs */
 .selection-svg .svg-handle {
   fill: transparent;
@@ -892,6 +901,18 @@ h2 {
   pointer-events: none;
   user-select: none;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.selection-svg .svg-raw-handle {
+  fill: #0096ff;
+  stroke: #ffffff;
+  stroke-width: calc(1.5px / var(--zoom, 1));
+  pointer-events: none;
+  filter: drop-shadow(0 1px 3px rgba(0, 150, 255, 0.45));
+}
+
+.selection-svg .svg-raw-zone-tag {
+  fill: rgba(0, 120, 240, 0.85);
 }
 
 .analysis-overlay {

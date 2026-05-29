@@ -11,3 +11,4 @@ outputs/*
 !outputs/.gitkeep
 logs/*
 !logs/.gitkeep
+sam2.1_l.pt

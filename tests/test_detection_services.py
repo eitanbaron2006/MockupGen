@@ -88,6 +88,33 @@ def test_vertex_refinement_does_not_replace_good_ai_box_with_collapsed_inner_tex
     assert "ignored" in proposal.reason
 
 
+def test_vertex_provider_exposes_raw_artwork_area(tmp_path: Path, monkeypatch):
+    background = tmp_path / "background.png"
+    Image.new("RGB", (1000, 1000), (250, 245, 238)).save(background)
+    client = FakeClient()
+    
+    # We want a provider with refinement=True, where candidate refinement actually succeeds/differs from raw
+    provider = VertexDetectionProvider(
+        project_id="vertextai-project-497513",
+        model="gemini-2.5-flash",
+        client=client,
+        refine=True,
+    )
+    
+    refined_mock_area = {"x": 210, "y": 110, "width": 580, "height": 630}
+    monkeypatch.setattr(
+        "services.vertex_detection_service.refine_artwork_area",
+        lambda _path, _area: refined_mock_area,
+    )
+    
+    proposal = provider.detect(background)
+    
+    # Raw box from fake client is box_2d: [100, 200, 750, 800] -> x: 200, y: 100, width: 600, height: 650
+    assert proposal.raw_artwork_area == {"x": 200, "y": 100, "width": 600, "height": 650}
+    assert proposal.artwork_area == refined_mock_area
+    assert proposal.provider == "vertex+edges"
+
+
 def test_edge_refinement_snaps_approximate_ai_area_to_dashed_rectangle(tmp_path: Path):
     image_path = tmp_path / "dashed-area.png"
     image = Image.new("RGB", (600, 700), (244, 238, 226))

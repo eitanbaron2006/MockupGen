@@ -59,6 +59,7 @@ class CatalogService:
                     source_filename TEXT,
                     detection_provider TEXT,
                     detection_confidence REAL,
+                    raw_artwork_area TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -68,6 +69,10 @@ class CatalogService:
                 );
                 """
             )
+            try:
+                connection.execute("ALTER TABLE templates ADD COLUMN raw_artwork_area TEXT")
+            except sqlite3.OperationalError:
+                pass
         self._seed_existing_templates(templates_folder)
 
     def _seed_existing_templates(self, templates_folder: Path) -> None:
@@ -164,8 +169,8 @@ class CatalogService:
                     canvas_height, artwork_area, fit_mode, orientation,
                     background_name, preview_name, foreground_name, mask_name,
                     source_filename, detection_provider, detection_confidence,
-                    created_at, updated_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    raw_artwork_area, created_at, updated_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["template_id"],
@@ -184,6 +189,7 @@ class CatalogService:
                     record.get("source_filename"),
                     record.get("detection_provider"),
                     record.get("detection_confidence"),
+                    json.dumps(record.get("raw_artwork_area")) if record.get("raw_artwork_area") else None,
                     timestamp,
                     timestamp,
                 ),
@@ -238,6 +244,7 @@ class CatalogService:
             "name",
             "category_id",
             "artwork_area",
+            "raw_artwork_area",
             "fit_mode",
             "orientation",
             "foreground_name",
@@ -252,7 +259,7 @@ class CatalogService:
             if key not in allowed:
                 continue
             assignments.append(f"{key} = ?")
-            values.append(json.dumps(value) if key == "artwork_area" else value)
+            values.append(json.dumps(value) if key in {"artwork_area", "raw_artwork_area"} else value)
         if not assignments:
             current = self.get_template(template_id)
             if not current:
@@ -301,6 +308,9 @@ class CatalogService:
         template = dict(row)
         template["artwork_area"] = (
             json.loads(template["artwork_area"]) if template["artwork_area"] else None
+        )
+        template["raw_artwork_area"] = (
+            json.loads(template["raw_artwork_area"]) if template.get("raw_artwork_area") else None
         )
         return template
 

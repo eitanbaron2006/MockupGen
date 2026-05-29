@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,18 +10,16 @@ from services.frame_refinement_service import refine_artwork_area, refine_perspe
 
 
 PROMPT = """Find the exact inner artwork replacement area in this product mockup.
-You MUST detect the exact 4 inner corners of the frame opening (where the printable paper poster/artwork belongs) in clockwise order starting from the top-left corner:
+If the frame has perspective, skew, or is shot at an angle, detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
 1. Top-Left corner [x, y]
 2. Top-Right corner [x, y]
 3. Bottom-Right corner [x, y]
 4. Bottom-Left corner [x, y]
+Return these 4 corners as an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (x represents horizontal percentage, y represents vertical percentage).
+A gray dashed placeholder rectangle (often around words like YOUR ARTWORK HERE or ART HERE) is the strongest signal.
 
-CRITICAL GUIDELINES FOR ABSOLUTE PRECISION:
-- ALWAYS return these 4 corners as an array under the 'corners' key in the normalized format 0-1000 (x is horizontal percentage, y is vertical percentage).
-- EXCLUDE the wood, metal, plastic, or plaster frame border entirely! The 4 corner points must sit exactly at the INNER corner boundary where the glass or poster meets the inner edge of the wood frame border.
-- If there is a white matte board (passe-partout) framing the picture inside the wood frame, detect the inner border of that matte board (the actual artwork opening), NOT the outer wood frame!
-- Ignore all glass reflections, overlapping shadows, plants, furniture, or other decorations.
-- A gray dashed placeholder line (often with text like 'YOUR DESIGN HERE', 'YOUR ARTWORK HERE', or 'ART HERE') is the absolute strongest signal. Detect the exact corners of this dashed rectangle."""
+If the frame is a flat, non-rotated 2D rectangle, you can alternatively return the bounding box under the 'box_2d' key in the normalized format [y_min, x_min, y_max, x_max].
+Ignore overlapping decorations and shadows. Do not infer shape from the words themselves."""
 
 
 def _safe_refinement(
@@ -96,9 +95,10 @@ class VertexDetectionProvider:
                             "required": ["x", "y"]
                         }
                     },
+                    "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
                     "label": {"type": "STRING"},
                 },
-                "required": ["corners", "label"],
+                "required": ["label"],
             },
         }
         resolutions = {
@@ -126,36 +126,14 @@ class VertexDetectionProvider:
             box_data = payload[0]
             refined = False
             refinement_rejected = False
+            raw_artwork_area = None
             
-            if "corners" in box_data and box_data["corners"] and len(box_data["corners"]) == 4:
-                corners = box_data["corners"]
-                normalized_corners = []
-                for p in corners:
-                    normalized_corners.append({
-                        "x": round(int(p["x"]) * width / 1000),
-                        "y": round(int(p["y"]) * height / 1000)
-                    })
-                
-                # Apply local edge refinement to all 4 corners!
-                if self.refine:
-                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=10)
-                    refined = refined_corners != normalized_corners
-                    normalized_corners = refined_corners
-                else:
-                    refined = False
-                
-                xs = [p["x"] for p in normalized_corners]
-                ys = [p["y"] for p in normalized_corners]
-                min_x, max_x = min(xs), max(xs)
-                min_y, max_y = min(ys), max(ys)
-                proposal_area = {
-                    "x": min_x,
-                    "y": min_y,
-                    "width": max_x - min_x,
-                    "height": max_y - min_y,
-                    "corners": normalized_corners
-                }
-            elif "box_2d" in box_data and box_data["box_2d"] and len(box_data["box_2d"]) == 4:
+            logger = logging.getLogger("vertex_detection")
+            logger.info("=== VERTEX DETECTION DEBUG ===")
+            logger.info("Image dimensions: %dx%d", width, height)
+            logger.info("Raw AI payload box_data: %s", json.dumps(box_data, default=str))
+            
+            if "box_2d" in box_data and box_data["box_2d"] and len(box_data["box_2d"]) == 4:
                 box = box_data["box_2d"]
                 raw_area = {
                     "x": round(int(box[1]) * width / 1000),
@@ -163,6 +141,7 @@ class VertexDetectionProvider:
                     "width": round((int(box[3]) - int(box[1])) * width / 1000),
                     "height": round((int(box[2]) - int(box[0])) * height / 1000),
                 }
+                raw_artwork_area = raw_area
                 if self.refine:
                     candidate_area = refine_artwork_area(background_path, raw_area)
                     proposal_area = _safe_refinement(raw_area, candidate_area) or raw_area
@@ -170,6 +149,70 @@ class VertexDetectionProvider:
                 else:
                     proposal_area = raw_area
                 refined = proposal_area != raw_area
+                
+
+            elif "corners" in box_data and box_data["corners"] and len(box_data["corners"]) == 4:
+                corners = box_data["corners"]
+                logger.info("Raw AI corners (0-1000 normalized): %s", json.dumps(corners, default=str))
+                normalized_corners = []
+                for i, p in enumerate(corners):
+                    px = round(int(p["x"]) * width / 1000)
+                    py = round(int(p["y"]) * height / 1000)
+                    logger.info("  Corner %d: AI(%s,%s) -> pixel(%d,%d)", i, p["x"], p["y"], px, py)
+                    normalized_corners.append({"x": px, "y": py})
+                
+                # Sort normalized corners in clockwise order starting from top-left to avoid any model ordering issues
+                from services.detection_service import sort_clockwise
+                normalized_corners = sort_clockwise(normalized_corners)
+                
+                logger.info("Normalized pixel corners: %s", json.dumps(normalized_corners))
+                logger.info("Refinement enabled: %s", self.refine)
+                
+                # Capture raw corners before edge refinement
+                import copy
+                raw_corners = copy.deepcopy(normalized_corners)
+                xs_raw = [p["x"] for p in raw_corners]
+                ys_raw = [p["y"] for p in raw_corners]
+                raw_artwork_area = {
+                    "x": min(xs_raw),
+                    "y": min(ys_raw),
+                    "width": max(xs_raw) - min(xs_raw),
+                    "height": max(ys_raw) - min(ys_raw),
+                    "corners": raw_corners
+                }
+                
+                # Apply local edge refinement to all 4 corners!
+                if self.refine:
+                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=60)
+                    refined = refined_corners != normalized_corners
+                    logger.info("Refined corners: %s", json.dumps(refined_corners))
+                    logger.info("Refinement changed corners: %s", refined)
+                    for i, (orig, ref) in enumerate(zip(normalized_corners, refined_corners)):
+                        dx = ref["x"] - orig["x"]
+                        dy = ref["y"] - orig["y"]
+                        if dx or dy:
+                            logger.info("  Corner %d shifted: dx=%d, dy=%d", i, dx, dy)
+                    normalized_corners = refined_corners
+                else:
+                    refined = False
+                
+                xs = [p["x"] for p in normalized_corners]
+                xs_sorted = sorted(xs)
+                ys = [p["y"] for p in normalized_corners]
+                ys_sorted = sorted(ys)
+                min_x, max_x = xs_sorted[0], xs_sorted[-1]
+                min_y, max_y = ys_sorted[0], ys_sorted[-1]
+                proposal_area = {
+                    "x": min_x,
+                    "y": min_y,
+                    "width": max_x - min_x,
+                    "height": max_y - min_y,
+                    "corners": normalized_corners
+                }
+                logger.info("Final proposal_area: x=%d y=%d w=%d h=%d corners=%s",
+                    proposal_area["x"], proposal_area["y"],
+                    proposal_area["width"], proposal_area["height"],
+                    json.dumps(proposal_area["corners"]))
             else:
                 raise DetectionError("Vertex did not return perspective corners or a 2D bounding box")
 
@@ -187,6 +230,7 @@ class VertexDetectionProvider:
                 "artwork_area": proposal_area,
                 "confidence": 0.95 if "corners" in box_data else (0.9 if refined else 0.75),
                 "reason": reason,
+                "raw_artwork_area": raw_artwork_area,
             }
         except DetectionError:
             raise

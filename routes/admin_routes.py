@@ -285,6 +285,7 @@ def detect_admin_template(template_id: str):
                     ),
                     "detection_provider": proposal.provider,
                     "detection_confidence": proposal.confidence,
+                    "raw_artwork_area": proposal.raw_artwork_area,
                 }
             )
         else:
@@ -296,6 +297,7 @@ def detect_admin_template(template_id: str):
                 ),
                 "detection_provider": proposal.provider,
                 "detection_confidence": proposal.confidence,
+                "raw_artwork_area": proposal.raw_artwork_area,
             }
     except DetectionError as error:
         return json_error(str(error), 422)
@@ -308,6 +310,7 @@ def detect_admin_template(template_id: str):
                 "confidence": proposal.confidence,
                 "reason": proposal.reason,
                 "provider": proposal.provider,
+                "raw_artwork_area": proposal.raw_artwork_area,
             },
         }
     )
@@ -482,6 +485,7 @@ def test_detection_settings():
                 "confidence": proposal.confidence,
                 "reason": proposal.reason,
                 "provider": proposal.provider,
+                "raw_artwork_area": proposal.raw_artwork_area,
             },
         }
     )

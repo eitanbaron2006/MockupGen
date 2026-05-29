@@ -417,6 +417,56 @@
       }
     });
     
+    // Map raw_artwork_area canvas coordinates to client display coordinates inside the rendered rect
+    const rawPolygon = $("rawSelectionPolygon");
+    const rawTag = $("svgRawZoneTag");
+    if (template.raw_artwork_area && rawPolygon) {
+      if (!template.raw_artwork_area.corners) {
+        const area = template.raw_artwork_area;
+        template.raw_artwork_area.corners = [
+          { x: area.x, y: area.y },
+          { x: area.x + area.width, y: area.y },
+          { x: area.x + area.width, y: area.y + area.height },
+          { x: area.x, y: area.y + area.height }
+        ];
+      }
+      const rawCorners = template.raw_artwork_area.corners;
+      const rawPointsStr = rawCorners.map(p => {
+        const cx = (p.x / template.canvas_width) * rect.width;
+        const cy = (p.y / template.canvas_height) * rect.height;
+        return `${cx},${cy}`;
+      }).join(" ");
+      rawPolygon.setAttribute("points", rawPointsStr);
+      rawPolygon.classList.remove("hidden");
+      
+      if (rawTag && rawCorners.length > 0) {
+        const tRawX = (rawCorners[0].x / template.canvas_width) * rect.width;
+        const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25; // slightly above the main tag
+        rawTag.setAttribute("x", tRawX);
+        rawTag.setAttribute("y", tRawY);
+        rawTag.classList.remove("hidden");
+      }
+
+      // Position and show raw handles
+      rawCorners.forEach((p, idx) => {
+        const cx = (p.x / template.canvas_width) * rect.width;
+        const cy = (p.y / template.canvas_height) * rect.height;
+        const rawMarker = $(`raw_handle_${idx}`);
+        if (rawMarker) {
+          rawMarker.setAttribute("cx", cx);
+          rawMarker.setAttribute("cy", cy);
+          rawMarker.classList.remove("hidden");
+        }
+      });
+    } else {
+      if (rawPolygon) rawPolygon.classList.add("hidden");
+      if (rawTag) rawTag.classList.add("hidden");
+      for (let idx = 0; idx < 4; idx++) {
+        const rawMarker = $(`raw_handle_${idx}`);
+        if (rawMarker) rawMarker.classList.add("hidden");
+      }
+    }
+
     // Position the text tag slightly above or near the first corner
     if (corners.length > 0) {
       const tX = (corners[0].x / template.canvas_width) * rect.width;
@@ -697,6 +747,9 @@
     try {
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {method: "POST"});
       state.selected = payload.template;
+      if (payload.proposal && payload.proposal.raw_artwork_area) {
+        state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
+      }
       const confidence = payload.proposal.confidence == null ? "" : ` (${Math.round(payload.proposal.confidence * 100)}%)`;
       $("confidence").textContent = `Detection proposal / ${payload.proposal.provider}${confidence}`;
       $("detectionResult").classList.add("success");
@@ -854,6 +907,15 @@
         method: "POST",
         body: JSON.stringify({template_id: state.selected.template_id})
       });
+      if (payload.proposal) {
+        state.selected.artwork_area = payload.proposal.artwork_area;
+        if (payload.proposal.raw_artwork_area) {
+          state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
+        } else {
+          delete state.selected.raw_artwork_area;
+        }
+        renderEditor();
+      }
       const confidence = payload.proposal.confidence == null
         ? ""
         : ` (${Math.round(payload.proposal.confidence * 100)}%)`;

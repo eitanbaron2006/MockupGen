@@ -387,8 +387,10 @@ def _inner_strongest_line(
     if max_score < 100:  # Noise threshold
         return center
     
-    # Filter qualified coordinates with at least 45% of maximum edge contrast
-    threshold = max(200, round(max_score * 0.45))
+    # Filter qualified coordinates with at least 25% of maximum edge contrast
+    # Lowered from 0.45 to 0.25 to reliably detect the inner opening border
+    # even when there is an extremely strong outer frame border nearby.
+    threshold = max(200, round(max_score * 0.25))
     qualified = [pos for score, pos in candidates if score >= threshold]
     if not qualified:
         return center
@@ -425,13 +427,15 @@ def _inner_strongest_line(
 def refine_perspective_corners(
     image_path: Path,
     corners: list[dict[str, int]],
-    search_radius: int = 10,
+    search_radius: int = 60,
     blur_size: int = 3
 ) -> list[dict[str, int]]:
     """Refine each of the 4 perspective corners locally using classic edge detection."""
     try:
         with Image.open(image_path) as source:
-            filtered = source.convert("L").filter(ImageFilter.MedianFilter(size=blur_size))
+            # Use GaussianBlur(0.5) instead of MedianFilter to preserve perfectly sharp
+            # and very thin inner boundary lines, preventing them from being erased.
+            filtered = source.convert("L").filter(ImageFilter.GaussianBlur(radius=0.5))
             
         width, height = filtered.size
         edges = ImageOps.autocontrast(filtered.filter(ImageFilter.FIND_EDGES))

@@ -1,6 +1,9 @@
+import logging
 import os
 from pathlib import Path
 from typing import Any
+
+logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS

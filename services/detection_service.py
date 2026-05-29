@@ -13,11 +13,22 @@ class DetectionProposal:
     confidence: float | None
     reason: str
     provider: str
+    raw_artwork_area: dict[str, Any] | None = None
 
 
 class DetectionProvider(Protocol):
     def detect(self, background_path: Path) -> DetectionProposal:
         ...
+
+
+import math
+
+def sort_clockwise(corners: list[dict[str, int]]) -> list[dict[str, int]]:
+    if len(corners) != 4:
+        return corners
+    cx = sum(p["x"] for p in corners) / 4
+    cy = sum(p["y"] for p in corners) / 4
+    return sorted(corners, key=lambda p: math.atan2(p["y"] - cy, p["x"] - cx))
 
 
 def validate_proposal(
@@ -39,6 +50,8 @@ def validate_proposal(
                     "x": int(p["x"]),
                     "y": int(p["y"])
                 })
+            # Ensure corners are sorted in clockwise order starting from top-left
+            normalized_corners = sort_clockwise(normalized_corners)
             xs = [p["x"] for p in normalized_corners]
             ys = [p["y"] for p in normalized_corners]
             min_x, max_x = min(xs), max(xs)
@@ -70,6 +83,40 @@ def validate_proposal(
         or normalized["y"] + normalized["height"] > image_height
     ):
         raise DetectionError("Detected artwork area is outside the background image")
+
+    # Process raw_artwork_area if present
+    raw_area = payload.get("raw_artwork_area")
+    normalized_raw = None
+    if raw_area:
+        try:
+            if "corners" in raw_area:
+                raw_corners = raw_area["corners"]
+                normalized_raw_corners = []
+                for p in raw_corners:
+                    normalized_raw_corners.append({
+                        "x": int(p["x"]),
+                        "y": int(p["y"])
+                    })
+                normalized_raw_corners = sort_clockwise(normalized_raw_corners)
+                xs = [p["x"] for p in normalized_raw_corners]
+                ys = [p["y"] for p in normalized_raw_corners]
+                normalized_raw = {
+                    "x": min(xs),
+                    "y": min(ys),
+                    "width": max(xs) - min(xs),
+                    "height": max(ys) - min(ys),
+                    "corners": normalized_raw_corners
+                }
+            else:
+                normalized_raw = {
+                    "x": int(raw_area["x"]),
+                    "y": int(raw_area["y"]),
+                    "width": int(raw_area["width"]),
+                    "height": int(raw_area["height"]),
+                }
+        except (KeyError, TypeError, ValueError):
+            normalized_raw = None
+
     raw_confidence = payload.get("confidence")
     confidence = float(raw_confidence) if raw_confidence is not None else None
     if confidence is not None and not 0 <= confidence <= 1:
@@ -79,6 +126,7 @@ def validate_proposal(
         confidence=confidence,
         reason=str(payload.get("reason", "")),
         provider=provider,
+        raw_artwork_area=normalized_raw,
     )
 
 

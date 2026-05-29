@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=2">
 </head>
 <body class="admin-page">
   <div class="app">
@@ -75,6 +75,7 @@
             <div id="stage" class="hidden">
               <img id="canvasImage" alt="Selected mockup image">
               <svg id="selectionSvg" class="selection-svg hidden">
+                <polygon id="rawSelectionPolygon" points="" class="raw-selection-polygon hidden" />
                 <polygon id="selectionPolygon" points="" />
                 <!-- Corner 0 Handle (Crosshair) -->
                 <g class="handle-group" id="handle_group_0">
@@ -101,6 +102,12 @@
                   <circle class="svg-handle handle-hitbox" id="handle_3" data-index="3" r="12" cx="0" cy="0"></circle>
                 </g>
                 <text id="svgZoneTag" class="svg-zone-tag" x="0" y="0">Artwork area</text>
+                <text id="svgRawZoneTag" class="svg-zone-tag svg-raw-zone-tag hidden" x="0" y="0">Raw AI corners</text>
+                <!-- Raw AI Corner Markers -->
+                <circle class="svg-raw-handle hidden" id="raw_handle_0" r="6" cx="0" cy="0"></circle>
+                <circle class="svg-raw-handle hidden" id="raw_handle_1" r="6" cx="0" cy="0"></circle>
+                <circle class="svg-raw-handle hidden" id="raw_handle_2" r="6" cx="0" cy="0"></circle>
+                <circle class="svg-raw-handle hidden" id="raw_handle_3" r="6" cx="0" cy="0"></circle>
               </svg>
               <div id="analysisOverlay" class="analysis-overlay hidden">
                 <span class="spinner"></span>
@@ -424,6 +431,6 @@
     </div>
   </div>
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=2"></script>
 </body>
 </html>

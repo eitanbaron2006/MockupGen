@@ -27,15 +27,19 @@ def import_backgrounds(
         raise TemplateImportError("Category not found")
     validated_uploads: list[tuple[FileStorage, str]] = []
     pending_names: set[str] = set()
+    duplicates: list[str] = []
     for upload in list(uploads):
         safe_name = secure_filename(upload.filename or "")
         if not safe_name or Path(safe_name).suffix.lower() not in ALLOWED_ARTWORK_EXTENSIONS:
             raise TemplateImportError("Only PNG, JPG, JPEG, and WebP mockup images are allowed")
         normalized_name = safe_name.casefold()
         if normalized_name in pending_names or catalog.source_filename_exists(safe_name):
+            duplicates.append(safe_name)
             continue
         pending_names.add(normalized_name)
         validated_uploads.append((upload, safe_name))
+    if duplicates:
+        raise TemplateImportError(f"The following mockup images already exist: {', '.join(duplicates)}")
     if not validated_uploads:
         raise TemplateImportError("No new valid mockups found (all were duplicates or invalid)")
 
