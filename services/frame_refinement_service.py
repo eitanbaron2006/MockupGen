@@ -501,30 +501,18 @@ def refine_perspective_corners(
                 prefer_high=prefer_high_y
             )
             
-            # Safety gate: if snapping shifts the coordinate by more than or equal to search_radius, reject
-            if abs(snapped_x - cx) >= search_radius:
+            # Local safety gate: if snapping shifts the coordinate by more than 8 pixels,
+            # reject the snap for that coordinate to prevent drifting to wood grains or outer frame borders.
+            max_corner_shift = 8
+            if abs(snapped_x - cx) > max_corner_shift:
                 snapped_x = cx
-            if abs(snapped_y - cy) >= search_radius:
+            if abs(snapped_y - cy) > max_corner_shift:
                 snapped_y = cy
                 
             refined_corners.append({
                 "x": snapped_x,
                 "y": snapped_y
             })
-            
-        # Global high-precision safety gate: if any refined corner shifts by more than 12 pixels
-        # from the original raw AI coordinate, reject the entire refinement to avoid distorting
-        # a perfect AI detection.
-        import math
-        import logging
-        max_allowed_shift = 12
-        for orig, ref in zip(corners, refined_corners):
-            dist = math.sqrt((ref["x"] - orig["x"])**2 + (ref["y"] - orig["y"])**2)
-            if dist > max_allowed_shift:
-                logging.getLogger("refine_corners").warning(
-                    f"Refinement rejected to preserve perfect AI corners: corner shifted by {dist:.1f}px (limit is {max_allowed_shift}px)"
-                )
-                return corners
             
         return refined_corners
     except Exception:
