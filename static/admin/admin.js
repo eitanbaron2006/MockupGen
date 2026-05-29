@@ -242,6 +242,7 @@
     $("breadcrumb").textContent = state.selectedCategory ? state.selectedCategory.name : "Select category";
     document.querySelectorAll(".category").forEach((button) => {
       button.onclick = async () => {
+        if (state.busy) return;
         autoSaveCurrent();
         state.selectedCategory = state.categories.find((category) => category.id === Number(button.dataset.category));
         state.queueFilter = "all";
@@ -1715,11 +1716,15 @@
 
   document.querySelectorAll(".filter-pill").forEach((pill) => {
     pill.onclick = () => {
+      if (state.busy) return;
       state.queueFilter = pill.dataset.filter;
       renderQueue();
     };
   });
-  $("openCategory").onclick = () => $("categoryModal").classList.add("open");
+  $("openCategory").onclick = () => {
+    if (state.busy) return;
+    $("categoryModal").classList.add("open");
+  };
   $("cancelCategory").onclick = () => $("categoryModal").classList.remove("open");
   $("cancelDelete").onclick = closeDeleteModal;
   $("confirmDelete").onclick = deleteTemplate;
@@ -2017,9 +2022,15 @@
   };
   $("approveButton").onclick = approveTemplate;
   $("publishButton").onclick = approveTemplate;
-  $("openGuide").onclick = () => $("guideDrawer").classList.add("open");
+  $("openGuide").onclick = () => {
+    if (state.busy) return;
+    $("guideDrawer").classList.add("open");
+  };
   $("closeGuide").onclick = () => $("guideDrawer").classList.remove("open");
-  const openEngine = () => $("engineDrawer").classList.add("open");
+  const openEngine = () => {
+    if (state.busy) return;
+    $("engineDrawer").classList.add("open");
+  };
   $("openEngine").onclick = openEngine;
   $("engineButton").onclick = openEngine;
   $("editEngine").onclick = openEngine;
@@ -2027,6 +2038,7 @@
 
   // Test Mockups Modal Logic
   $("openTestModal").onclick = () => {
+    if (state.busy) return;
     $("testModal").classList.add("open");
     renderTestGallery();
     renderMockupGallery();
@@ -2633,6 +2645,7 @@
   $("testEngine").onclick = testEngine;
   $("saveSettings").onclick = saveSettings;
   $("logoutButton").onclick = async () => {
+    if (state.busy) return;
     await api("/api/admin/logout", { method: "POST" });
     window.location.href = "/admin/login";
   };
@@ -2712,6 +2725,11 @@
         $("toolbarDownloadButton").setAttribute("title", "Generating high-fidelity download...");
       }
 
+      // Lock input interaction and show custom realistic preview loading state
+      setBusy(true);
+      if ($("analysisLabel")) $("analysisLabel").textContent = "Generating realistic mockup";
+      if ($("analysisSub")) $("analysisSub").textContent = "Optimizing boundary geometry and applying realism filters...";
+
       // 5. Trigger background high-fidelity rendering (asynchronous, non-blocking!)
       (async () => {
         try {
@@ -2780,6 +2798,11 @@
               $("toolbarDownloadButton").setAttribute("title", "Download mockup");
             }
           }
+        } finally {
+          // Unlock the UI and restore default detection panel labels
+          setBusy(false);
+          if ($("analysisLabel")) $("analysisLabel").textContent = "Detection is analyzing the frame";
+          if ($("analysisSub")) $("analysisSub").textContent = "This can take several seconds.";
         }
       })();
     }
