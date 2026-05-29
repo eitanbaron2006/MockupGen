@@ -414,46 +414,11 @@ h2 {
   height: auto;
 }
 
-.dropzone {
-  background: rgb(247, 241, 222);
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-  color: var(--muted);
-  padding: 16px 10px;
-  text-align: center;
-  transition: .18s;
-  flex-shrink: 0;
-}
-
-.dropzone.drag {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.drop-icon {
-  align-items: center;
-  background: var(--accent-soft);
-  border-radius: 50%;
-  color: var(--accent);
-  display: flex;
-  font-size: 19px;
-  height: 38px;
-  justify-content: center;
-  margin: 0 auto 9px;
-  width: 38px;
-}
-
-.dropzone strong {
-  color: var(--ink);
-  display: block;
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
 .link-button {
   background: none;
   border: 0;
   color: var(--accent);
+  cursor: pointer;
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
@@ -965,8 +930,8 @@ h2 {
   display: flex;
   gap: 11px;
   justify-content: space-between;
-  min-height: 53px;
-  padding: 13px 18px;
+  height: 64px;
+  padding: 0 18px;
 }
 
 .coordinates {
@@ -2525,15 +2490,13 @@ input[type="checkbox"]:disabled {
   }
 }
 
-/* Embedded Footer Detection Wizard HUD */
 .detection-wizard-foot {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(21, 20, 15, 0.04);
-  padding: 6px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(237, 111, 92, 0.25);
+  background: transparent;
+  border: none;
+  padding: 0;
   font-family: inherit;
   flex: 1;
   margin: 0 16px;
@@ -2552,30 +2515,33 @@ input[type="checkbox"]:disabled {
 }
 
 .detection-wizard-foot .wizard-badge {
-  background: var(--accent, #ed6f5c);
-  color: #ffffff;
-  font-size: 0.7rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 6px;
-  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 20px;
+  letter-spacing: .12em;
   white-space: nowrap;
 }
 
 .detection-wizard-foot .wizard-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--text, #15140f);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
   white-space: nowrap;
 }
 
 .detection-wizard-foot .wizard-instruction {
-  font-size: 0.82rem;
-  color: var(--faint, #706b57);
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--muted);
   flex-grow: 1;
   margin-right: auto;
-  line-height: 1.2;
+  line-height: 1.4;
 }
 
 .detection-wizard-foot .wizard-actions {
@@ -2585,59 +2551,70 @@ input[type="checkbox"]:disabled {
   flex-shrink: 0;
 }
 
-/* Premium styled buttons in Footer HUD */
+/* Premium styled buttons in Footer HUD matching global button styles */
 .detection-wizard-foot .wizard-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: 9px;
   font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--line, rgba(21, 20, 15, 0.12));
-  background: var(--panel, #ffffff);
-  color: var(--text, #15140f);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 0 12px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  white-space: nowrap;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.detection-wizard-foot .wizard-btn:hover {
-  background: rgba(21, 20, 15, 0.05);
+.detection-wizard-foot .wizard-btn:hover:not(:disabled) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
 }
 
 .detection-wizard-foot .wizard-btn.primary {
-  background: #2ecc71; /* Green */
-  border-color: #27ae60;
-  color: #ffffff;
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
 }
 
-.detection-wizard-foot .wizard-btn.primary:hover {
-  background: #27ae60;
-  box-shadow: 0 2px 6px rgba(46, 204, 113, 0.2);
+.detection-wizard-foot .wizard-btn.primary:hover:not(:disabled) {
+  background: #5b603a;
+  border-color: #5b603a;
+  color: #fff;
 }
 
 .detection-wizard-foot .wizard-btn.secondary {
-  background: #3498db; /* Blue */
-  border-color: #2980b9;
-  color: #ffffff;
+  background: transparent;
+  border-color: var(--line);
+  color: var(--muted);
 }
 
-.detection-wizard-foot .wizard-btn.secondary:hover {
-  background: #2980b9;
+.detection-wizard-foot .wizard-btn.secondary:hover:not(:disabled) {
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .detection-wizard-foot .wizard-btn.danger {
-  background: #e74c3c; /* Red */
-  border-color: #c0392b;
-  color: #ffffff;
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
 }
 
-.detection-wizard-foot .wizard-btn.danger:hover {
-  background: #c0392b;
+.detection-wizard-foot .wizard-btn.danger:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .detection-wizard-foot .wizard-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none !important;
 }

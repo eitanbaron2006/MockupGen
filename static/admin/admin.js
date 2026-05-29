@@ -9,7 +9,7 @@
     busy: false,
     drag: null,
     pendingDelete: null,
-    queueFilter: "review",
+    queueFilter: "all",
     selectedForBatch: new Set(),
     zoom: 1,
     pan: { x: 0, y: 0 },
@@ -93,6 +93,7 @@
       button.onclick = async () => {
         autoSaveCurrent();
         state.selectedCategory = state.categories.find((category) => category.id === Number(button.dataset.category));
+        state.queueFilter = "all";
         renderCategories();
         await loadTemplates();
       };
@@ -821,12 +822,10 @@
         wizardState.layerIndex = layers.length - 1; // Default to the innermost (smallest) layer
         showWizardLayer();
       } else {
-        toast("No sharp geometric frames found. Transitioning to Stage 2...");
         await runStage2SamCenter();
       }
     } catch (error) {
       console.warn("Stage 1 Geometry failed:", error);
-      toast("No sharp geometric borders found. Proceeding to Stage 2...");
       await runStage2SamCenter();
     }
   }
@@ -855,13 +854,13 @@
     $("selectionSvg").classList.remove("hidden");
     
     const actions = [
-      { text: "Approve Border", class: "primary", onclick: () => approveWizardSelection() },
-      { text: "Next Border", class: "secondary", onclick: () => {
+      { text: "Approve", class: "primary", onclick: () => approveWizardSelection() },
+      { text: "Next", class: "secondary", onclick: () => {
           wizardState.layerIndex = (wizardState.layerIndex - 1 + wizardState.layers.length) % wizardState.layers.length;
           showWizardLayer();
         } 
       },
-      { text: "Skip to SAM", class: "danger", onclick: () => runStage2SamCenter() }
+      { text: "Skip", class: "danger", onclick: () => runStage2SamCenter() }
     ];
     
     const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[2]];
@@ -893,9 +892,9 @@
         $("selectionSvg").classList.remove("hidden");
         
         const actions = [
-          { text: "Approve Guess", class: "primary", onclick: () => approveWizardSelection() },
+          { text: "Approve", class: "primary", onclick: () => approveWizardSelection() },
           { text: "Retry", class: "secondary", onclick: () => runStage2SamCenter() },
-          { text: "Reject & Click Manually", class: "danger", onclick: () => runStage3UserClick() }
+          { text: "Manual", class: "danger", onclick: () => runStage3UserClick() }
         ];
         
         updateWizardUI(
@@ -905,12 +904,10 @@
           actions
         );
       } else {
-        toast("SAM 2.1 center guess failed. Moving to Stage 3...");
         runStage3UserClick();
       }
     } catch (error) {
       console.warn("Stage 2 SAM Center failed:", error);
-      toast("SAM 2.1 center guess failed. Moving to Stage 3...");
       runStage3UserClick();
     }
   }
@@ -923,14 +920,14 @@
     $("selectionSvg").classList.add("hidden");
     
     const actions = [
-      { text: "Lock & Continue", class: "primary", disabled: true, id: "btnLockContinue", onclick: () => runStage4FineTune() },
+      { text: "Lock", class: "primary", disabled: true, id: "btnLockContinue", onclick: () => runStage4FineTune() },
       { text: "Cancel", class: "danger", onclick: () => closeWizard() }
     ];
     
     updateWizardUI(
       "STAGE 3",
       "Semi-Automatic Click",
-      "Local AI guess failed. Click ONCE inside the middle of the frame artwork on the mockup above.",
+      "Click inside the frame to detect.",
       actions
     );
     
@@ -961,7 +958,7 @@
       updateWizardUI(
         "STAGE 3",
         "Semi-Automatic Click",
-        "Analyzing clicked point with local SAM 2.1... Please wait...",
+        "Analyzing clicked point...",
         []
       );
       
@@ -986,15 +983,15 @@
           drawSelection();
           
           const actions = [
-            { text: "Lock & Continue", class: "primary", onclick: () => runStage4FineTune() },
-            { text: "Try another spot", class: "secondary", onclick: () => runStage3UserClick() },
+            { text: "Lock", class: "primary", onclick: () => runStage4FineTune() },
+            { text: "Retry", class: "secondary", onclick: () => runStage3UserClick() },
             { text: "Cancel", class: "danger", onclick: () => closeWizard() }
           ];
           
           updateWizardUI(
             "STAGE 3",
             "Semi-Automatic Click",
-            "Frame generated! If correct, click 'Lock & Continue'. Otherwise click elsewhere on the mockup image to try again.",
+            "Frame generated. Lock or click elsewhere to retry.",
             actions
           );
         } else {
@@ -1027,14 +1024,14 @@
     drawSelection();
     
     const actions = [
-      { text: "Confirm & Save", class: "primary", onclick: () => approveWizardSelection() },
-      { text: "Restart Wizard", class: "secondary", onclick: () => startDetectionWizard() }
+      { text: "Confirm", class: "primary", onclick: () => approveWizardSelection() },
+      { text: "Restart", class: "secondary", onclick: () => startDetectionWizard() }
     ];
     
     updateWizardUI(
       "STAGE 4",
-      "Fine-Tuning / Dragging",
-      "DRAG the red corner crosshair handles directly on the mockup to make pixel-perfect adjustments.",
+      "Fine-Tuning",
+      "Drag handles to fine-tune.",
       actions
     );
   }
@@ -1291,20 +1288,11 @@
     }
   };
   $("chooseFiles").onclick = () => $("fileInput").click();
-  $("browse").onclick = () => $("fileInput").click();
   $("fileInput").onchange = async (event) => {
     await importFiles(event.target.files);
     event.target.value = "";
   };
-  ["dragenter", "dragover"].forEach((eventName) => $("dropzone").addEventListener(eventName, (event) => {
-    event.preventDefault();
-    $("dropzone").classList.add("drag");
-  }));
-  ["dragleave", "drop"].forEach((eventName) => $("dropzone").addEventListener(eventName, (event) => {
-    event.preventDefault();
-    $("dropzone").classList.remove("drag");
-  }));
-  $("dropzone").addEventListener("drop", (event) => importFiles(event.dataTransfer.files));
+
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && wizardState.active) {
       event.preventDefault();
@@ -2232,6 +2220,15 @@
     try {
       await loadSettings();
       await loadCategories();
+      // Auto-select first non-empty category on initial load
+      if (state.categories.length > 0) {
+        const nonEmpty = state.categories.find((c) => c.template_count > 0);
+        if (nonEmpty) {
+          state.selectedCategory = nonEmpty;
+          renderCategories();
+        }
+      }
+      state.queueFilter = "all";
       await loadTemplates();
       setBusy(false);
       renderTestGallery();
