@@ -45,7 +45,11 @@
             </div>
             <div class="queue-batch-actions">
               <label class="select-all-label"><input type="checkbox" id="selectAllCheckbox"> Select All</label>
-              <button class="btn compact" id="batchDetectButton" disabled>Batch detect</button>
+              <div class="batch-action-group">
+                <span class="batch-action-label">Batch</span>
+                <button class="btn compact batch-action batch-delete" id="batchDeleteButton" disabled>Delete</button>
+                <button class="btn compact batch-action" id="batchDetectButton" disabled>Detect</button>
+              </div>
             </div>
             <div class="queue-filters" id="queueFilters">
               <button class="filter-pill" data-filter="all">All</button>

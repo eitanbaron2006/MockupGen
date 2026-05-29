@@ -179,6 +179,7 @@
     $("selectAllCheckbox").checked = allVisibleSelected;
     $("selectAllCheckbox").disabled = state.busy || visible.length === 0;
     $("batchDetectButton").disabled = state.busy || state.selectedForBatch.size === 0;
+    $("batchDeleteButton").disabled = state.busy || state.selectedForBatch.size === 0;
   }
 
   $("selectAllCheckbox").onchange = (e) => {
@@ -224,6 +225,38 @@
       }
     } catch (error) {
       alert("Batch detection failed: " + error.message);
+    } finally {
+      state.busy = false;
+      renderQueue();
+      renderEditor();
+    }
+  };
+
+  $("batchDeleteButton").onclick = async () => {
+    if (state.selectedForBatch.size === 0 || state.busy) return;
+    const ids = Array.from(state.selectedForBatch);
+    const confirmed = window.confirm(`Delete ${ids.length} selected mockup${ids.length === 1 ? "" : "s"}?`);
+    if (!confirmed) return;
+
+    const selectedTemplateId = state.selected && state.selected.template_id;
+    state.busy = true;
+    renderQueue();
+    renderEditor();
+
+    try {
+      setStatus("Deleting selected mockups...");
+      for (const templateId of ids) {
+        await api(`/api/admin/templates/${templateId}`, {method: "DELETE"});
+      }
+      state.selectedForBatch.clear();
+      state.selected = ids.includes(selectedTemplateId) ? null : state.selected;
+      await loadCategories(state.selectedCategory && state.selectedCategory.id);
+      await loadTemplates(state.selected && state.selected.template_id);
+      toast("Selected mockups deleted");
+      setStatus("Selected mockups deleted");
+    } catch (error) {
+      setStatus("Batch delete failed", true);
+      toast(error.message);
     } finally {
       state.busy = false;
       renderQueue();

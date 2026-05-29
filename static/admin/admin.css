@@ -562,6 +562,21 @@ h2 {
   margin-bottom: 2px;
 }
 
+.batch-action-group {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.batch-action-label {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
 .select-all-label {
   align-items: center;
   cursor: pointer;
@@ -620,10 +635,21 @@ h2 {
   color: var(--accent);
 }
 
-#batchDetectButton.btn.compact {
+.batch-action.btn.compact {
   height: 26px;
+  font-size: 9px;
   line-height: 1;
   padding: 0 11px;
+}
+
+.batch-delete.btn.compact {
+  border-color: rgba(237, 111, 92, .42);
+  color: var(--accent);
+}
+
+.batch-delete.btn.compact:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .empty {
