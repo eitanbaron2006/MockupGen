@@ -702,14 +702,14 @@ h2 {
   padding: 16px 19px;
 }
 
-.editor-head > div:first-child {
+.editor-title-copy {
   min-width: 0;
 }
 
 .editor-tools {
   align-items: center;
   display: flex;
-  gap: 10px;
+  gap: 24px;
   justify-content: flex-end;
   min-width: 0;
 }
@@ -1207,7 +1207,7 @@ h2 {
   border-top: 1px solid var(--line);
   display: flex;
   gap: 11px;
-  justify-content: space-between;
+  justify-content: flex-start;
   height: 64px;
   padding: 0 18px;
 }
@@ -1224,6 +1224,17 @@ h2 {
 .coordinates strong {
   color: var(--ink);
   margin-left: 3px;
+}
+
+.editor-foot .confidence {
+  margin-left: auto;
+  max-width: none;
+}
+
+.editor-foot #proposalState {
+  flex-shrink: 1;
+  min-width: 0;
+  text-align: right;
 }
 
 .inspector {

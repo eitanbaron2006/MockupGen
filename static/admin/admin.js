@@ -299,6 +299,7 @@
       $("coordH").textContent = "-";
       $("zoomHud").classList.add("hidden");
       $("selectionStyleToolbar").classList.add("hidden");
+      closeSelectionStylePanel();
       return;
     }
     
@@ -428,6 +429,13 @@
     });
     document.querySelectorAll(".style-panel").forEach((panel) => {
       panel.classList.toggle("hidden", panel.id !== panelId);
+    });
+  }
+
+  function closeSelectionStylePanel() {
+    $("selectionStylePopover").classList.add("hidden");
+    document.querySelectorAll(".style-tool").forEach((tool) => {
+      tool.classList.remove("active");
     });
   }
 
@@ -1601,6 +1609,14 @@
   $("selectionSvg").addEventListener("pointercancel", endDrag);
   document.querySelectorAll(".style-tool").forEach((button) => {
     button.onclick = () => openSelectionStylePanel(button.dataset.stylePanel, button);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if ($("selectionStylePopover").classList.contains("hidden")) return;
+    if (event.target.closest(".selection-style-toolbar")) return;
+    closeSelectionStylePanel();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSelectionStylePanel();
   });
   $("polygonColorInput").oninput = (event) => {
     state.selectionStyle.polygonColor = event.target.value;
