@@ -75,7 +75,7 @@
                 <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
               </div>
               <div class="confidence" id="confidence"></div>
-              <button class="btn" id="detectButton">Detect frame</button>
+              <button class="btn success" id="detectButton">Detect frame</button>
             </div>
           </div>
           <div class="canvas-workspace">
@@ -124,6 +124,45 @@
                 <span class="spinner"></span>
                 <strong id="analysisLabel">Detection is analyzing the frame</strong>
                 <small>This can take several seconds.</small>
+              </div>
+            </div>
+            <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
+              <button class="style-tool" type="button" data-style-panel="polygonColorPanel" aria-label="Polygon color" title="Polygon color">
+                <span class="style-swatch" id="polygonColorSwatch"></span>
+              </button>
+              <button class="style-tool" type="button" data-style-panel="crossColorPanel" aria-label="Crosshair color" title="Crosshair color">
+                <span class="style-cross-icon" id="crossColorIcon"></span>
+              </button>
+              <button class="style-tool" type="button" data-style-panel="polygonOpacityPanel" aria-label="Polygon opacity" title="Polygon opacity">
+                <span class="style-opacity-icon"></span>
+              </button>
+              <button class="style-tool" type="button" data-style-panel="crossOpacityPanel" aria-label="Crosshair opacity" title="Crosshair opacity">
+                <span class="style-cross-opacity-icon"></span>
+              </button>
+              <button class="style-tool" type="button" data-style-panel="polygonWidthPanel" aria-label="Polygon line width" title="Polygon line width">
+                <span class="style-width-icon"></span>
+              </button>
+              <div class="style-popover hidden" id="selectionStylePopover">
+                <div class="style-panel" id="polygonColorPanel">
+                  <label for="polygonColorInput">Polygon color</label>
+                  <input type="color" id="polygonColorInput" value="#ed6f5c">
+                </div>
+                <div class="style-panel hidden" id="crossColorPanel">
+                  <label for="crossColorInput">Crosshair color</label>
+                  <input type="color" id="crossColorInput" value="#ed6f5c">
+                </div>
+                <div class="style-panel hidden" id="polygonOpacityPanel">
+                  <label for="polygonOpacityInput">Polygon opacity <span id="polygonOpacityValue">15%</span></label>
+                  <input type="range" id="polygonOpacityInput" min="0" max="100" value="15">
+                </div>
+                <div class="style-panel hidden" id="crossOpacityPanel">
+                  <label for="crossOpacityInput">Crosshair opacity <span id="crossOpacityValue">100%</span></label>
+                  <input type="range" id="crossOpacityInput" min="0" max="100" value="100">
+                </div>
+                <div class="style-panel hidden" id="polygonWidthPanel">
+                  <label for="polygonWidthInput">Polygon line <span id="polygonWidthValue">2px</span></label>
+                  <input type="range" id="polygonWidthInput" min="1" max="8" value="2">
+                </div>
               </div>
             </div>
             
@@ -286,8 +325,10 @@
             </select>
           </div>
         </div>
-        <label for="vertexProject">Google Cloud project ID</label>
-        <input class="text-input" id="vertexProject">
+        <div class="config-field">
+          <label for="vertexProject">Google Cloud project ID</label>
+          <input class="text-input" id="vertexProject">
+        </div>
         <div class="config-row">
           <div>
             <label for="vertexResolution">Media resolution</label>
@@ -304,11 +345,13 @@
             </select>
           </div>
         </div>
-        <label for="refinementMode">Boundary refinement</label>
-        <select id="refinementMode">
-          <option value="ai_only">AI bounding box only - recommended</option>
-          <option value="hybrid">AI + guarded edge refinement - experimental</option>
-        </select>
+        <div class="config-field">
+          <label for="refinementMode">Boundary refinement</label>
+          <select id="refinementMode">
+            <option value="ai_only">AI bounding box only - recommended</option>
+            <option value="hybrid">AI + guarded edge refinement - experimental</option>
+          </select>
+        </div>
         <div class="guide-note">AI-only keeps the Vertex box unchanged. Guarded refinement is experimental: it may snap to a dashed boundary, but it is discarded if it distorts the AI result.</div>
       </section>
       <section class="engine-config hidden" id="localConfig">
@@ -318,8 +361,10 @@
             <div class="cost-meta">No cloud token cost. Uses models installed on your local service.</div>
           </div>
         </div>
-        <label for="localUrl">Local detector endpoint</label>
-        <input class="text-input" id="localUrl" placeholder="http://localhost:11434/detect">
+        <div class="config-field">
+          <label for="localUrl">Local detector endpoint</label>
+          <input class="text-input" id="localUrl" placeholder="http://localhost:11434/detect">
+        </div>
         <div class="config-row model-row">
           <div>
             <label for="localModel">Local model</label>

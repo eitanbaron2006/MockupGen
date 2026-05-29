@@ -12,6 +12,13 @@
     queueFilter: "all",
     selectedForBatch: new Set(),
     switchingProvider: false,
+    selectionStyle: {
+      polygonColor: "#ed6f5c",
+      crossColor: "#ed6f5c",
+      polygonOpacity: 15,
+      crossOpacity: 100,
+      polygonWidth: 2
+    },
     zoom: 1,
     pan: { x: 0, y: 0 },
     isPanning: false,
@@ -269,6 +276,10 @@
     return value === "landscape" ? "Wide" : value.charAt(0).toUpperCase() + value.slice(1);
   }
 
+  function confidenceLabel(value) {
+    return value == null ? "" : `Confidence ${Math.round(value * 100)}%`;
+  }
+
   function renderEditor() {
     const template = state.selected;
     const hasTemplate = Boolean(template);
@@ -287,6 +298,7 @@
       $("coordW").textContent = "-";
       $("coordH").textContent = "-";
       $("zoomHud").classList.add("hidden");
+      $("selectionStyleToolbar").classList.add("hidden");
       return;
     }
     
@@ -298,6 +310,7 @@
       applyZoomPan();
     }
     $("zoomHud").classList.remove("hidden");
+    $("selectionStyleToolbar").classList.remove("hidden");
 
     $("currentTitle").textContent = template.name;
     $("editorSub").textContent = template.status === "active"
@@ -322,10 +335,9 @@
       element.classList.toggle("active", element.dataset.direction === template.orientation);
     });
     if (template.detection_provider) {
-      const confidence = template.detection_confidence == null ? "" : ` / ${Math.round(template.detection_confidence * 100)}% confidence`;
-      $("confidence").textContent = `Detection proposal${confidence}`;
+      $("confidence").textContent = confidenceLabel(template.detection_confidence);
     } else {
-      $("confidence").textContent = "Manual selection";
+      $("confidence").textContent = "";
     }
     updateCoordinateLabels();
     if ($("canvasImage").complete) {
@@ -386,6 +398,39 @@
     }
   }
 
+  function applySelectionStyle() {
+    const style = state.selectionStyle;
+    const svg = $("selectionSvg");
+    if (svg) {
+      svg.style.setProperty("--selection-color", style.polygonColor);
+      svg.style.setProperty("--selection-fill-opacity", style.polygonOpacity / 100);
+      svg.style.setProperty("--selection-stroke-width", style.polygonWidth);
+      svg.style.setProperty("--cross-color", style.crossColor);
+      svg.style.setProperty("--cross-opacity", style.crossOpacity / 100);
+    }
+    if ($("polygonColorSwatch")) $("polygonColorSwatch").style.background = style.polygonColor;
+    if ($("crossColorIcon")) $("crossColorIcon").style.color = style.crossColor;
+    if ($("polygonColorInput")) $("polygonColorInput").value = style.polygonColor;
+    if ($("crossColorInput")) $("crossColorInput").value = style.crossColor;
+    if ($("polygonOpacityInput")) $("polygonOpacityInput").value = style.polygonOpacity;
+    if ($("crossOpacityInput")) $("crossOpacityInput").value = style.crossOpacity;
+    if ($("polygonWidthInput")) $("polygonWidthInput").value = style.polygonWidth;
+    if ($("polygonOpacityValue")) $("polygonOpacityValue").textContent = `${style.polygonOpacity}%`;
+    if ($("crossOpacityValue")) $("crossOpacityValue").textContent = `${style.crossOpacity}%`;
+    if ($("polygonWidthValue")) $("polygonWidthValue").textContent = `${style.polygonWidth}px`;
+  }
+
+  function openSelectionStylePanel(panelId, button) {
+    $("selectionStylePopover").classList.remove("hidden");
+    $("selectionStylePopover").style.top = `${button.offsetTop}px`;
+    document.querySelectorAll(".style-tool").forEach((tool) => {
+      tool.classList.toggle("active", tool === button);
+    });
+    document.querySelectorAll(".style-panel").forEach((panel) => {
+      panel.classList.toggle("hidden", panel.id !== panelId);
+    });
+  }
+
   function drawSelection() {
     const template = state.selected;
     const image = $("canvasImage");
@@ -421,6 +466,7 @@
     
     // Inject the current zoom factor as a CSS custom property for non-scaling stroke effect calculations
     selectionSvg.style.setProperty("--zoom", state.zoom);
+    applySelectionStyle();
     
     // Map canvas coordinates to client display coordinates inside the rendered rect
     const pointsStr = corners.map(p => {
@@ -802,7 +848,7 @@
         state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
       }
       const confidence = payload.proposal.confidence == null ? "" : ` (${Math.round(payload.proposal.confidence * 100)}%)`;
-      $("confidence").textContent = `Detection proposal / ${payload.proposal.provider}${confidence}`;
+      $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
       $("detectionResult").classList.add("success");
       $("detectionResult").textContent = `${payload.proposal.provider}: ${payload.proposal.reason || "Artwork area proposed."}${confidence}`;
       $("proposalState").textContent = "Detection proposal displayed. Drag handles to refine it, then approve.";
@@ -1553,6 +1599,30 @@
   $("selectionSvg").addEventListener("pointermove", continueDrag);
   $("selectionSvg").addEventListener("pointerup", endDrag);
   $("selectionSvg").addEventListener("pointercancel", endDrag);
+  document.querySelectorAll(".style-tool").forEach((button) => {
+    button.onclick = () => openSelectionStylePanel(button.dataset.stylePanel, button);
+  });
+  $("polygonColorInput").oninput = (event) => {
+    state.selectionStyle.polygonColor = event.target.value;
+    applySelectionStyle();
+  };
+  $("crossColorInput").oninput = (event) => {
+    state.selectionStyle.crossColor = event.target.value;
+    applySelectionStyle();
+  };
+  $("polygonOpacityInput").oninput = (event) => {
+    state.selectionStyle.polygonOpacity = Number(event.target.value);
+    applySelectionStyle();
+  };
+  $("crossOpacityInput").oninput = (event) => {
+    state.selectionStyle.crossOpacity = Number(event.target.value);
+    applySelectionStyle();
+  };
+  $("polygonWidthInput").oninput = (event) => {
+    state.selectionStyle.polygonWidth = Number(event.target.value);
+    applySelectionStyle();
+  };
+  applySelectionStyle();
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {
     try {
