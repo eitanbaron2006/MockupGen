@@ -2084,6 +2084,7 @@
     $("testResultPlaceholder").classList.remove("hidden");
     $("testResultWrapper").classList.add("hidden");
     $("testResultActions").classList.add("hidden");
+    if ($("testResultLoading")) $("testResultLoading").classList.add("hidden");
     $("testResultImage").src = "";
     $("testResultDownload").href = "";
   }
@@ -2366,6 +2367,12 @@
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generating...";
 
+      // Show loading card and hide result states
+      $("testResultPlaceholder").classList.add("hidden");
+      $("testResultWrapper").classList.add("hidden");
+      $("testResultActions").classList.add("hidden");
+      $("testResultLoading").classList.remove("hidden");
+
       const formData = new FormData();
       formData.append("mode", renderMode);
       formData.append("template_id", templateId);
@@ -2398,6 +2405,7 @@
 
         // Switch view to single result
         $("testBatchResults").classList.add("hidden");
+        $("testResultLoading").classList.add("hidden");
         $("testResultPlaceholder").classList.add("hidden");
         $("testResultWrapper").classList.remove("hidden");
         $("testResultActions").classList.remove("hidden");
@@ -2408,6 +2416,9 @@
         } else {
           toast(err.message);
         }
+        // Restore placeholder on failure
+        $("testResultLoading").classList.add("hidden");
+        $("testResultPlaceholder").classList.remove("hidden");
       } finally {
         $("testGenerateButton").disabled = false;
         $("testGenerateButton").textContent = "Generate";
