@@ -85,6 +85,11 @@
             <div id="stage" class="hidden">
               <img id="canvasImage" alt="Selected mockup image">
               <svg id="selectionSvg" class="selection-svg hidden">
+                <defs>
+                  <pattern id="selectionImagePattern" patternUnits="userSpaceOnUse" x="0" y="0" width="1" height="1">
+                    <image id="selectionImage" href="" x="0" y="0" width="1" height="1" preserveAspectRatio="xMidYMid slice"></image>
+                  </pattern>
+                </defs>
                 <polygon id="rawSelectionPolygon" points="" class="raw-selection-polygon hidden" />
                 <polygon id="selectionPolygon" points="" />
                 <!-- Corner 0 Handle (Crosshair) -->
@@ -126,6 +131,9 @@
               </div>
             </div>
             <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
+              <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode" title="Overlay mode">
+                <span class="style-image-icon"></span>
+              </button>
               <button class="style-tool" type="button" data-style-panel="polygonColorPanel" aria-label="Polygon color" title="Polygon color">
                 <span class="style-swatch" id="polygonColorSwatch"></span>
               </button>
@@ -145,7 +153,18 @@
                 <span class="style-cross-width-icon"></span>
               </button>
               <div class="style-popover hidden" id="selectionStylePopover">
-                <div class="style-panel" id="polygonColorPanel">
+                <div class="style-panel" id="overlayModePanel">
+                  <label>Overlay mode</label>
+                  <div class="style-segmented">
+                    <button class="style-segment active" type="button" data-overlay-mode="polygon">Polygon</button>
+                    <button class="style-segment" type="button" data-overlay-mode="image">Image</button>
+                  </div>
+                  <button class="btn compact style-upload-button" type="button" id="overlayImageButton">Choose image</button>
+                  <input class="hidden" type="file" id="overlayImageInput" accept="image/png,image/jpeg,image/webp">
+                  <div class="style-image-name" id="overlayImageName">No image selected</div>
+                  <button class="link-button style-clear-image" type="button" id="clearOverlayImage">Clear image</button>
+                </div>
+                <div class="style-panel hidden" id="polygonColorPanel">
                   <label for="polygonColorInput">Polygon color</label>
                   <input type="color" id="polygonColorInput" value="#ed6f5c">
                 </div>

@@ -7,7 +7,10 @@
     polygonOpacity: 15,
     crossOpacity: 100,
     polygonWidth: 2,
-    crossWidth: 1.5
+    crossWidth: 1.5,
+    overlayMode: "polygon",
+    overlayImage: "",
+    overlayImageName: ""
   };
 
   function clampStyleNumber(value, min, max, fallback) {
@@ -25,7 +28,10 @@
         polygonOpacity: clampStyleNumber(saved.polygonOpacity, 0, 100, DEFAULT_SELECTION_STYLE.polygonOpacity),
         crossOpacity: clampStyleNumber(saved.crossOpacity, 0, 100, DEFAULT_SELECTION_STYLE.crossOpacity),
         polygonWidth: clampStyleNumber(saved.polygonWidth, 1, 8, DEFAULT_SELECTION_STYLE.polygonWidth),
-        crossWidth: clampStyleNumber(saved.crossWidth, 0.5, 8, DEFAULT_SELECTION_STYLE.crossWidth)
+        crossWidth: clampStyleNumber(saved.crossWidth, 0.5, 8, DEFAULT_SELECTION_STYLE.crossWidth),
+        overlayMode: saved.overlayMode === "image" ? "image" : DEFAULT_SELECTION_STYLE.overlayMode,
+        overlayImage: typeof saved.overlayImage === "string" ? saved.overlayImage : "",
+        overlayImageName: typeof saved.overlayImageName === "string" ? saved.overlayImageName : ""
       };
     } catch (_error) {
       return {...DEFAULT_SELECTION_STYLE};
@@ -436,6 +442,20 @@
       svg.style.setProperty("--cross-opacity", style.crossOpacity / 100);
       svg.style.setProperty("--cross-stroke-width", `${style.crossWidth}px`);
     }
+    const selectionPolygon = $("selectionPolygon");
+    if (selectionPolygon) {
+      selectionPolygon.classList.toggle("image-mode", style.overlayMode === "image" && Boolean(style.overlayImage));
+    }
+    const selectionImage = $("selectionImage");
+    if (selectionImage) {
+      selectionImage.setAttribute("href", style.overlayImage || "");
+    }
+    document.querySelectorAll(".style-segment").forEach((button) => {
+      button.classList.toggle("active", button.dataset.overlayMode === style.overlayMode);
+    });
+    if ($("overlayImageName")) {
+      $("overlayImageName").textContent = style.overlayImageName || "No image selected";
+    }
     if ($("polygonColorSwatch")) $("polygonColorSwatch").style.background = style.polygonColor;
     if ($("crossColorIcon")) $("crossColorIcon").style.color = style.crossColor;
     if ($("polygonColorInput")) $("polygonColorInput").value = style.polygonColor;
@@ -456,6 +476,62 @@
     } catch (_error) {
       // Style preferences are non-critical UI state.
     }
+  }
+
+  function setOverlayMode(mode) {
+    const nextMode = mode === "image" ? "image" : "polygon";
+    if (nextMode === "image" && !state.selectionStyle.overlayImage) {
+      $("overlayImageInput").click();
+      return;
+    }
+    state.selectionStyle.overlayMode = nextMode;
+    applySelectionStyle();
+    saveSelectionStylePreference();
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        const maxSide = 1600;
+        const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/webp", 0.86));
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not read image"));
+      };
+      image.src = url;
+    });
+  }
+
+  async function chooseOverlayImage(file) {
+    if (!file) return;
+    try {
+      state.selectionStyle.overlayImage = await fileToDataUrl(file);
+      state.selectionStyle.overlayImageName = file.name;
+      state.selectionStyle.overlayMode = "image";
+      applySelectionStyle();
+      saveSelectionStylePreference();
+      drawSelection();
+    } catch (error) {
+      toast(error.message || "Could not load image");
+    }
+  }
+
+  function clearOverlayImage() {
+    state.selectionStyle.overlayImage = "";
+    state.selectionStyle.overlayImageName = "";
+    state.selectionStyle.overlayMode = "polygon";
+    applySelectionStyle();
+    saveSelectionStylePreference();
   }
 
   function openSelectionStylePanel(panelId, button) {
@@ -514,13 +590,32 @@
     applySelectionStyle();
     
     // Map canvas coordinates to client display coordinates inside the rendered rect
-    const pointsStr = corners.map(p => {
+    const displayPoints = corners.map(p => {
       const cx = (p.x / template.canvas_width) * rect.width;
       const cy = (p.y / template.canvas_height) * rect.height;
-      return `${cx},${cy}`;
-    }).join(" ");
+      return {x: cx, y: cy};
+    });
+    const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
     
     $("selectionPolygon").setAttribute("points", pointsStr);
+    const pattern = $("selectionImagePattern");
+    const patternImage = $("selectionImage");
+    if (pattern && patternImage && displayPoints.length) {
+      const xs = displayPoints.map((p) => p.x);
+      const ys = displayPoints.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const width = Math.max(1, Math.max(...xs) - minX);
+      const height = Math.max(1, Math.max(...ys) - minY);
+      pattern.setAttribute("x", minX);
+      pattern.setAttribute("y", minY);
+      pattern.setAttribute("width", width);
+      pattern.setAttribute("height", height);
+      patternImage.setAttribute("x", minX);
+      patternImage.setAttribute("y", minY);
+      patternImage.setAttribute("width", width);
+      patternImage.setAttribute("height", height);
+    }
     
     // Position handles (crosshairs)
     corners.forEach((p, idx) => {
@@ -1646,6 +1741,15 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSelectionStylePanel();
   });
+  document.querySelectorAll(".style-segment").forEach((button) => {
+    button.onclick = () => setOverlayMode(button.dataset.overlayMode);
+  });
+  $("overlayImageButton").onclick = () => $("overlayImageInput").click();
+  $("overlayImageInput").onchange = async (event) => {
+    await chooseOverlayImage(event.target.files[0]);
+    event.target.value = "";
+  };
+  $("clearOverlayImage").onclick = clearOverlayImage;
   $("polygonColorInput").oninput = (event) => {
     state.selectionStyle.polygonColor = event.target.value;
     applySelectionStyle();
