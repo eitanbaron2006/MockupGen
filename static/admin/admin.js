@@ -21,6 +21,18 @@
     return Math.min(max, Math.max(min, number));
   }
 
+  function dataURLtoFile(dataurl, filename) {
+    const arr = dataurl.split(",");
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  }
+
   function resolveFitMode(fitMode, artworkWidth, artworkHeight, frameWidth, frameHeight) {
     if (fitMode !== "auto") return fitMode;
     if (!artworkWidth || !artworkHeight || !frameWidth || !frameHeight) {
@@ -154,7 +166,8 @@
     isPanning: false,
     panStart: { x: 0, y: 0 },
     spacePressed: false,
-    lastSelectedTemplateId: null
+    lastSelectedTemplateId: null,
+    isPreviewingMockup: false
   };
   const wizardState = {
     active: false,
@@ -433,6 +446,25 @@
       return;
     }
 
+    // Reset preview mode on template switch/re-render
+    state.isPreviewingMockup = false;
+    if ($("selectionRenderedMockup")) {
+      $("selectionRenderedMockup").classList.add("hidden");
+      $("selectionRenderedMockup").src = "";
+    }
+    if ($("downloadMockupButton")) {
+      $("downloadMockupButton").classList.add("hidden");
+    }
+    if ($("previewMockupButton")) {
+      $("previewMockupButton").textContent = "Preview Mockup";
+    }
+    if ($("toolbarPreviewButton")) {
+      $("toolbarPreviewButton").classList.remove("active");
+    }
+    if ($("toolbarDownloadButton")) {
+      $("toolbarDownloadButton").classList.add("hidden");
+    }
+
     // Reset zoom and pan if template has changed
     if (state.lastSelectedTemplateId !== template.template_id) {
       state.zoom = 1;
@@ -557,6 +589,12 @@
     if ($("overlayFitModeContainer")) {
       $("overlayFitModeContainer").classList.toggle("hidden", !isImageMode);
     }
+    if ($("previewMockupButton")) {
+      $("previewMockupButton").classList.toggle("hidden", !isImageMode);
+    }
+    if ($("toolbarPreviewButton")) {
+      $("toolbarPreviewButton").classList.toggle("hidden", !isImageMode);
+    }
     if (state.selected) {
       document.querySelectorAll(".style-overlay-fit").forEach((button) => {
         button.classList.toggle("active", button.dataset.overlayFit === state.selected.fit_mode);
@@ -648,6 +686,7 @@
     state.selectionStyle.overlayMode = "polygon";
     applySelectionStyle();
     saveSelectionStylePreference();
+    drawSelection();
   }
 
   function openSelectionStylePanel(panelId, button) {
@@ -669,6 +708,11 @@
   }
 
   function drawSelection() {
+    if (state.isPreviewingMockup) {
+      $("selectionSvg").classList.add("hidden");
+      $("selectionImageOverlay").classList.add("hidden");
+      return;
+    }
     const template = state.selected;
     const image = $("canvasImage");
     const selectionSvg = $("selectionSvg");
@@ -2580,6 +2624,126 @@
     window.location.href = "/admin/login";
   };
   window.addEventListener("resize", drawSelection);
+
+  // Toggle Realistic Mockup Preview & Download Feature
+  async function togglePreviewMode() {
+    if (!state.selected || state.busy) return;
+
+    if (state.isPreviewingMockup) {
+      // Toggle back to Edit Mode
+      state.isPreviewingMockup = false;
+      
+      // Sync Header buttons
+      if ($("previewMockupButton")) $("previewMockupButton").textContent = "Preview Mockup";
+      if ($("downloadMockupButton")) {
+        $("downloadMockupButton").classList.add("hidden");
+        $("downloadMockupButton").href = "";
+      }
+      
+      // Sync Toolbar buttons
+      if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.remove("active");
+      if ($("toolbarDownloadButton")) {
+        $("toolbarDownloadButton").classList.add("hidden");
+        $("toolbarDownloadButton").href = "";
+      }
+
+      // Hide rendered mockup preview
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
+      }
+      
+      // Show editor visual layers
+      $("selectionSvg").classList.remove("hidden");
+      const showOverlay = state.selectionStyle.overlayMode === "image" && Boolean(state.selectionStyle.overlayImage);
+      $("selectionImageOverlay").classList.toggle("hidden", !showOverlay);
+      
+      drawSelection();
+      setStatus("Edit mode active");
+    } else {
+      // Toggle to Preview Mode (Hiding indicators, rendering high-fidelity mockup)
+      const overlayImage = state.selectionStyle.overlayImage;
+      if (!overlayImage) {
+        toast("Please select an overlay image first.");
+        return;
+      }
+
+      setBusy(true);
+      if ($("analysisLabel")) $("analysisLabel").textContent = "Rendering realistic preview...";
+      if ($("previewMockupButton")) $("previewMockupButton").textContent = "Rendering...";
+      setStatus("Rendering high-fidelity preview...");
+
+      try {
+        // 1. Auto-save current template coordinates to DB
+        await saveTemplate(false);
+
+        // 2. Prepare Form Data
+        const file = dataURLtoFile(overlayImage, state.selectionStyle.overlayImageName || "artwork.png");
+        const formData = new FormData();
+        formData.append("mode", "simple");
+        formData.append("template_id", state.selected.template_id);
+        formData.append("artwork", file);
+        formData.append("realism", "true"); // Force high-fidelity realism (grain, reflection sheen, etc.)
+        
+        let resolvedFitMode = state.selected.fit_mode;
+        if (resolvedFitMode === "auto") {
+          resolvedFitMode = resolveFitMode(
+            "auto",
+            state.selectionStyle.overlayImageWidth,
+            state.selectionStyle.overlayImageHeight,
+            state.selected.artwork_area.width,
+            state.selected.artwork_area.height
+          );
+        }
+        formData.append("fit_mode", resolvedFitMode);
+
+        // 3. Request high-fidelity rendered mockup from backend
+        const response = await fetch("/api/mockups/render", {
+          method: "POST",
+          headers: { "X-CSRF-Token": csrf },
+          body: formData
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Rendering failed");
+
+        // 4. Show rendered high-fidelity mockup
+        if ($("selectionRenderedMockup")) {
+          $("selectionRenderedMockup").src = data.output_url;
+          $("selectionRenderedMockup").classList.remove("hidden");
+        }
+
+        // Hide editor indicators and the simple live preview element
+        $("selectionSvg").classList.add("hidden");
+        $("selectionImageOverlay").classList.add("hidden");
+
+        // 5. Setup Download Buttons
+        if ($("downloadMockupButton")) {
+          $("downloadMockupButton").href = data.output_url;
+          $("downloadMockupButton").classList.remove("hidden");
+        }
+        if ($("toolbarDownloadButton")) {
+          $("toolbarDownloadButton").href = data.output_url;
+          $("toolbarDownloadButton").classList.remove("hidden");
+        }
+
+        state.isPreviewingMockup = true;
+        if ($("previewMockupButton")) $("previewMockupButton").textContent = "Edit Template";
+        if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.add("active");
+        setStatus("High-fidelity mockup preview active");
+      } catch (err) {
+        toast(err.message || "Could not render mockup preview");
+        setStatus("Preview render failed", true);
+        if ($("previewMockupButton")) $("previewMockupButton").textContent = "Preview Mockup";
+        if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.remove("active");
+      } finally {
+        setBusy(false);
+      }
+    }
+  }
+
+  if ($("previewMockupButton")) $("previewMockupButton").onclick = togglePreviewMode;
+  if ($("toolbarPreviewButton")) $("toolbarPreviewButton").onclick = togglePreviewMode;
 
   (async () => {
     try {

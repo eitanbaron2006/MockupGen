@@ -3022,3 +3022,92 @@ input[type="checkbox"]:disabled {
   height: 100%;
   display: block;
 }
+
+.selection-rendered-mockup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+}
+
+/* Premium Custom Eye Preview & Tray Download Icons for style-toolbar */
+.style-preview-icon {
+  display: block;
+  height: 18px;
+  position: relative;
+  width: 18px;
+}
+
+.style-preview-icon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 4px;
+  width: 16px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-radius: 50% 50%;
+}
+
+.style-preview-icon::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.style-download-icon {
+  display: block;
+  height: 18px;
+  position: relative;
+  width: 18px;
+}
+
+.style-download-icon::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 2px;
+  width: 2px;
+  height: 8px;
+  background: currentColor;
+}
+
+.style-download-icon::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.style-download-tray {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  width: 14px;
+  height: 4px;
+  border: 2px solid currentColor;
+  border-top: 0;
+}
+
+.style-tool.style-download-btn {
+  color: var(--success);
+}
+
+.style-tool.style-download-btn:hover {
+  background: rgba(110, 116, 72, 0.12);
+  border-color: rgba(110, 116, 72, 0.34);
+  color: var(--success);
+}

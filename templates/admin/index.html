@@ -80,6 +80,8 @@
                 <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
               </div>
               <button class="btn success" id="detectButton">Detect frame</button>
+              <button class="btn hidden" id="previewMockupButton" type="button">Preview Mockup</button>
+              <a class="btn primary hidden" id="downloadMockupButton" download="mockup.png" href="">Download</a>
             </div>
           </div>
           <div class="canvas-workspace">
@@ -92,6 +94,7 @@
               <div id="selectionImageOverlay" class="selection-image-overlay hidden">
                 <img id="selectionOverlayImg" src="" alt="Overlay artwork">
               </div>
+              <img id="selectionRenderedMockup" class="selection-rendered-mockup hidden" alt="Rendered mockup">
               <svg id="selectionSvg" class="selection-svg hidden">
                 <defs>
                   <pattern id="selectionImagePattern" patternUnits="userSpaceOnUse" x="0" y="0" width="1" height="1">
@@ -168,6 +171,13 @@
                 aria-label="Crosshair line width" title="Crosshair line width">
                 <span class="style-cross-width-icon"></span>
               </button>
+              <hr class="style-divider" style="width: 100%; border: 0; border-top: 1px solid var(--line-soft); margin: 4px 0;">
+              <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton" aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
+                <span class="style-preview-icon"></span>
+              </button>
+              <a class="style-tool style-download-btn hidden" id="toolbarDownloadButton" download="mockup.png" href="" aria-label="Download mockup" title="Download realistic mockup">
+                <span class="style-download-icon"><span class="style-download-tray"></span></span>
+              </a>
               <div class="style-popover hidden" id="selectionStylePopover">
                 <div class="style-panel" id="overlayModePanel">
                   <label>Overlay mode</label>
