@@ -39,12 +39,16 @@
       <main class="content">
         <section class="panel batch">
           <div class="panel-head queue-head">
-            <div>
-              <h2>Import queue</h2>
-              <div class="sub"><span id="queueCount">0</span> mockups in current category</div>
+            <div class="queue-title-row">
+              <div>
+                <div class="queue-title-line">
+                  <h2>Import queue</h2>
+                  <label class="select-all-label"><input type="checkbox" id="selectAllCheckbox"> Select All</label>
+                </div>
+                <div class="sub"><span id="queueCount">0</span> mockups in current category</div>
+              </div>
             </div>
             <div class="queue-batch-actions">
-              <label class="select-all-label"><input type="checkbox" id="selectAllCheckbox"> Select All</label>
               <div class="batch-action-group">
                 <span class="batch-action-label">Batch</span>
                 <button class="btn compact batch-action batch-delete" id="batchDeleteButton" disabled>Delete</button>

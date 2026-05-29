@@ -558,8 +558,18 @@ h2 {
 .queue-batch-actions {
   align-items: center;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-bottom: 2px;
+}
+
+.queue-title-row {
+  display: block;
+}
+
+.queue-title-line {
+  align-items: center;
+  display: flex;
+  gap: 16px;
 }
 
 .batch-action-group {
@@ -586,6 +596,7 @@ h2 {
   gap: 6px;
   text-transform: uppercase;
   user-select: none;
+  white-space: nowrap;
 }
 
 .queue-checkbox {
