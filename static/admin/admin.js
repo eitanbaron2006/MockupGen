@@ -578,7 +578,8 @@
     }
     const selectionImage = $("selectionImage");
     if (selectionImage) {
-      selectionImage.setAttribute("href", style.overlayImage || "");
+      const hasImage = style.overlayMode === "image" && Boolean(style.overlayImage);
+      selectionImage.setAttribute("href", hasImage ? style.overlayImage : "");
     }
     document.querySelectorAll(".style-segment").forEach((button) => {
       if (button.dataset.overlayMode) {
@@ -634,6 +635,7 @@
     state.selectionStyle.overlayMode = nextMode;
     applySelectionStyle();
     saveSelectionStylePreference();
+    drawSelection();
   }
 
   function fileToDataUrl(file) {
@@ -765,6 +767,10 @@
       const style = state.selectionStyle;
       const showOverlay = style.overlayMode === "image" && Boolean(style.overlayImage);
       overlayDiv.classList.toggle("hidden", !showOverlay);
+
+      if (!showOverlay) {
+        overlayImg.src = "";
+      }
 
       if (showOverlay && displayPoints.length >= 4) {
         const p0 = displayPoints[0];
@@ -1030,7 +1036,7 @@
     }
   }
 
-  async function saveTemplate(showToast = true) {
+  async function saveTemplate(showToast = true, skipReload = false) {
     if (!state.selected || !state.selected.artwork_area) throw new Error("Define an artwork area first.");
     const payload = await api(`/api/admin/templates/${state.selected.template_id}`, {
       method: "PATCH",
@@ -1042,8 +1048,10 @@
       })
     });
     state.selected = payload.template;
-    await loadCategories(state.selected.category_id);
-    await loadTemplates(state.selected.template_id);
+    if (!skipReload) {
+      await loadCategories(state.selected.category_id);
+      await loadTemplates(state.selected.template_id);
+    }
     if (showToast) toast("Template draft saved");
     return state.selected;
   }
@@ -1920,12 +1928,17 @@
   $("selectionSvg").addEventListener("pointerup", endDrag);
   $("selectionSvg").addEventListener("pointercancel", endDrag);
   document.querySelectorAll(".style-tool").forEach((button) => {
-    button.onclick = () => openSelectionStylePanel(button.dataset.stylePanel, button);
+    if (button.dataset.stylePanel) {
+      button.onclick = () => openSelectionStylePanel(button.dataset.stylePanel, button);
+    }
   });
   document.addEventListener("pointerdown", (event) => {
     if ($("selectionStylePopover").classList.contains("hidden")) return;
-    if (event.target.closest(".selection-style-toolbar")) return;
-    closeSelectionStylePanel();
+    const clickedPopover = event.target.closest("#selectionStylePopover");
+    const clickedStyleToolWithPanel = event.target.closest(".style-tool[data-style-panel]");
+    if (!clickedPopover && !clickedStyleToolWithPanel) {
+      closeSelectionStylePanel();
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSelectionStylePanel();
@@ -2629,8 +2642,10 @@
   async function togglePreviewMode() {
     if (!state.selected || state.busy) return;
 
+    closeSelectionStylePanel();
+
     if (state.isPreviewingMockup) {
-      // Toggle back to Edit Mode
+      // Toggle back to Edit Mode instantly
       state.isPreviewingMockup = false;
       
       // Sync Header buttons
@@ -2645,6 +2660,9 @@
       if ($("toolbarDownloadButton")) {
         $("toolbarDownloadButton").classList.add("hidden");
         $("toolbarDownloadButton").href = "";
+        $("toolbarDownloadButton").style.pointerEvents = "auto";
+        $("toolbarDownloadButton").style.opacity = "1";
+        $("toolbarDownloadButton").removeAttribute("title");
       }
 
       // Hide rendered mockup preview
@@ -2653,7 +2671,7 @@
         $("selectionRenderedMockup").src = "";
       }
       
-      // Show editor visual layers
+      // Show editor visual layers and the live client-side warped image
       $("selectionSvg").classList.remove("hidden");
       const showOverlay = state.selectionStyle.overlayMode === "image" && Boolean(state.selectionStyle.overlayImage);
       $("selectionImageOverlay").classList.toggle("hidden", !showOverlay);
@@ -2661,84 +2679,109 @@
       drawSelection();
       setStatus("Edit mode active");
     } else {
-      // Toggle to Preview Mode (Hiding indicators, rendering high-fidelity mockup)
+      // Toggle to Preview Mode instantly (Zero Latency)
       const overlayImage = state.selectionStyle.overlayImage;
       if (!overlayImage) {
         toast("Please select an overlay image first.");
         return;
       }
 
-      setBusy(true);
-      if ($("analysisLabel")) $("analysisLabel").textContent = "Rendering realistic preview...";
-      if ($("previewMockupButton")) $("previewMockupButton").textContent = "Rendering...";
-      setStatus("Rendering high-fidelity preview...");
+      state.isPreviewingMockup = true;
+      
+      // 1. Instantly hide editor visual markers
+      $("selectionSvg").classList.add("hidden");
+      
+      // 2. Ensure live warped image remains visible client-side
+      $("selectionImageOverlay").classList.remove("hidden");
+      
+      // 3. Sync button UI states instantly
+      if ($("previewMockupButton")) $("previewMockupButton").textContent = "Edit Template";
+      if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.add("active");
+      setStatus("High-fidelity mockup preview active");
 
-      try {
-        // 1. Auto-save current template coordinates to DB
-        await saveTemplate(false);
-
-        // 2. Prepare Form Data
-        const file = dataURLtoFile(overlayImage, state.selectionStyle.overlayImageName || "artwork.png");
-        const formData = new FormData();
-        formData.append("mode", "simple");
-        formData.append("template_id", state.selected.template_id);
-        formData.append("artwork", file);
-        formData.append("realism", "true"); // Force high-fidelity realism (grain, reflection sheen, etc.)
-        
-        let resolvedFitMode = state.selected.fit_mode;
-        if (resolvedFitMode === "auto") {
-          resolvedFitMode = resolveFitMode(
-            "auto",
-            state.selectionStyle.overlayImageWidth,
-            state.selectionStyle.overlayImageHeight,
-            state.selected.artwork_area.width,
-            state.selected.artwork_area.height
-          );
-        }
-        formData.append("fit_mode", resolvedFitMode);
-
-        // 3. Request high-fidelity rendered mockup from backend
-        const response = await fetch("/api/mockups/render", {
-          method: "POST",
-          headers: { "X-CSRF-Token": csrf },
-          body: formData
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Rendering failed");
-
-        // 4. Show rendered high-fidelity mockup
-        if ($("selectionRenderedMockup")) {
-          $("selectionRenderedMockup").src = data.output_url;
-          $("selectionRenderedMockup").classList.remove("hidden");
-        }
-
-        // Hide editor indicators and the simple live preview element
-        $("selectionSvg").classList.add("hidden");
-        $("selectionImageOverlay").classList.add("hidden");
-
-        // 5. Setup Download Buttons
-        if ($("downloadMockupButton")) {
-          $("downloadMockupButton").href = data.output_url;
-          $("downloadMockupButton").classList.remove("hidden");
-        }
-        if ($("toolbarDownloadButton")) {
-          $("toolbarDownloadButton").href = data.output_url;
-          $("toolbarDownloadButton").classList.remove("hidden");
-        }
-
-        state.isPreviewingMockup = true;
-        if ($("previewMockupButton")) $("previewMockupButton").textContent = "Edit Template";
-        if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.add("active");
-        setStatus("High-fidelity mockup preview active");
-      } catch (err) {
-        toast(err.message || "Could not render mockup preview");
-        setStatus("Preview render failed", true);
-        if ($("previewMockupButton")) $("previewMockupButton").textContent = "Preview Mockup";
-        if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.remove("active");
-      } finally {
-        setBusy(false);
+      // 4. Show download buttons as "Generating..." (Disabled / Loading)
+      if ($("downloadMockupButton")) {
+        $("downloadMockupButton").classList.remove("hidden");
+        $("downloadMockupButton").style.pointerEvents = "none";
+        $("downloadMockupButton").style.opacity = "0.5";
       }
+      if ($("toolbarDownloadButton")) {
+        $("toolbarDownloadButton").classList.remove("hidden");
+        $("toolbarDownloadButton").style.pointerEvents = "none";
+        $("toolbarDownloadButton").style.opacity = "0.5";
+        $("toolbarDownloadButton").setAttribute("title", "Generating high-fidelity download...");
+      }
+
+      // 5. Trigger background high-fidelity rendering (asynchronous, non-blocking!)
+      (async () => {
+        try {
+          // Auto-save coordinates to DB
+          await saveTemplate(false, true);
+
+          const file = dataURLtoFile(overlayImage, state.selectionStyle.overlayImageName || "artwork.png");
+          const formData = new FormData();
+          formData.append("mode", "simple");
+          formData.append("template_id", state.selected.template_id);
+          formData.append("artwork", file);
+          formData.append("realism", "true");
+          
+          let resolvedFitMode = state.selected.fit_mode;
+          if (resolvedFitMode === "auto") {
+            resolvedFitMode = resolveFitMode(
+              "auto",
+              state.selectionStyle.overlayImageWidth,
+              state.selectionStyle.overlayImageHeight,
+              state.selected.artwork_area.width,
+              state.selected.artwork_area.height
+            );
+          }
+          formData.append("fit_mode", resolvedFitMode);
+
+          const response = await fetch("/api/mockups/render", {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrf },
+            body: formData
+          });
+
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Rendering failed");
+
+          // Ensure user is still in preview mode before applying the background render
+          if (state.isPreviewingMockup) {
+            // Show rendered high-fidelity mockup and hide the client-side warped div
+            if ($("selectionRenderedMockup")) {
+              $("selectionRenderedMockup").src = data.output_url;
+              $("selectionRenderedMockup").classList.remove("hidden");
+            }
+            $("selectionImageOverlay").classList.add("hidden");
+
+            // Enable download buttons
+            if ($("downloadMockupButton")) {
+              $("downloadMockupButton").href = data.output_url;
+              $("downloadMockupButton").style.pointerEvents = "auto";
+              $("downloadMockupButton").style.opacity = "1";
+            }
+            if ($("toolbarDownloadButton")) {
+              $("toolbarDownloadButton").href = data.output_url;
+              $("toolbarDownloadButton").style.pointerEvents = "auto";
+              $("toolbarDownloadButton").style.opacity = "1";
+              $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
+            }
+          }
+        } catch (err) {
+          console.error("Background render failed:", err);
+          toast("Realistic background optimization failed, standard download is active");
+          
+          // Fallback to enabled download buttons
+          if (state.isPreviewingMockup) {
+            if ($("toolbarDownloadButton")) {
+              $("toolbarDownloadButton").style.pointerEvents = "auto";
+              $("toolbarDownloadButton").style.opacity = "1";
+              $("toolbarDownloadButton").setAttribute("title", "Download mockup");
+            }
+          }
+        }
+      })();
     }
   }
 
