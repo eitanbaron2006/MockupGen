@@ -558,18 +558,20 @@ h2 {
 .queue-batch-actions {
   align-items: center;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin-bottom: 2px;
 }
 
 .queue-title-row {
-  display: block;
-}
-
-.queue-title-line {
   align-items: center;
   display: flex;
   gap: 16px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.queue-title-row h2 {
+  margin: 0;
 }
 
 .batch-action-group {
@@ -594,6 +596,7 @@ h2 {
   font-family: var(--mono);
   font-size: 10px;
   gap: 6px;
+  margin-left: auto;
   text-transform: uppercase;
   user-select: none;
   white-space: nowrap;
