@@ -1516,6 +1516,7 @@
       }
 
       applyZoomPan();
+      drawSelection();
     }, { passive: false });
 
     // Pointer down event to begin panning
@@ -1524,14 +1525,8 @@
       
       const isMiddleClick = event.button === 1;
       const isSpacePan = event.button === 0 && state.spacePressed;
-      const isCanvasBgClick = event.button === 0 && (
-        event.target === workspace || 
-        event.target === $("stage") || 
-        (event.target === $("canvasImage") && !(wizardState.active && wizardState.step === 3)) ||
-        event.target === $("selectionSvg")
-      );
 
-      if (isMiddleClick || isSpacePan || isCanvasBgClick) {
+      if (isMiddleClick || isSpacePan) {
         event.preventDefault();
         state.isPanning = true;
         state.panStart = {
@@ -1552,12 +1547,6 @@
         x: event.clientX - state.panStart.x,
         y: event.clientY - state.panStart.y
       };
-      
-      // Bounding pan limits to prevent the image from disappearing completely
-      const maxOffset = 1800;
-      state.pan.x = Math.max(-maxOffset, Math.min(maxOffset, state.pan.x));
-      state.pan.y = Math.max(-maxOffset, Math.min(maxOffset, state.pan.y));
-      
       applyZoomPan();
     });
 
@@ -1632,12 +1621,14 @@
     }
     
     applyZoomPan();
+    drawSelection();
   }
 
   function resetZoomPan() {
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     applyZoomPan();
+    drawSelection();
   }
 
   $("selectionSvg").addEventListener("pointerdown", beginDrag);
@@ -2317,111 +2308,6 @@
     window.location.href = "/admin/login";
   };
   window.addEventListener("resize", drawSelection);
-
-  // --- Zoom and Pan Logic ---
-  const stageWorkspace = document.querySelector('.canvas-workspace');
-  if (stageWorkspace) {
-    stageWorkspace.addEventListener('wheel', (e) => {
-      if (!state.selected) return;
-      e.preventDefault();
-      
-      const zoomSensitivity = 0.001;
-      const oldZoom = state.zoom;
-      
-      // Calculate new zoom
-      let newZoom = state.zoom - e.deltaY * zoomSensitivity;
-      newZoom = Math.max(0.1, Math.min(newZoom, 5)); // Clamp zoom between 10% and 500%
-      
-      if (newZoom === oldZoom) return;
-      
-      // Calculate mouse position relative to stage origin
-      const stage = $("stage");
-      const stageRect = stage.getBoundingClientRect();
-      
-      // Pointer position inside the stage's raw coordinate space
-      const pointerX = (e.clientX - stageRect.left) / oldZoom;
-      const pointerY = (e.clientY - stageRect.top) / oldZoom;
-      
-      // Adjust pan to keep the point under the mouse stable
-      state.pan.x -= pointerX * (newZoom - oldZoom);
-      state.pan.y -= pointerY * (newZoom - oldZoom);
-      state.zoom = newZoom;
-      
-      applyZoomPan();
-      drawSelection(); // to update stroke widths and handle sizes
-    }, { passive: false });
-
-    // Panning with mouse drag (Middle click or Space+Left click)
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-        state.spacePressed = true;
-        if (state.selected) stageWorkspace.classList.add('panning-mode');
-        e.preventDefault();
-      }
-    });
-    
-    window.addEventListener('keyup', (e) => {
-      if (e.code === 'Space') {
-        state.spacePressed = false;
-        stageWorkspace.classList.remove('panning-mode');
-      }
-    });
-
-    stageWorkspace.addEventListener('mousedown', (e) => {
-      if (!state.selected) return;
-      // Allow panning if middle button clicked, or space is held
-      if (e.button === 1 || (e.button === 0 && state.spacePressed)) {
-        e.preventDefault();
-        state.isPanning = true;
-        state.panStart = { x: e.clientX, y: e.clientY };
-        stageWorkspace.classList.add('panning-mode');
-      }
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (state.isPanning) {
-        const dx = e.clientX - state.panStart.x;
-        const dy = e.clientY - state.panStart.y;
-        state.pan.x += dx;
-        state.pan.y += dy;
-        state.panStart = { x: e.clientX, y: e.clientY };
-        applyZoomPan();
-      }
-    });
-
-    window.addEventListener('mouseup', (e) => {
-      if (state.isPanning) {
-        state.isPanning = false;
-        if (!state.spacePressed) {
-          stageWorkspace.classList.remove('panning-mode');
-        }
-      }
-    });
-  }
-
-  // Zoom HUD Buttons
-  if ($("zoomInBtn")) {
-    $("zoomInBtn").onclick = () => {
-      state.zoom = Math.min(state.zoom + 0.25, 5);
-      applyZoomPan();
-      drawSelection();
-    };
-  }
-  if ($("zoomOutBtn")) {
-    $("zoomOutBtn").onclick = () => {
-      state.zoom = Math.max(state.zoom - 0.25, 0.1);
-      applyZoomPan();
-      drawSelection();
-    };
-  }
-  if ($("zoomResetBtn")) {
-    $("zoomResetBtn").onclick = () => {
-      state.zoom = 1;
-      state.pan = { x: 0, y: 0 };
-      applyZoomPan();
-      drawSelection();
-    };
-  }
 
   (async () => {
     try {
