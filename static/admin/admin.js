@@ -11,6 +11,7 @@
     pendingDelete: null,
     queueFilter: "all",
     selectedForBatch: new Set(),
+    switchingProvider: false,
     zoom: 1,
     pan: { x: 0, y: 0 },
     isPanning: false,
@@ -629,6 +630,7 @@
     $("saveButton").disabled = active;
     $("approveButton").disabled = active;
     $("publishButton").disabled = active;
+    updateDetectionModeSwitch();
     renderQueue();
   }
 
@@ -1145,11 +1147,22 @@
     return "Classic edge detection";
   }
 
+  function updateDetectionModeSwitch() {
+    const selectedProvider = state.settings.DETECTION_PROVIDER || "classic";
+    document.querySelectorAll(".detection-mode-button").forEach((button) => {
+      const isActive = button.dataset.provider === selectedProvider;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+      button.disabled = state.busy || state.switchingProvider;
+    });
+  }
+
   function showProvider(provider) {
     state.settings.DETECTION_PROVIDER = provider;
     document.querySelectorAll(".provider-card").forEach((card) => {
       card.classList.toggle("selected", card.dataset.provider === provider);
     });
+    updateDetectionModeSwitch();
     $("vertexConfig").classList.toggle("hidden", provider !== "vertex");
     $("localConfig").classList.toggle("hidden", provider !== "local");
     $("classicConfig").classList.toggle("hidden", provider !== "classic");
@@ -1157,6 +1170,31 @@
     $("engineModel").textContent = provider === "vertex"
       ? `${$("vertexModel").value || "gemini-2.5-flash"} / ${$("vertexLocation").value || "global"}`
       : provider === "local" ? ($("localModel").value || "Choose an installed model") : "No AI model";
+  }
+
+  async function switchDetectionProvider(provider) {
+    if (state.busy || state.switchingProvider || provider === (state.settings.DETECTION_PROVIDER || "classic")) return;
+    const previousProvider = state.settings.DETECTION_PROVIDER || "classic";
+    state.switchingProvider = true;
+    showProvider(provider);
+    updateDetectionModeSwitch();
+    try {
+      const payload = await api("/api/admin/settings/detection", {
+        method: "PUT",
+        body: JSON.stringify({DETECTION_PROVIDER: provider})
+      });
+      state.settings = {...state.settings, ...payload.settings};
+      showProvider(state.settings.DETECTION_PROVIDER || provider);
+      toast(`${providerTitle(state.settings.DETECTION_PROVIDER || provider)} selected`);
+      setStatus(`Detection engine set to ${providerTitle(state.settings.DETECTION_PROVIDER || provider)}`);
+    } catch (error) {
+      showProvider(previousProvider);
+      toast(error.message);
+      setStatus("Detection engine switch failed", true);
+    } finally {
+      state.switchingProvider = false;
+      updateDetectionModeSwitch();
+    }
   }
 
   function fillModels(select, models, selected, placeholder) {
@@ -2127,6 +2165,9 @@
   }
   document.querySelectorAll(".provider-card").forEach((card) => {
     card.onclick = () => showProvider(card.dataset.provider);
+  });
+  document.querySelectorAll(".detection-mode-button").forEach((button) => {
+    button.onclick = () => switchDetectionProvider(button.dataset.provider);
   });
   $("vertexModel").onchange = () => {
     if ($("vertexModel").value === "gemini-3-flash-preview") $("vertexLocation").value = "global";

@@ -69,6 +69,11 @@
               <div class="sub" id="editorSub">Choose a template from the queue to review its artwork area.</div>
             </div>
             <div class="editor-tools">
+              <div class="detection-mode-switch" aria-label="Detection engine">
+                <button class="detection-mode-button" type="button" data-provider="vertex">Vertex AI</button>
+                <button class="detection-mode-button" type="button" data-provider="classic">Classic / No AI</button>
+                <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
+              </div>
               <div class="confidence" id="confidence"></div>
               <button class="btn" id="detectButton">Detect frame</button>
             </div>
