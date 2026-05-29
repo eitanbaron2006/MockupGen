@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,6 +8,7 @@
   <title>Mockup Studio</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=2">
 </head>
+
 <body class="admin-page">
   <div class="app">
     <aside class="sidebar">
@@ -14,7 +16,8 @@
       <p class="nav-label">Workspace</p>
       <div class="nav-item active"><span class="nav-icon">&#9638;</span>Templates</div>
       <div class="nav-item"><span class="nav-icon">&#8635;</span>Render history</div>
-      <button class="nav-item nav-button" id="openTestModal"><span class="nav-icon">&#128247;</span>Test mockups</button>
+      <button class="nav-item nav-button" id="openTestModal"><span class="nav-icon">&#128247;</span>Test
+        mockups</button>
       <button class="nav-item nav-button" id="openEngine"><span class="nav-icon">&#9881;</span>API settings</button>
       <div class="category-head">
         <p class="section-label">Categories</p>
@@ -23,7 +26,9 @@
       <nav id="categories" class="category-list"></nav>
       <div class="account">
         <div class="avatar">EB</div>
-        <div><strong>Eitan Baron</strong><div class="sub">Administrator</div></div>
+        <div><strong>Eitan Baron</strong>
+          <div class="sub">Administrator</div>
+        </div>
       </div>
     </aside>
     <section class="shell">
@@ -87,7 +92,8 @@
               <svg id="selectionSvg" class="selection-svg hidden">
                 <defs>
                   <pattern id="selectionImagePattern" patternUnits="userSpaceOnUse" x="0" y="0" width="1" height="1">
-                    <image id="selectionImage" href="" x="0" y="0" width="1" height="1" preserveAspectRatio="xMidYMid slice"></image>
+                    <image id="selectionImage" href="" x="0" y="0" width="1" height="1" preserveAspectRatio="none">
+                    </image>
                   </pattern>
                 </defs>
                 <polygon id="rawSelectionPolygon" points="" class="raw-selection-polygon hidden" />
@@ -131,25 +137,32 @@
               </div>
             </div>
             <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
-              <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode" title="Overlay mode">
+              <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode"
+                title="Overlay mode">
                 <span class="style-image-icon"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="polygonColorPanel" aria-label="Polygon color" title="Polygon color">
+              <button class="style-tool" type="button" data-style-panel="polygonColorPanel" aria-label="Polygon color"
+                title="Polygon color">
                 <span class="style-swatch" id="polygonColorSwatch"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="crossColorPanel" aria-label="Crosshair color" title="Crosshair color">
+              <button class="style-tool" type="button" data-style-panel="crossColorPanel" aria-label="Crosshair color"
+                title="Crosshair color">
                 <span class="style-cross-icon" id="crossColorIcon"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="polygonOpacityPanel" aria-label="Polygon opacity" title="Polygon opacity">
+              <button class="style-tool" type="button" data-style-panel="polygonOpacityPanel"
+                aria-label="Polygon opacity" title="Polygon opacity">
                 <span class="style-opacity-icon"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="crossOpacityPanel" aria-label="Crosshair opacity" title="Crosshair opacity">
+              <button class="style-tool" type="button" data-style-panel="crossOpacityPanel"
+                aria-label="Crosshair opacity" title="Crosshair opacity">
                 <span class="style-cross-opacity-icon"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="polygonWidthPanel" aria-label="Polygon line width" title="Polygon line width">
+              <button class="style-tool" type="button" data-style-panel="polygonWidthPanel"
+                aria-label="Polygon line width" title="Polygon line width">
                 <span class="style-width-icon"></span>
               </button>
-              <button class="style-tool" type="button" data-style-panel="crossWidthPanel" aria-label="Crosshair line width" title="Crosshair line width">
+              <button class="style-tool" type="button" data-style-panel="crossWidthPanel"
+                aria-label="Crosshair line width" title="Crosshair line width">
                 <span class="style-cross-width-icon"></span>
               </button>
               <div class="style-popover hidden" id="selectionStylePopover">
@@ -159,10 +172,26 @@
                     <button class="style-segment active" type="button" data-overlay-mode="polygon">Polygon</button>
                     <button class="style-segment" type="button" data-overlay-mode="image">Image</button>
                   </div>
-                  <button class="btn compact style-upload-button" type="button" id="overlayImageButton">Choose image</button>
+                  <button class="btn compact style-upload-button" type="button" id="overlayImageButton">Choose
+                    image</button>
                   <input class="hidden" type="file" id="overlayImageInput" accept="image/png,image/jpeg,image/webp">
                   <div class="style-image-name" id="overlayImageName">No image selected</div>
-                  <button class="link-button style-clear-image" type="button" id="clearOverlayImage">Clear image</button>
+
+                  <div id="overlayFitModeContainer" class="hidden"
+                    style="margin-top: 10px; display: flex; flex-direction: column; gap: 4px;">
+                    <label>Image layout (Fit mode)</label>
+                    <div class="style-segmented" style="margin-bottom: 8px;">
+                      <button class="style-segment style-overlay-fit" type="button"
+                        data-overlay-fit="cover">Cover</button>
+                      <button class="style-segment style-overlay-fit" type="button"
+                        data-overlay-fit="contain">Contain</button>
+                      <button class="style-segment style-overlay-fit" type="button"
+                        data-overlay-fit="stretch">Stretch</button>
+                    </div>
+                  </div>
+
+                  <button class="link-button style-clear-image" type="button" id="clearOverlayImage">Clear
+                    image</button>
                 </div>
                 <div class="style-panel hidden" id="polygonColorPanel">
                   <label for="polygonColorInput">Polygon color</label>
@@ -190,13 +219,14 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Floating Premium Zoom Controls HUD -->
             <div class="zoom-hud hidden" id="zoomHud">
               <button class="zoom-btn" id="zoomOutBtn" type="button" title="Zoom Out (Scroll Down)">−</button>
               <span class="zoom-text" id="zoomText">100%</span>
               <button class="zoom-btn" id="zoomInBtn" type="button" title="Zoom In (Scroll Up)">+</button>
-              <button class="zoom-btn reset-btn" id="zoomResetBtn" type="button" title="Reset Zoom & Pan (Double-Click empty space)">⟲</button>
+              <button class="zoom-btn reset-btn" id="zoomResetBtn" type="button"
+                title="Reset Zoom & Pan (Double-Click empty space)">⟲</button>
             </div>
           </div>
           <div class="editor-foot">
@@ -206,7 +236,7 @@
               <span>W <strong id="coordW">-</strong></span>
               <span>H <strong id="coordH">-</strong></span>
             </div>
-            
+
             <!-- Embedded Premium Detection Wizard HUD -->
             <div class="detection-wizard-foot hidden" id="detectionWizardHud">
               <span class="wizard-badge" id="wizardStepIndicator">STAGE 1</span>
@@ -214,7 +244,7 @@
               <span class="wizard-instruction" id="wizardInstruction">Detecting sharp mockup frame borders...</span>
               <div class="wizard-actions" id="wizardActions"></div>
             </div>
-            
+
             <div class="confidence" id="confidence"></div>
             <div class="sub" id="proposalState">Select a mockup to start.</div>
           </div>
@@ -223,10 +253,15 @@
 
           <aside class="panel inspector inactive" id="inspector">
             <div class="panel-head">
-              <div><h2>Template details</h2><div class="sub" id="inspectorStatus">No template selected</div></div>
+              <div>
+                <h2>Template details</h2>
+                <div class="sub" id="inspectorStatus">No template selected</div>
+              </div>
               <div class="inspector-tools">
-                <button class="icon-button" id="openGuide" type="button" aria-label="Detection guide" data-tooltip="Detection guide">?</button>
-                <button class="icon-button" id="engineButton" type="button" aria-label="Detection engine" data-tooltip="Detection engine">&#9881;</button>
+                <button class="icon-button" id="openGuide" type="button" aria-label="Detection guide"
+                  data-tooltip="Detection guide">?</button>
+                <button class="icon-button" id="engineButton" type="button" aria-label="Detection engine"
+                  data-tooltip="Detection engine">&#9881;</button>
               </div>
             </div>
             <div class="fields">
@@ -241,7 +276,8 @@
               <div>
                 <div class="label-row">
                   <label>Artwork orientation</label>
-                  <span class="tip-icon" tabindex="0" aria-label="API match logic" data-tooltip="When a customer submits matching artwork for this category, the closest artwork-area ratio wins.">i</span>
+                  <span class="tip-icon" tabindex="0" aria-label="API match logic"
+                    data-tooltip="When a customer submits matching artwork for this category, the closest artwork-area ratio wins.">i</span>
                 </div>
                 <div class="orientation-grid">
                   <div class="direction square" data-direction="square"><span></span>Square</div>
@@ -262,7 +298,7 @@
                 <div class="engine-current">
                   <div class="engine-mark">AI</div>
                   <div>
-                  <strong id="engineProvider">Vertex AI</strong>
+                    <strong id="engineProvider">Vertex AI</strong>
                     <span id="engineModel">Gemini / Global</span>
                   </div>
                 </div>
@@ -272,7 +308,8 @@
             </div>
             <div class="inspector-actions">
               <button class="btn" id="saveButton">Save draft</button>
-              <button class="btn primary" id="approveButton">Approve <span class="button-tip" data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
+              <button class="btn primary" id="approveButton">Approve <span class="button-tip"
+                  data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
             </div>
           </aside>
         </div>
@@ -305,7 +342,10 @@
   <div class="drawer-backdrop" id="guideDrawer">
     <aside class="drawer">
       <div class="drawer-head">
-        <div><h2>Detection guide</h2><div class="sub">Source images that make accurate proposals easier.</div></div>
+        <div>
+          <h2>Detection guide</h2>
+          <div class="sub">Source images that make accurate proposals easier.</div>
+        </div>
         <button class="icon-button" id="closeGuide">&times;</button>
       </div>
       <ol class="guide-list">
@@ -320,13 +360,19 @@
   <div class="drawer-backdrop" id="engineDrawer">
     <aside class="drawer engine-drawer">
       <div class="drawer-head">
-        <div><h2>Frame detection engine</h2><div class="sub">Choose AI-assisted or classic local detection. Tests use the selected mockup only.</div></div>
+        <div>
+          <h2>Frame detection engine</h2>
+          <div class="sub">Choose AI-assisted or classic local detection. Tests use the selected mockup only.</div>
+        </div>
         <button class="icon-button" id="closeEngine">&times;</button>
       </div>
       <div class="provider-grid">
-        <button class="provider-card" data-provider="vertex"><strong>Vertex AI</strong><small>Cloud / recommended</small></button>
-        <button class="provider-card" data-provider="classic"><strong>Classic / No AI</strong><small>Local edge scan</small></button>
-        <button class="provider-card" data-provider="local"><strong>Local AI</strong><small>Installed models</small></button>
+        <button class="provider-card" data-provider="vertex"><strong>Vertex AI</strong><small>Cloud /
+            recommended</small></button>
+        <button class="provider-card" data-provider="classic"><strong>Classic / No AI</strong><small>Local edge
+            scan</small></button>
+        <button class="provider-card" data-provider="local"><strong>Local AI</strong><small>Installed
+            models</small></button>
       </div>
       <section class="engine-config" id="vertexConfig">
         <div class="model-cost">
@@ -336,7 +382,8 @@
           </div>
           <span class="recommended">Recommended</span>
         </div>
-        <div class="guide-note">The model list loads live from Vertex Model Garden and filters out image generation, audio/TTS and embedding models that cannot return a frame rectangle.</div>
+        <div class="guide-note">The model list loads live from Vertex Model Garden and filters out image generation,
+          audio/TTS and embedding models that cannot return a frame rectangle.</div>
         <div class="config-row">
           <div>
             <label for="vertexModel">Available model</label>
@@ -378,7 +425,8 @@
             <option value="hybrid">AI + guarded edge refinement - experimental</option>
           </select>
         </div>
-        <div class="guide-note">AI-only keeps the Vertex box unchanged. Guarded refinement is experimental: it may snap to a dashed boundary, but it is discarded if it distorts the AI result.</div>
+        <div class="guide-note">AI-only keeps the Vertex box unchanged. Guarded refinement is experimental: it may snap
+          to a dashed boundary, but it is discarded if it distorts the AI result.</div>
       </section>
       <section class="engine-config hidden" id="localConfig">
         <div class="model-cost">
@@ -394,22 +442,29 @@
         <div class="config-row model-row">
           <div>
             <label for="localModel">Local model</label>
-            <select id="localModel"><option value="">Connect an endpoint to list models</option></select>
+            <select id="localModel">
+              <option value="">Connect an endpoint to list models</option>
+            </select>
           </div>
           <button class="btn inline-action" id="refreshLocalModels" type="button">Load installed models</button>
         </div>
-        <div class="guide-note" id="localModelNotice">The local service must expose a model listing endpoint and accept an image detection payload returning an `artwork_area` rectangle.</div>
+        <div class="guide-note" id="localModelNotice">The local service must expose a model listing endpoint and accept
+          an image detection payload returning an `artwork_area` rectangle.</div>
       </section>
       <section class="engine-config hidden" id="classicConfig">
         <div class="model-cost">
           <div>
             <strong>Offline Edge & Object Detection (SAM 2.1 / Geometric)</strong>
-            <div class="cost-meta">High-fidelity localized computer vision with zero cloud costs or external API dependency.</div>
+            <div class="cost-meta">High-fidelity localized computer vision with zero cloud costs or external API
+              dependency.</div>
           </div>
         </div>
-        <div class="guide-note" style="margin-top: 15px; border-left-color: var(--success); background: rgba(46, 204, 113, 0.05);">
+        <div class="guide-note"
+          style="margin-top: 15px; border-left-color: var(--success); background: rgba(46, 204, 113, 0.05);">
           <strong style="display: block; margin-bottom: 5px; color: var(--success);">Local AI Mode Active:</strong>
-          This mode runs the local <strong>SAM 2.1</strong> model (<code>sam2.1_l.pt</code>) combined with an advanced multi-layered geometric quadrilateral solver. It automatically detects the innermost mockup border with absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
+          This mode runs the local <strong>SAM 2.1</strong> model (<code>sam2.1_l.pt</code>) combined with an advanced
+          multi-layered geometric quadrilateral solver. It automatically detects the innermost mockup border with
+          absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
         </div>
       </section>
       <div class="engine-actions">
@@ -429,7 +484,8 @@
         <div class="test-col-left">
           <label>1. Upload artwork (click or drag onto preview to add)</label>
           <div class="test-artwork-selection">
-            <input type="file" id="testArtworkFile" accept="image/png, image/jpeg, image/webp" class="hidden-input" multiple>
+            <input type="file" id="testArtworkFile" accept="image/png, image/jpeg, image/webp" class="hidden-input"
+              multiple>
             <div class="test-gallery-grid" id="testGallery">
               <!-- Grid will be rendered dynamically -->
             </div>
@@ -443,7 +499,7 @@
             </div>
           </div>
           <div class="sub" id="testOrientationLabel"></div>
-          
+
           <label style="margin-top: 15px;">2. Choose matching mockup</label>
           <select id="testTemplateSelect" class="hidden" disabled>
             <option value="">Upload an image first</option>
@@ -481,7 +537,8 @@
                   <option value="gemini-3.1-flash-image" selected>gemini-3.1-flash-image</option>
                   <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</option>
                   <option value="gemini-2.5-flash-image">gemini-2.5-flash-image</option>
-                  <option value="gemini-2.0-flash-preview-image-generation">gemini-2.0-flash-preview-image-generation</option>
+                  <option value="gemini-2.0-flash-preview-image-generation">gemini-2.0-flash-preview-image-generation
+                  </option>
                   <option value="imagen-3.0-capability-001">imagen-3.0-capability-001 (Premium Mockups)</option>
                 </select>
               </div>
@@ -495,7 +552,8 @@
           <div class="test-result-placeholder" id="testResultPlaceholder">
             <div class="placeholder-icon">&#127912;</div>
             <h3>Generated Mockup Preview</h3>
-            <p>Select your artwork and choose one or more mockup templates on the left, then click Generate to preview the high-quality mockup here.</p>
+            <p>Select your artwork and choose one or more mockup templates on the left, then click Generate to preview
+              the high-quality mockup here.</p>
           </div>
           <div class="test-result-wrapper hidden" id="testResultWrapper">
             <img id="testResultImage" alt="Generated mockup">
@@ -513,4 +571,5 @@
   <div class="toast" id="toast" aria-live="polite"></div>
   <script src="{{ url_for('static', filename='admin/admin.js') }}?v=2"></script>
 </body>
+
 </html>

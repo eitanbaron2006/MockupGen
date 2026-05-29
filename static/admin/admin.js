@@ -34,7 +34,7 @@
         overlayImageName: typeof saved.overlayImageName === "string" ? saved.overlayImageName : ""
       };
     } catch (_error) {
-      return {...DEFAULT_SELECTION_STYLE};
+      return { ...DEFAULT_SELECTION_STYLE };
     }
   }
 
@@ -75,14 +75,14 @@
   const $ = (id) => document.getElementById(id);
 
   async function api(url, options = {}) {
-    const headers = {...(options.headers || {}), "X-CSRF-Token": csrf};
+    const headers = { ...(options.headers || {}), "X-CSRF-Token": csrf };
     if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-    const response = await fetch(url, {...options, headers});
+    const response = await fetch(url, { ...options, headers });
     let payload;
     try {
       payload = await response.json();
     } catch (_error) {
-      payload = {error: "The server returned an unreadable response."};
+      payload = { error: "The server returned an unreadable response." };
     }
     if (response.status === 401) window.location.href = "/admin/login";
     if (!response.ok) throw new Error(payload.error || "Request failed");
@@ -286,7 +286,7 @@
     try {
       setStatus("Deleting selected mockups...");
       for (const templateId of ids) {
-        await api(`/api/admin/templates/${templateId}`, {method: "DELETE"});
+        await api(`/api/admin/templates/${templateId}`, { method: "DELETE" });
       }
       state.selectedForBatch.clear();
       state.selected = ids.includes(selectedTemplateId) ? null : state.selected;
@@ -334,7 +334,7 @@
       closeSelectionStylePanel();
       return;
     }
-    
+
     // Reset zoom and pan if template has changed
     if (state.lastSelectedTemplateId !== template.template_id) {
       state.zoom = 1;
@@ -390,15 +390,15 @@
     const naturalWidth = img.naturalWidth;
     const naturalHeight = img.naturalHeight;
     if (!naturalWidth || !naturalHeight) return null;
-    
+
     const clientWidth = img.clientWidth;
     const clientHeight = img.clientHeight;
-    
+
     const imageRatio = naturalWidth / naturalHeight;
     const clientRatio = clientWidth / clientHeight;
-    
+
     let renderedWidth, renderedHeight, left, top;
-    
+
     if (clientRatio > imageRatio) {
       renderedHeight = clientHeight;
       renderedWidth = clientHeight * imageRatio;
@@ -410,7 +410,7 @@
       left = 0;
       top = (clientHeight - renderedHeight) / 2;
     }
-    
+
     return {
       width: renderedWidth,
       height: renderedHeight,
@@ -424,7 +424,7 @@
     if (!stage) return;
     stage.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
     stage.style.transformOrigin = "0 0";
-    
+
     const textEl = $("zoomText");
     if (textEl) {
       textEl.textContent = `${Math.round(state.zoom * 100)}%`;
@@ -451,8 +451,19 @@
       selectionImage.setAttribute("href", style.overlayImage || "");
     }
     document.querySelectorAll(".style-segment").forEach((button) => {
-      button.classList.toggle("active", button.dataset.overlayMode === style.overlayMode);
+      if (button.dataset.overlayMode) {
+        button.classList.toggle("active", button.dataset.overlayMode === style.overlayMode);
+      }
     });
+    const isImageMode = style.overlayMode === "image" && Boolean(style.overlayImage);
+    if ($("overlayFitModeContainer")) {
+      $("overlayFitModeContainer").classList.toggle("hidden", !isImageMode);
+    }
+    if (state.selected) {
+      document.querySelectorAll(".style-overlay-fit").forEach((button) => {
+        button.classList.toggle("active", button.dataset.overlayFit === state.selected.fit_mode);
+      });
+    }
     if ($("overlayImageName")) {
       $("overlayImageName").textContent = style.overlayImageName || "No image selected";
     }
@@ -560,7 +571,7 @@
       selectionSvg.classList.add("hidden");
       return;
     }
-    
+
     // Ensure template.artwork_area has corners. If not, generate them on the fly!
     if (!template.artwork_area.corners) {
       const area = template.artwork_area;
@@ -571,32 +582,32 @@
         { x: area.x, y: area.y + area.height }
       ];
     }
-    
+
     const corners = template.artwork_area.corners;
     const rect = getRenderedImageRect(image);
     if (!rect) {
       selectionSvg.classList.add("hidden");
       return;
     }
-    
+
     // Align SVG overlay exactly with the rendered pixels of the background image
     selectionSvg.style.left = `${rect.left}px`;
     selectionSvg.style.top = `${rect.top}px`;
     selectionSvg.style.width = `${rect.width}px`;
     selectionSvg.style.height = `${rect.height}px`;
-    
+
     // Inject the current zoom factor as a CSS custom property for non-scaling stroke effect calculations
     selectionSvg.style.setProperty("--zoom", state.zoom);
     applySelectionStyle();
-    
+
     // Map canvas coordinates to client display coordinates inside the rendered rect
     const displayPoints = corners.map(p => {
       const cx = (p.x / template.canvas_width) * rect.width;
       const cy = (p.y / template.canvas_height) * rect.height;
-      return {x: cx, y: cy};
+      return { x: cx, y: cy };
     });
     const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
-    
+
     $("selectionPolygon").setAttribute("points", pointsStr);
     const pattern = $("selectionImagePattern");
     const patternImage = $("selectionImage");
@@ -611,12 +622,20 @@
       pattern.setAttribute("y", minY);
       pattern.setAttribute("width", width);
       pattern.setAttribute("height", height);
-      patternImage.setAttribute("x", minX);
-      patternImage.setAttribute("y", minY);
+      patternImage.setAttribute("x", 0);
+      patternImage.setAttribute("y", 0);
       patternImage.setAttribute("width", width);
       patternImage.setAttribute("height", height);
+
+      let aspect = "none";
+      if (template.fit_mode === "contain") {
+        aspect = "xMidYMid meet";
+      } else if (template.fit_mode === "cover") {
+        aspect = "xMidYMid slice";
+      }
+      patternImage.setAttribute("preserveAspectRatio", aspect);
     }
-    
+
     // Position handles (crosshairs)
     corners.forEach((p, idx) => {
       const cx = (p.x / template.canvas_width) * rect.width;
@@ -633,7 +652,7 @@
       const vLine = $(`v_line_${idx}`);
       if (hLine && vLine) {
         const halfSize = 12 / state.zoom; // Crosshair size on screen will always be 24px
-        
+
         hLine.setAttribute("x1", cx - halfSize);
         hLine.setAttribute("x2", cx + halfSize);
         hLine.setAttribute("y1", cy);
@@ -645,7 +664,7 @@
         vLine.setAttribute("y2", cy + halfSize);
       }
     });
-    
+
     // Map raw_artwork_area canvas coordinates to client display coordinates inside the rendered rect
     const rawPolygon = $("rawSelectionPolygon");
     const rawTag = $("svgRawZoneTag");
@@ -667,7 +686,7 @@
       }).join(" ");
       rawPolygon.setAttribute("points", rawPointsStr);
       rawPolygon.classList.remove("hidden");
-      
+
       if (rawTag && rawCorners.length > 0) {
         const tRawX = (rawCorners[0].x / template.canvas_width) * rect.width;
         const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25; // slightly above the main tag
@@ -706,18 +725,18 @@
         tag.setAttribute("y", tY);
       }
     }
-    
+
     selectionSvg.classList.remove("hidden");
   }
 
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
     event.preventDefault();
-    
+
     const target = event.target;
     let handle = "move";
     let index = -1;
-    
+
     if (target.classList.contains("svg-handle")) {
       handle = "corner";
       index = Number(target.dataset.index);
@@ -725,9 +744,9 @@
       // Don't drag if it's clicking outside
       return;
     }
-    
+
     target.setPointerCapture(event.pointerId);
-    
+
     // Ensure corners are populated
     if (!state.selected.artwork_area.corners) {
       const area = state.selected.artwork_area;
@@ -738,11 +757,11 @@
         { x: area.x, y: area.y + area.height }
       ];
     }
-    
+
     state.drag = {
       startX: event.clientX,
       startY: event.clientY,
-      corners: state.selected.artwork_area.corners.map(c => ({...c})),
+      corners: state.selected.artwork_area.corners.map(c => ({ ...c })),
       handle: handle,
       cornerIndex: index
     };
@@ -756,9 +775,9 @@
     if (!rect) return;
     const dx = Math.round(((event.clientX - state.drag.startX) / state.zoom) * template.canvas_width / rect.width);
     const dy = Math.round(((event.clientY - state.drag.startY) / state.zoom) * template.canvas_height / rect.height);
-    
-    let nextCorners = state.drag.corners.map(c => ({...c}));
-    
+
+    let nextCorners = state.drag.corners.map(c => ({ ...c }));
+
     if (state.drag.handle === "move") {
       // Move all corners by dx, dy, ensuring they remain inside the canvas bounds
       let canMove = true;
@@ -783,10 +802,10 @@
       nextCorners[idx].x = nx;
       nextCorners[idx].y = ny;
     }
-    
+
     // Update active area and template details
     template.artwork_area.corners = nextCorners;
-    
+
     // Update bbox x, y, width, height for backward-compatible rendering/labels
     const xs = nextCorners.map(c => c.x);
     const ys = nextCorners.map(c => c.y);
@@ -798,7 +817,7 @@
     template.artwork_area.y = minY;
     template.artwork_area.width = maxX - minX;
     template.artwork_area.height = maxY - minY;
-    
+
     updateCoordinateLabels();
     drawSelection();
     $("proposalState").textContent = "Adjusted locally. Save draft or approve to keep this perspective frame.";
@@ -831,7 +850,7 @@
     [...files].forEach((file) => body.append("mockups", file));
     try {
       setStatus("Importing mockups...");
-      const payload = await api("/api/admin/templates/import", {method: "POST", body});
+      const payload = await api("/api/admin/templates/import", { method: "POST", body });
       await loadCategories(state.selectedCategory.id);
       await loadTemplates(payload.templates[0].template_id);
       toast(`${payload.templates.length} mockup images imported`);
@@ -899,7 +918,7 @@
     try {
       setStatus("Publishing approved template...");
       await saveTemplate(false);
-      const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, {method: "POST"});
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, { method: "POST" });
       state.selected = payload.template;
       await loadCategories(state.selected.category_id);
       await loadTemplates(state.selected.template_id);
@@ -939,7 +958,7 @@
       renderQueue();
       renderEditor();
       setStatus("Deleting mockup...");
-      await api(`/api/admin/templates/${template.template_id}`, {method: "DELETE"});
+      await api(`/api/admin/templates/${template.template_id}`, { method: "DELETE" });
       $("deleteModal").classList.remove("open");
       const nextSelected = state.selected && state.selected.template_id === template.template_id
         ? null
@@ -968,7 +987,7 @@
       toast("Select a mockup before running detection.");
       return;
     }
-    
+
     // If classic detection is active, run our guided 4-step premium wizard!
     if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
       await startDetectionWizard();
@@ -982,7 +1001,7 @@
     $("proposalState").textContent = "Analyzing the selected background image...";
     $("detectionResult").className = "rule result-rule";
     try {
-      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {method: "POST"});
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, { method: "POST" });
       state.selected = payload.template;
       if (payload.proposal && payload.proposal.raw_artwork_area) {
         state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
@@ -1018,25 +1037,25 @@
     wizardState.layers = [];
     wizardState.layerIndex = 0;
     wizardState.proposedCorners = null;
-    
+
     // Hide default state and display the integrated footer wizard HUD
     $("proposalState").classList.add("hidden");
     $("detectionWizardHud").classList.remove("hidden");
-    
+
     await runStage1Geometry();
   }
 
   async function runStage1Geometry() {
     wizardState.step = 1;
     updateWizardUI("STAGE 1", "Automatic Geometry", "Searching for sharp nesting mockup borders in the mockup image...", []);
-    
+
     try {
       // Call the detect API with mode="geometry"
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
         method: "POST",
         body: JSON.stringify({ mode: "geometry" })
       });
-      
+
       const layers = (payload.proposal && payload.proposal.raw_artwork_area && payload.proposal.raw_artwork_area.layers) || [];
       if (layers.length > 0) {
         wizardState.layers = layers;
@@ -1054,42 +1073,43 @@
   function showWizardLayer() {
     const currentLayer = wizardState.layers[wizardState.layerIndex];
     if (!currentLayer) return;
-    
+
     // Dynamically apply selected layer to state so user sees it drawn on the SVG overlay
     if (!state.selected.artwork_area) {
       state.selected.artwork_area = {};
     }
     state.selected.artwork_area.corners = JSON.parse(JSON.stringify(currentLayer));
-    
+
     const xs = currentLayer.map(c => c.x);
     const ys = currentLayer.map(c => c.y);
     state.selected.artwork_area.x = Math.min(...xs);
     state.selected.artwork_area.y = Math.min(...ys);
     state.selected.artwork_area.width = Math.max(...xs) - Math.min(...xs);
     state.selected.artwork_area.height = Math.max(...ys) - Math.min(...ys);
-    
+
     updateCoordinateLabels();
     drawSelection();
-    
+
     // Enable SVG polygon visibility
     $("selectionSvg").classList.remove("hidden");
-    
+
     const actions = [
       { text: "Approve", class: "primary", onclick: () => approveWizardSelection() },
-      { text: "Next", class: "secondary", onclick: () => {
+      {
+        text: "Next", class: "secondary", onclick: () => {
           wizardState.layerIndex = (wizardState.layerIndex - 1 + wizardState.layers.length) % wizardState.layers.length;
           showWizardLayer();
-        } 
+        }
       },
       { text: "Skip", class: "danger", onclick: () => runStage2SamCenter() }
     ];
-    
+
     const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[2]];
-    
+
     updateWizardUI(
-      "STAGE 1", 
-      "Automatic Geometry", 
-      `Found ${wizardState.layers.length} nesting border layers. Currently showing innermost (Layer ${wizardState.layerIndex + 1}/${wizardState.layers.length}).`, 
+      "STAGE 1",
+      "Automatic Geometry",
+      `Found ${wizardState.layers.length} nesting border layers. Currently showing innermost (Layer ${wizardState.layerIndex + 1}/${wizardState.layers.length}).`,
       filteredActions
     );
   }
@@ -1097,27 +1117,27 @@
   async function runStage2SamCenter() {
     wizardState.step = 2;
     updateWizardUI("STAGE 2", "Automatic SAM 2.1 Center Guess", "Running local SAM 2.1 model centered around the image middle... Please wait...", []);
-    
+
     try {
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
         method: "POST",
         body: JSON.stringify({ mode: "sam_center" })
       });
-      
+
       const proposal = payload.proposal;
       if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
         state.selected.artwork_area = proposal.artwork_area;
         updateCoordinateLabels();
         drawSelection();
-        
+
         $("selectionSvg").classList.remove("hidden");
-        
+
         const actions = [
           { text: "Approve", class: "primary", onclick: () => approveWizardSelection() },
           { text: "Retry", class: "secondary", onclick: () => runStage2SamCenter() },
           { text: "Manual", class: "danger", onclick: () => runStage3UserClick() }
         ];
-        
+
         updateWizardUI(
           "STAGE 2",
           "Automatic SAM 2.1 Center Guess",
@@ -1136,53 +1156,53 @@
   function runStage3UserClick() {
     wizardState.step = 3;
     wizardState.proposedCorners = null;
-    
+
     // Hide current polygon handles so user knows we are waiting for a click
     $("selectionSvg").classList.add("hidden");
-    
+
     const actions = [
       { text: "Lock", class: "primary", disabled: true, id: "btnLockContinue", onclick: () => runStage4FineTune() },
       { text: "Cancel", class: "danger", onclick: () => closeWizard() }
     ];
-    
+
     updateWizardUI(
       "STAGE 3",
       "Semi-Automatic Click",
       "Click inside the frame to detect.",
       actions
     );
-    
+
     enableCanvasClickListener();
   }
 
   function enableCanvasClickListener() {
     disableCanvasClickListener();
-    
+
     const image = $("canvasImage");
     const selectionSvg = $("selectionSvg");
-    
+
     // Hide the SVG overlay completely during Stage 3 so there are absolutely no polygons/handles blocking click events
     selectionSvg.classList.add("hidden");
     selectionSvg.classList.add("wizard-clicking");
-    
+
     wizardState.clickListener = async (e) => {
       const rect = image.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const clickY = e.clientY - rect.top;
-      
+
       const naturalWidth = image.naturalWidth;
       const naturalHeight = image.naturalHeight;
-      
+
       const naturalX = Math.round((clickX / rect.width) * naturalWidth);
       const naturalY = Math.round((clickY / rect.height) * naturalHeight);
-      
+
       updateWizardUI(
         "STAGE 3",
         "Semi-Automatic Click",
         "Analyzing clicked point...",
         []
       );
-      
+
       try {
         const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
           method: "POST",
@@ -1191,24 +1211,24 @@
             point: { x: naturalX, y: naturalY }
           })
         });
-        
+
         const proposal = payload.proposal;
         if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
           state.selected.artwork_area = proposal.artwork_area;
           wizardState.proposedCorners = proposal.artwork_area.corners;
-          
+
           updateCoordinateLabels();
-          
+
           // Re-enable and draw the new polygon overlay
           selectionSvg.classList.remove("hidden");
           drawSelection();
-          
+
           const actions = [
             { text: "Lock", class: "primary", onclick: () => runStage4FineTune() },
             { text: "Retry", class: "secondary", onclick: () => runStage3UserClick() },
             { text: "Cancel", class: "danger", onclick: () => closeWizard() }
           ];
-          
+
           updateWizardUI(
             "STAGE 3",
             "Semi-Automatic Click",
@@ -1224,7 +1244,7 @@
         runStage3UserClick();
       }
     };
-    
+
     image.addEventListener("click", wizardState.clickListener);
   }
 
@@ -1240,15 +1260,15 @@
   function runStage4FineTune() {
     disableCanvasClickListener();
     wizardState.step = 4;
-    
+
     $("selectionSvg").classList.remove("hidden");
     drawSelection();
-    
+
     const actions = [
       { text: "Confirm", class: "primary", onclick: () => approveWizardSelection() },
       { text: "Restart", class: "secondary", onclick: () => startDetectionWizard() }
     ];
-    
+
     updateWizardUI(
       "STAGE 4",
       "Fine-Tuning",
@@ -1260,16 +1280,16 @@
   async function approveWizardSelection() {
     setBusy(true);
     closeWizard();
-    
+
     try {
       await saveTemplate();
-      
+
       // Call activate/approve endpoint to publish template
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, { method: "POST" });
       state.selected = payload.template;
       updateTemplateInQueue(state.selected);
       renderEditor();
-      
+
       toast("Template successfully approved and active!");
       setStatus("Template approved and active!");
     } catch (error) {
@@ -1291,10 +1311,10 @@
     $("wizardStepIndicator").textContent = badge;
     $("wizardTitle").textContent = title;
     $("wizardInstruction").textContent = instruction;
-    
+
     const actionsContainer = $("wizardActions");
     actionsContainer.innerHTML = "";
-    
+
     actions.forEach(act => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -1367,9 +1387,9 @@
     try {
       const payload = await api("/api/admin/settings/detection", {
         method: "PUT",
-        body: JSON.stringify({DETECTION_PROVIDER: provider})
+        body: JSON.stringify({ DETECTION_PROVIDER: provider })
       });
-      state.settings = {...state.settings, ...payload.settings};
+      state.settings = { ...state.settings, ...payload.settings };
       showProvider(state.settings.DETECTION_PROVIDER || provider);
       toast(`${providerTitle(state.settings.DETECTION_PROVIDER || provider)} selected`);
       setStatus(`Detection engine set to ${providerTitle(state.settings.DETECTION_PROVIDER || provider)}`);
@@ -1465,7 +1485,7 @@
           LOCAL_DETECTION_MODEL: $("localModel").value
         })
       });
-      state.settings = {...state.settings, ...payload.settings};
+      state.settings = { ...state.settings, ...payload.settings };
       showProvider(state.settings.DETECTION_PROVIDER);
       $("settingsNotice").textContent = "Saved. Close this panel and run Detect frame.";
       if (showFeedback) {
@@ -1491,7 +1511,7 @@
       if (!(await saveSettings(false))) return;
       const payload = await api("/api/admin/settings/detection/test", {
         method: "POST",
-        body: JSON.stringify({template_id: state.selected.template_id})
+        body: JSON.stringify({ template_id: state.selected.template_id })
       });
       if (payload.proposal) {
         state.selected.artwork_area = payload.proposal.artwork_area;
@@ -1533,7 +1553,7 @@
     try {
       const payload = await api("/api/admin/categories", {
         method: "POST",
-        body: JSON.stringify({name: $("newCategory").value})
+        body: JSON.stringify({ name: $("newCategory").value })
       });
       $("newCategory").value = "";
       $("categoryModal").classList.remove("open");
@@ -1617,7 +1637,7 @@
     // Pointer down event to begin panning
     workspace.addEventListener("pointerdown", (event) => {
       if (!state.selected) return;
-      
+
       const isMiddleClick = event.button === 1;
       const isSpacePan = event.button === 0 && state.spacePressed;
 
@@ -1637,7 +1657,7 @@
     workspace.addEventListener("pointermove", (event) => {
       if (!state.isPanning) return;
       event.preventDefault();
-      
+
       state.pan = {
         x: event.clientX - state.panStart.x,
         y: event.clientY - state.panStart.y
@@ -1651,7 +1671,7 @@
         state.isPanning = false;
         try {
           workspace.releasePointerCapture(event.pointerId);
-        } catch (_err) {}
+        } catch (_err) { }
         if (!state.spacePressed) {
           workspace.classList.remove("panning-mode");
         }
@@ -1674,12 +1694,12 @@
     e.stopPropagation();
     zoomIncrementally(-1);
   };
-  
+
   $("zoomInBtn").onclick = (e) => {
     e.stopPropagation();
     zoomIncrementally(1);
   };
-  
+
   $("zoomResetBtn").onclick = (e) => {
     e.stopPropagation();
     resetZoomPan();
@@ -1689,32 +1709,32 @@
     const oldZoom = state.zoom;
     const zoomFactor = 1.3;
     let newZoom = oldZoom;
-    
+
     if (direction > 0) {
       newZoom = Math.min(10, oldZoom * zoomFactor);
     } else {
       newZoom = Math.max(1, oldZoom / zoomFactor);
     }
-    
+
     if (newZoom === oldZoom) return;
-    
+
     const ws = document.querySelector(".canvas-workspace");
     const wWidth = ws ? ws.clientWidth : 800;
     const wHeight = ws ? ws.clientHeight : 600;
     const centerX = wWidth / 2;
     const centerY = wHeight / 2;
-    
+
     const newPanX = centerX - ((centerX - state.pan.x) / oldZoom) * newZoom;
     const newPanY = centerY - ((centerY - state.pan.y) / oldZoom) * newZoom;
-    
+
     state.zoom = newZoom;
     state.pan = { x: newPanX, y: newPanY };
-    
+
     if (newZoom <= 1.02) {
       state.zoom = 1;
       state.pan = { x: 0, y: 0 };
     }
-    
+
     applyZoomPan();
     drawSelection();
   }
@@ -1742,7 +1762,21 @@
     if (event.key === "Escape") closeSelectionStylePanel();
   });
   document.querySelectorAll(".style-segment").forEach((button) => {
-    button.onclick = () => setOverlayMode(button.dataset.overlayMode);
+    if (button.dataset.overlayMode) {
+      button.onclick = () => setOverlayMode(button.dataset.overlayMode);
+    }
+  });
+  document.querySelectorAll(".style-overlay-fit").forEach((button) => {
+    button.onclick = () => {
+      if (state.selected) {
+        state.selected.fit_mode = button.dataset.overlayFit;
+        if ($("fitMode")) {
+          $("fitMode").value = button.dataset.overlayFit;
+        }
+        drawSelection();
+        persistTemplateState(state.selected);
+      }
+    };
   });
   $("overlayImageButton").onclick = () => $("overlayImageInput").click();
   $("overlayImageInput").onchange = async (event) => {
@@ -1780,6 +1814,15 @@
     applySelectionStyle();
     saveSelectionStylePreference();
   };
+  if ($("fitMode")) {
+    $("fitMode").onchange = (event) => {
+      if (state.selected) {
+        state.selected.fit_mode = event.target.value;
+        drawSelection();
+        persistTemplateState(state.selected);
+      }
+    };
+  }
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {
@@ -1818,7 +1861,7 @@
   const artworkContainer = $("testArtworkPreviewContainer");
   if (artworkContainer) {
     artworkContainer.onclick = () => $("testArtworkFile").click();
-    
+
     ["dragenter", "dragover"].forEach((eventName) => {
       artworkContainer.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -1826,7 +1869,7 @@
         artworkContainer.classList.add("drag");
       });
     });
-    
+
     ["dragleave", "drop"].forEach((eventName) => {
       artworkContainer.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -1834,7 +1877,7 @@
         artworkContainer.classList.remove("drag");
       });
     });
-    
+
     artworkContainer.addEventListener("drop", (event) => {
       const files = event.dataTransfer.files;
       if (files.length > 0) {
@@ -1850,7 +1893,7 @@
     $("testResultImage").src = "";
     $("testResultDownload").href = "";
   }
-  
+
   $("testArtworkFile").onchange = (e) => {
     handleTestArtworkUpload(e.target.files);
     e.target.value = "";
@@ -1859,14 +1902,14 @@
   function handleTestArtworkUpload(filesList) {
     const newFiles = Array.from(filesList);
     if (newFiles.length === 0) return;
-    
+
     // Add new files to the list
     testState.files = testState.files.concat(newFiles.map(file => ({
       file,
       url: URL.createObjectURL(file),
       orientation: null
     })));
-    
+
     // Pre-calculate orientation for new files
     testState.files.forEach(f => {
       if (!f.orientation) {
@@ -1875,7 +1918,7 @@
           if (img.width === img.height) f.orientation = "square";
           else if (img.width > img.height) f.orientation = "landscape";
           else f.orientation = "portrait";
-          
+
           // If this is the active file and we just computed it, trigger select
           if (testState.activeIndex !== -1 && testState.files[testState.activeIndex] === f) {
             selectTestImage(testState.activeIndex);
@@ -1886,7 +1929,7 @@
     });
 
     renderTestGallery();
-    
+
     if (testState.activeIndex === -1) {
       selectTestImage(0);
     }
@@ -1898,14 +1941,14 @@
       gallery.innerHTML = `<div class="gallery-empty">No artworks uploaded</div>`;
       return;
     }
-    
+
     gallery.innerHTML = testState.files.map((f, i) => `
       <div class="test-gallery-item-wrapper ${i === testState.activeIndex ? 'active' : ''}" data-index="${i}">
         <img src="${f.url}" class="test-gallery-item-img">
         <button class="test-gallery-item-delete" data-index="${i}">&times;</button>
       </div>
     `).join('');
-    
+
     gallery.querySelectorAll('.test-gallery-item-wrapper').forEach(item => {
       item.onclick = (e) => {
         if (e.target.classList.contains('test-gallery-item-delete')) {
@@ -1921,7 +1964,7 @@
   function deleteTestImage(index) {
     URL.revokeObjectURL(testState.files[index].url);
     testState.files.splice(index, 1);
-    
+
     if (testState.files.length === 0) {
       testState.activeIndex = -1;
       testState.templates = [];
@@ -1935,12 +1978,12 @@
       $("testTemplateSelect").disabled = true;
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generate";
-      
+
       // Reset mockup preview
       $("testMockupPreview").src = "";
       $("testMockupPreview").classList.add("hidden");
       $("testMockupPlaceholder").classList.remove("hidden");
-      
+
       resetTestResult();
       $("testBatchResults").classList.add("hidden");
       $("testBatchResults").innerHTML = "";
@@ -1961,7 +2004,7 @@
       gallery.innerHTML = `<div class="gallery-empty">No matching mockups found</div>`;
       return;
     }
-    
+
     gallery.innerHTML = testState.templates.map((t) => {
       const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
       const isSelected = testState.selectedTemplates.has(t.template_id);
@@ -1975,7 +2018,7 @@
         </div>
       `;
     }).join('');
-    
+
     gallery.querySelectorAll('.test-mockup-card-wrapper').forEach(card => {
       card.onclick = (e) => {
         e.stopPropagation();
@@ -2034,16 +2077,16 @@
     if (index < 0 || index >= testState.files.length) return;
     testState.activeIndex = index;
     const activeFile = testState.files[index];
-    
+
     $("testArtworkPreview").src = activeFile.url;
     $("testArtworkPreview").classList.remove("hidden");
     $("testUploadPlaceholder").classList.add("hidden");
-    
+
     renderTestGallery(); // Update active state class
     resetTestResult();   // Switch active image resets result state
     $("testBatchResults").classList.add("hidden");
     $("testBatchResults").innerHTML = "";
-    
+
     if (!activeFile.orientation) {
       $("testOrientationLabel").textContent = "Detecting orientation...";
       $("testTemplateSelect").innerHTML = `<option value="">Detecting orientation...</option>`;
@@ -2051,7 +2094,7 @@
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generate";
       $("testMockupGallery").innerHTML = `<div class="gallery-empty">Detecting orientation...</div>`;
-      
+
       // Reset mockup preview
       $("testMockupPreview").src = "";
       $("testMockupPreview").classList.add("hidden");
@@ -2061,12 +2104,12 @@
     }
 
     $("testOrientationLabel").textContent = `Detected orientation: ${activeFile.orientation}`;
-    
+
     // Fetch templates
     try {
       const payload = await api("/api/mockups/templates");
       testState.templates = payload.filter(t => t.orientation === activeFile.orientation);
-      
+
       const select = $("testTemplateSelect");
       const currentSelectedTemplateId = select.value;
       select.innerHTML = "";
@@ -2076,7 +2119,7 @@
         $("testGenerateButton").disabled = true;
         $("testGenerateButton").textContent = "Generate";
         testState.selectedTemplates.clear();
-        
+
         // Reset mockup preview
         $("testMockupPreview").src = "";
         $("testMockupPreview").classList.add("hidden");
@@ -2088,11 +2131,11 @@
           opt.textContent = `${t.name || t.template_id}`;
           select.appendChild(opt);
         });
-        
+
         // Preserve template selection if the newly filtered list contains the same template ID
         const hasSameTemplate = currentSelectedTemplateId && testState.templates.some(t => t.template_id === currentSelectedTemplateId);
         const activeTemplateId = hasSameTemplate ? currentSelectedTemplateId : testState.templates[0].template_id;
-        
+
         testState.selectedTemplates.clear();
         testState.selectedTemplates.add(activeTemplateId);
 
@@ -2100,7 +2143,7 @@
         select.disabled = false;
         $("testGenerateButton").disabled = false;
         $("testGenerateButton").textContent = "Generate";
-        
+
         // Render mockup preview
         const activeT = testState.templates.find(t => t.template_id === activeTemplateId);
         const previewUrl = activeT.preview_url || `/api/admin/templates/${activeT.template_id}/asset/preview.png`;
@@ -2116,24 +2159,24 @@
 
   $("testGenerateButton").onclick = async () => {
     if (testState.activeIndex === -1 || testState.selectedTemplates.size === 0) return;
-    
+
     const activeFile = testState.files[testState.activeIndex];
     const renderMode = $("testRenderMode").value;
     const aiModel = $("testAiModel").value;
     const fitMode = $("testFitMode").value;
     const selectedIds = Array.from(testState.selectedTemplates);
-    
+
     // Single Mockup Generation Workflow
     if (selectedIds.length === 1) {
       const templateId = selectedIds[0];
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generating...";
-      
+
       const formData = new FormData();
       formData.append("mode", renderMode);
       formData.append("template_id", templateId);
       formData.append("artwork", activeFile.file);
-      
+
       if (renderMode === "simple" && fitMode) {
         formData.append("fit_mode", fitMode);
       } else if (renderMode === "ai" && aiModel) {
@@ -2143,7 +2186,7 @@
       // Safe request timeout of 120 seconds
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 120000);
-      
+
       try {
         const response = await fetch("/api/mockups/render", {
           method: "POST",
@@ -2152,13 +2195,13 @@
           signal: controller.signal
         });
         clearTimeout(timeoutId);
-        
+
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Generation failed");
-        
+
         $("testResultImage").src = data.output_url;
         $("testResultDownload").href = data.output_url;
-        
+
         // Switch view to single result
         $("testBatchResults").classList.add("hidden");
         $("testResultPlaceholder").classList.add("hidden");
@@ -2175,20 +2218,20 @@
         $("testGenerateButton").disabled = false;
         $("testGenerateButton").textContent = "Generate";
       }
-    } 
+    }
     // Multi-Mockup Batch Generation Workflow
     else {
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generating batch...";
-      
+
       // Hide single preview, show batch container
       $("testResultPlaceholder").classList.add("hidden");
       $("testResultWrapper").classList.add("hidden");
       $("testResultActions").classList.add("hidden");
-      
+
       const batchContainer = $("testBatchResults");
       batchContainer.classList.remove("hidden");
-      
+
       // Populate placeholder loader cards for each selected mockup
       batchContainer.innerHTML = selectedIds.map(templateId => {
         const t = testState.templates.find(x => x.template_id === templateId);
@@ -2209,7 +2252,7 @@
           </div>
         `;
       }).join('');
-      
+
       // Helper function to render a single batch mockup item (with retry support)
       const renderBatchItem = async (templateId, retryCount = 0) => {
         // Wrap everything in a top-level try-catch block to guarantee no hanging promise
@@ -2218,27 +2261,27 @@
           const statusElement = $(`batch-status-${templateId}`);
           const imgElement = $(`batch-img-${templateId}`);
           const actionsElement = $(`batch-actions-${templateId}`);
-          
+
           if (!cardElement || !statusElement || !imgElement || !actionsElement) {
             console.error(`UI elements not found for mockup: ${templateId}`);
             return;
           }
-          
+
           // Clear any previous error elements from prior retries
           const prevError = cardElement.querySelector('.batch-error-message');
           if (prevError) prevError.remove();
           cardElement.classList.remove("success", "error");
-          
+
           // Hide actions during rendering
           actionsElement.classList.add("hidden");
-          
+
           // Restore / ensure spinner exists for retries
           let spinnerElement = cardElement.querySelector('.batch-card-spinner');
           if (!spinnerElement) {
             spinnerElement = document.createElement("div");
             spinnerElement.className = "batch-card-spinner";
             spinnerElement.id = `batch-spinner-${templateId}`;
-            
+
             const body = cardElement.querySelector('.batch-card-body');
             if (body) {
               // Hide image during retry
@@ -2246,24 +2289,24 @@
               body.appendChild(spinnerElement);
             }
           }
-          
+
           statusElement.textContent = retryCount > 0 ? `Retrying (${retryCount}/2)...` : "Generating...";
-          
+
           const formData = new FormData();
           formData.append("mode", renderMode);
           formData.append("template_id", templateId);
           formData.append("artwork", activeFile.file);
-          
+
           if (renderMode === "simple" && fitMode) {
             formData.append("fit_mode", fitMode);
           } else if (renderMode === "ai" && aiModel) {
             formData.append("model", aiModel);
           }
-          
+
           // Safe request timeout of 120 seconds
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 120000);
-          
+
           try {
             const response = await fetch("/api/mockups/render", {
               method: "POST",
@@ -2272,16 +2315,16 @@
               signal: controller.signal
             });
             clearTimeout(timeoutId);
-            
+
             const data = await response.json();
-            
+
             if (!response.ok) {
               // Check if rate limited / resource exhausted
-              const isRateLimited = response.status === 429 || 
-                                    (data.error && data.error.toLowerCase().includes("resource")) ||
-                                    (data.error && data.error.toLowerCase().includes("exhausted")) ||
-                                    (data.error && data.error.toLowerCase().includes("quota"));
-                                    
+              const isRateLimited = response.status === 429 ||
+                (data.error && data.error.toLowerCase().includes("resource")) ||
+                (data.error && data.error.toLowerCase().includes("exhausted")) ||
+                (data.error && data.error.toLowerCase().includes("quota"));
+
               if (isRateLimited && retryCount < 2) {
                 statusElement.textContent = "Rate limited. Waiting...";
                 // Wait for 3.5s on first retry, 7s on second retry
@@ -2291,45 +2334,45 @@
               }
               throw new Error(data.error || "Failed");
             }
-            
+
             // Render success details
             cardElement.classList.add("success");
             statusElement.textContent = "Ready";
             if (spinnerElement) spinnerElement.remove();
-            
+
             imgElement.src = data.output_url;
             imgElement.classList.remove("hidden");
-            
+
             // Dynamically inject the Download button
             actionsElement.innerHTML = `<a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="${data.output_url}">Download</a>`;
             actionsElement.classList.remove("hidden");
           } catch (err) {
             clearTimeout(timeoutId);
             cardElement.classList.add("error");
-            
+
             if (err.name === "AbortError") {
               statusElement.textContent = "Timeout";
             } else {
               statusElement.textContent = "Failed";
             }
-            
+
             if (spinnerElement) spinnerElement.remove();
-            
+
             // Display elegant error label
             const errorDiv = document.createElement("div");
             errorDiv.className = "sub batch-error-message";
             errorDiv.style.color = "var(--accent)";
             errorDiv.style.textAlign = "center";
             errorDiv.style.padding = "10px";
-            errorDiv.textContent = err.name === "AbortError" 
-              ? "Request timed out (120s limit)" 
+            errorDiv.textContent = err.name === "AbortError"
+              ? "Request timed out (120s limit)"
               : (err.message || "Rendering failed");
             imgElement.parentNode.appendChild(errorDiv);
-            
+
             // Dynamically inject the Retry button
             actionsElement.innerHTML = `<button class="btn accent batch-retry-btn" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px;" type="button">Retry</button>`;
             actionsElement.classList.remove("hidden");
-            
+
             const retryBtn = actionsElement.querySelector('.batch-retry-btn');
             retryBtn.onclick = (e) => {
               e.stopPropagation();
@@ -2345,12 +2388,12 @@
             if (statusElement) statusElement.textContent = "Failed";
             const spinnerElement = $(`batch-spinner-${templateId}`);
             if (spinnerElement) spinnerElement.remove();
-            
+
             const actionsElement = $(`batch-actions-${templateId}`);
             if (actionsElement) {
               actionsElement.innerHTML = `<button class="btn accent batch-retry-btn" style="width: 100%; height: 28px; font-size: 11px; padding: 0 8px;" type="button">Retry</button>`;
               actionsElement.classList.remove("hidden");
-              
+
               const retryBtn = actionsElement.querySelector('.batch-retry-btn');
               retryBtn.onclick = (e) => {
                 e.stopPropagation();
@@ -2360,7 +2403,7 @@
           }
         }
       };
-      
+
       if (renderMode === "ai") {
         // AI Mode: Process sequentially to completely avoid concurrent rate limits on Vertex AI (QPM limits)
         for (const templateId of selectedIds) {
@@ -2371,7 +2414,7 @@
         const promises = selectedIds.map(templateId => renderBatchItem(templateId));
         await Promise.allSettled(promises);
       }
-      
+
       $("testGenerateButton").disabled = false;
       $("testGenerateButton").textContent = `Generate (${testState.selectedTemplates.size} mockups)`;
     }
@@ -2408,7 +2451,7 @@
   $("testEngine").onclick = testEngine;
   $("saveSettings").onclick = saveSettings;
   $("logoutButton").onclick = async () => {
-    await api("/api/admin/logout", {method: "POST"});
+    await api("/api/admin/logout", { method: "POST" });
     window.location.href = "/admin/login";
   };
   window.addEventListener("resize", drawSelection);
