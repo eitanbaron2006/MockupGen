@@ -89,6 +89,9 @@
             </div>
             <div id="stage" class="hidden">
               <img id="canvasImage" alt="Selected mockup image">
+              <div id="selectionImageOverlay" class="selection-image-overlay hidden">
+                <img id="selectionOverlayImg" src="" alt="Overlay artwork">
+              </div>
               <svg id="selectionSvg" class="selection-svg hidden">
                 <defs>
                   <pattern id="selectionImagePattern" patternUnits="userSpaceOnUse" x="0" y="0" width="1" height="1">
@@ -187,6 +190,8 @@
                         data-overlay-fit="contain">Contain</button>
                       <button class="style-segment style-overlay-fit" type="button"
                         data-overlay-fit="stretch">Stretch</button>
+                      <button class="style-segment style-overlay-fit" type="button"
+                        data-overlay-fit="auto">Auto</button>
                     </div>
                   </div>
 
@@ -291,6 +296,7 @@
                   <option value="cover">Cover</option>
                   <option value="contain">Contain</option>
                   <option value="stretch">Stretch</option>
+                  <option value="auto">Auto</option>
                 </select>
               </div>
               <div class="engine-summary">
@@ -528,7 +534,8 @@
                 <select id="testFitMode">
                   <option value="cover">Cover (Crop)</option>
                   <option value="contain">Contain (Fit)</option>
-                  <option value="stretch" selected>Stretch</option>
+                  <option value="stretch">Stretch</option>
+                  <option value="auto" selected>Auto</option>
                 </select>
               </div>
               <div class="test-select-wrapper hidden" id="testAiModelContainer">

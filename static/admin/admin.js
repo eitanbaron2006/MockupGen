@@ -10,7 +10,9 @@
     crossWidth: 1.5,
     overlayMode: "polygon",
     overlayImage: "",
-    overlayImageName: ""
+    overlayImageName: "",
+    overlayImageWidth: 0,
+    overlayImageHeight: 0
   };
 
   function clampStyleNumber(value, min, max, fallback) {
@@ -19,10 +21,92 @@
     return Math.min(max, Math.max(min, number));
   }
 
+  function resolveFitMode(fitMode, artworkWidth, artworkHeight, frameWidth, frameHeight) {
+    if (fitMode !== "auto") return fitMode;
+    if (!artworkWidth || !artworkHeight || !frameWidth || !frameHeight) {
+      return "cover";
+    }
+    const artworkRatio = artworkWidth / artworkHeight;
+    const frameRatio = frameWidth / frameHeight;
+    
+    // Within 3% aspect ratio difference, use stretch
+    if (Math.abs(artworkRatio - frameRatio) < 0.03) {
+      return "stretch";
+    }
+    
+    const getOrientation = (ratio) => {
+      if (ratio > 1.15) return "landscape";
+      if (ratio < 0.85) return "portrait";
+      return "square";
+    };
+    
+    const artOrientation = getOrientation(artworkRatio);
+    const frameOrientation = getOrientation(frameRatio);
+    
+    if (artOrientation === frameOrientation) {
+      return "cover";
+    } else {
+      return "contain";
+    }
+  }
+
+  function getMatrix3d(w, h, p0, p1, p2, p3) {
+    const x0 = p0.x, y0 = p0.y;
+    const x1 = p1.x, y1 = p1.y;
+    const x2 = p2.x, y2 = p2.y;
+    const x3 = p3.x, y3 = p3.y;
+
+    const dx1 = x1 - x2;
+    const dx2 = x3 - x2;
+    const dy1 = y1 - y2;
+    const dy2 = y3 - y2;
+    const dx3 = x0 - x1 + x2 - x3;
+    const dy3 = y0 - y1 + y2 - y3;
+
+    let a, b, c, d, e, f, g, h_coeff;
+
+    const det = dx1 * dy2 - dx2 * dy1;
+    if (Math.abs(det) < 1e-9) {
+      a = x1 - x0;
+      b = x3 - x0;
+      c = x0;
+      d = y1 - y0;
+      e = y3 - y0;
+      f = y0;
+      g = 0;
+      h_coeff = 0;
+    } else {
+      g = (dx3 * dy2 - dx2 * dy3) / det;
+      h_coeff = (dx1 * dy3 - dx3 * dy1) / det;
+      a = x1 - x0 + g * x1;
+      b = x3 - x0 + h_coeff * x3;
+      c = x0;
+      d = y1 - y0 + g * y1;
+      e = y3 - y0 + h_coeff * y3;
+      f = y0;
+    }
+
+    const a_prime = a / w;
+    const b_prime = b / h;
+    const c_prime = c;
+    const d_prime = d / w;
+    const e_prime = e / h;
+    const f_prime = f;
+    const g_prime = g / w;
+    const h_prime = h_coeff / h;
+
+    return [
+      a_prime, d_prime, 0, g_prime,
+      b_prime, e_prime, 0, h_prime,
+      0,       0,       1, 0,
+      c_prime, f_prime, 0, 1
+    ];
+  }
+
   function loadSelectionStylePreference() {
     try {
       const saved = JSON.parse(localStorage.getItem(SELECTION_STYLE_STORAGE_KEY) || "{}");
-      return {
+      const loaded = {
         polygonColor: typeof saved.polygonColor === "string" ? saved.polygonColor : DEFAULT_SELECTION_STYLE.polygonColor,
         crossColor: typeof saved.crossColor === "string" ? saved.crossColor : DEFAULT_SELECTION_STYLE.crossColor,
         polygonOpacity: clampStyleNumber(saved.polygonOpacity, 0, 100, DEFAULT_SELECTION_STYLE.polygonOpacity),
@@ -31,8 +115,22 @@
         crossWidth: clampStyleNumber(saved.crossWidth, 0.5, 8, DEFAULT_SELECTION_STYLE.crossWidth),
         overlayMode: saved.overlayMode === "image" ? "image" : DEFAULT_SELECTION_STYLE.overlayMode,
         overlayImage: typeof saved.overlayImage === "string" ? saved.overlayImage : "",
-        overlayImageName: typeof saved.overlayImageName === "string" ? saved.overlayImageName : ""
+        overlayImageName: typeof saved.overlayImageName === "string" ? saved.overlayImageName : "",
+        overlayImageWidth: typeof saved.overlayImageWidth === "number" ? saved.overlayImageWidth : 0,
+        overlayImageHeight: typeof saved.overlayImageHeight === "number" ? saved.overlayImageHeight : 0
       };
+
+      if (loaded.overlayImage && (!loaded.overlayImageWidth || !loaded.overlayImageHeight)) {
+        const img = new Image();
+        img.onload = () => {
+          state.selectionStyle.overlayImageWidth = img.naturalWidth;
+          state.selectionStyle.overlayImageHeight = img.naturalHeight;
+          saveSelectionStylePreference();
+          drawSelection();
+        };
+        img.src = loaded.overlayImage;
+      }
+      return loaded;
     } catch (_error) {
       return { ...DEFAULT_SELECTION_STYLE };
     }
@@ -526,12 +624,19 @@
   async function chooseOverlayImage(file) {
     if (!file) return;
     try {
-      state.selectionStyle.overlayImage = await fileToDataUrl(file);
+      const dataUrl = await fileToDataUrl(file);
+      state.selectionStyle.overlayImage = dataUrl;
       state.selectionStyle.overlayImageName = file.name;
       state.selectionStyle.overlayMode = "image";
-      applySelectionStyle();
-      saveSelectionStylePreference();
-      drawSelection();
+      const img = new Image();
+      img.onload = () => {
+        state.selectionStyle.overlayImageWidth = img.naturalWidth;
+        state.selectionStyle.overlayImageHeight = img.naturalHeight;
+        applySelectionStyle();
+        saveSelectionStylePreference();
+        drawSelection();
+      };
+      img.src = dataUrl;
     } catch (error) {
       toast(error.message || "Could not load image");
     }
@@ -609,31 +714,51 @@
     const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
 
     $("selectionPolygon").setAttribute("points", pointsStr);
-    const pattern = $("selectionImagePattern");
-    const patternImage = $("selectionImage");
-    if (pattern && patternImage && displayPoints.length) {
-      const xs = displayPoints.map((p) => p.x);
-      const ys = displayPoints.map((p) => p.y);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const width = Math.max(1, Math.max(...xs) - minX);
-      const height = Math.max(1, Math.max(...ys) - minY);
-      pattern.setAttribute("x", minX);
-      pattern.setAttribute("y", minY);
-      pattern.setAttribute("width", width);
-      pattern.setAttribute("height", height);
-      patternImage.setAttribute("x", 0);
-      patternImage.setAttribute("y", 0);
-      patternImage.setAttribute("width", width);
-      patternImage.setAttribute("height", height);
 
-      let aspect = "none";
-      if (template.fit_mode === "contain") {
-        aspect = "xMidYMid meet";
-      } else if (template.fit_mode === "cover") {
-        aspect = "xMidYMid slice";
+    const overlayDiv = $("selectionImageOverlay");
+    const overlayImg = $("selectionOverlayImg");
+    if (overlayDiv && overlayImg) {
+      const style = state.selectionStyle;
+      const showOverlay = style.overlayMode === "image" && Boolean(style.overlayImage);
+      overlayDiv.classList.toggle("hidden", !showOverlay);
+
+      if (showOverlay && displayPoints.length >= 4) {
+        const p0 = displayPoints[0];
+        const p1 = displayPoints[1];
+        const p2 = displayPoints[2];
+        const p3 = displayPoints[3];
+
+        const canvasW = template.artwork_area.width;
+        const canvasH = template.artwork_area.height;
+        overlayDiv.style.width = `${canvasW}px`;
+        overlayDiv.style.height = `${canvasH}px`;
+        overlayDiv.style.left = `${rect.left}px`;
+        overlayDiv.style.top = `${rect.top}px`;
+
+        const matrix = getMatrix3d(canvasW, canvasH, p0, p1, p2, p3);
+        overlayDiv.style.transform = `matrix3d(${matrix.join(",")})`;
+
+        overlayImg.src = style.overlayImage;
+
+        let resolvedFitMode = template.fit_mode;
+        if (resolvedFitMode === "auto") {
+          resolvedFitMode = resolveFitMode(
+            "auto",
+            state.selectionStyle.overlayImageWidth,
+            state.selectionStyle.overlayImageHeight,
+            canvasW,
+            canvasH
+          );
+        }
+
+        if (resolvedFitMode === "contain") {
+          overlayImg.style.objectFit = "contain";
+        } else if (resolvedFitMode === "cover") {
+          overlayImg.style.objectFit = "cover";
+        } else {
+          overlayImg.style.objectFit = "fill"; // stretch
+        }
       }
-      patternImage.setAttribute("preserveAspectRatio", aspect);
     }
 
     // Position handles (crosshairs)

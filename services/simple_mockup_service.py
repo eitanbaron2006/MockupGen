@@ -369,6 +369,30 @@ def render_simple_mockup(
 
     artwork = load_rgba(artwork_path)
     final_fit_mode = fit_mode if fit_mode else str(manifest.get("fit_mode", "cover"))
+    if final_fit_mode == "auto":
+        artwork_width, artwork_height = artwork.size
+        frame_width, frame_height = area["width"], area["height"]
+        artwork_ratio = artwork_width / artwork_height
+        frame_ratio = frame_width / frame_height
+        
+        if abs(artwork_ratio - frame_ratio) < 0.03:
+            final_fit_mode = "stretch"
+        else:
+            def get_orientation(ratio):
+                if ratio > 1.15:
+                    return "landscape"
+                if ratio < 0.85:
+                    return "portrait"
+                return "square"
+            
+            art_orient = get_orientation(artwork_ratio)
+            frame_orient = get_orientation(frame_ratio)
+            
+            if art_orient == frame_orient:
+                final_fit_mode = "cover"
+            else:
+                final_fit_mode = "contain"
+
     artwork_layer = fit_artwork(
         artwork,
         (area["width"], area["height"]),

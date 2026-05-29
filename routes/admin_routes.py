@@ -230,7 +230,7 @@ def update_admin_template(template_id: str):
             )
         if "name" in payload:
             changes["name"] = str(payload["name"]).strip() or template["name"]
-        if payload.get("fit_mode") in {"cover", "contain", "stretch"}:
+        if payload.get("fit_mode") in {"cover", "contain", "stretch", "auto"}:
             changes["fit_mode"] = payload["fit_mode"]
         if "category_id" in payload:
             changes["category_id"] = int(payload["category_id"])

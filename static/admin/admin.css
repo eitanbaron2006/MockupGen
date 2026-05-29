@@ -946,8 +946,7 @@ h2 {
 }
 
 .selection-svg #selectionPolygon.image-mode {
-  fill: url("#selectionImagePattern");
-  fill-opacity: 1;
+  fill: transparent;
 }
 
 .selection-svg .raw-selection-polygon {
@@ -3006,4 +3005,20 @@ input[type="checkbox"]:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none !important;
+}
+
+.selection-image-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.selection-image-overlay img {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
