@@ -552,7 +552,7 @@ h2 {
 .queue-filters {
   align-items: center;
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 .queue-batch-actions {
@@ -589,18 +589,24 @@ h2 {
 }
 
 .filter-pill {
+  align-items: center;
+  appearance: none;
   background: transparent;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  color: var(--faint);
+  border-radius: 9px;
+  color: var(--muted);
+  display: inline-flex;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   height: 26px;
+  justify-content: center;
   letter-spacing: .08em;
-  padding: 0 10px;
+  line-height: 1;
+  padding: 0 11px;
   text-transform: uppercase;
   transition: .15s;
+  white-space: nowrap;
 }
 
 .filter-pill:hover {
@@ -609,9 +615,15 @@ h2 {
 }
 
 .filter-pill.active {
-  background: var(--accent-soft);
+  background: transparent;
   border-color: rgba(237, 111, 92, .42);
   color: var(--accent);
+}
+
+#batchDetectButton.btn.compact {
+  height: 26px;
+  line-height: 1;
+  padding: 0 11px;
 }
 
 .empty {
