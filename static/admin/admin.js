@@ -46,7 +46,7 @@
     if (artOrientation === frameOrientation) {
       return "cover";
     } else {
-      return "contain";
+      return "stretch";
     }
   }
 

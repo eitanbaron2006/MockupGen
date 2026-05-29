@@ -391,7 +391,7 @@ def render_simple_mockup(
             if art_orient == frame_orient:
                 final_fit_mode = "cover"
             else:
-                final_fit_mode = "contain"
+                final_fit_mode = "stretch"
 
     artwork_layer = fit_artwork(
         artwork,
