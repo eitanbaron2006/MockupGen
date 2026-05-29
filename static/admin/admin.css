@@ -840,6 +840,11 @@ h2 {
   z-index: 10;
 }
 
+.selection-svg.wizard-clicking,
+.selection-svg.wizard-clicking * {
+  pointer-events: none !important;
+}
+
 .selection-svg polygon {
   fill: rgba(237, 111, 92, 0.15);
   stroke: var(--accent);
@@ -2518,4 +2523,121 @@ input[type="checkbox"]:disabled {
   .login-panel {
     padding: 32px 30px;
   }
+}
+
+/* Embedded Footer Detection Wizard HUD */
+.detection-wizard-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(21, 20, 15, 0.04);
+  padding: 6px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(237, 111, 92, 0.25);
+  font-family: inherit;
+  flex: 1;
+  margin: 0 16px;
+  animation: footerFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes footerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detection-wizard-foot .wizard-badge {
+  background: var(--accent, #ed6f5c);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.detection-wizard-foot .wizard-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text, #15140f);
+  white-space: nowrap;
+}
+
+.detection-wizard-foot .wizard-instruction {
+  font-size: 0.82rem;
+  color: var(--faint, #706b57);
+  flex-grow: 1;
+  margin-right: auto;
+  line-height: 1.2;
+}
+
+.detection-wizard-foot .wizard-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Premium styled buttons in Footer HUD */
+.detection-wizard-foot .wizard-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line, rgba(21, 20, 15, 0.12));
+  background: var(--panel, #ffffff);
+  color: var(--text, #15140f);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.detection-wizard-foot .wizard-btn:hover {
+  background: rgba(21, 20, 15, 0.05);
+}
+
+.detection-wizard-foot .wizard-btn.primary {
+  background: #2ecc71; /* Green */
+  border-color: #27ae60;
+  color: #ffffff;
+}
+
+.detection-wizard-foot .wizard-btn.primary:hover {
+  background: #27ae60;
+  box-shadow: 0 2px 6px rgba(46, 204, 113, 0.2);
+}
+
+.detection-wizard-foot .wizard-btn.secondary {
+  background: #3498db; /* Blue */
+  border-color: #2980b9;
+  color: #ffffff;
+}
+
+.detection-wizard-foot .wizard-btn.secondary:hover {
+  background: #2980b9;
+}
+
+.detection-wizard-foot .wizard-btn.danger {
+  background: #e74c3c; /* Red */
+  border-color: #c0392b;
+  color: #ffffff;
+}
+
+.detection-wizard-foot .wizard-btn.danger:hover {
+  background: #c0392b;
+}
+
+.detection-wizard-foot .wizard-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none !important;
 }

@@ -18,6 +18,14 @@
     spacePressed: false,
     lastSelectedTemplateId: null
   };
+  const wizardState = {
+    active: false,
+    step: 1,
+    layers: [],
+    layerIndex: 0,
+    proposedCorners: null,
+    clickListener: null
+  };
   const testState = {
     files: [],
     activeIndex: -1,
@@ -738,6 +746,13 @@
       toast("Select a mockup before running detection.");
       return;
     }
+    
+    // If classic detection is active, run our guided 4-step premium wizard!
+    if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
+      await startDetectionWizard();
+      return;
+    }
+
     setBusy(true);
     const engineName = providerTitle(state.settings.DETECTION_PROVIDER || "classic");
     $("analysisLabel").textContent = `${engineName} is analyzing the frame`;
@@ -767,6 +782,323 @@
       setStatus("Detection failed", true);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // --- PREMIUM 4-STAGE GUIDED DETECTION WIZARD ---
+  async function startDetectionWizard() {
+    if (!state.selected) {
+      toast("Select a mockup before running detection.");
+      return;
+    }
+    wizardState.active = true;
+    wizardState.step = 1;
+    wizardState.layers = [];
+    wizardState.layerIndex = 0;
+    wizardState.proposedCorners = null;
+    
+    // Hide default state and display the integrated footer wizard HUD
+    $("proposalState").classList.add("hidden");
+    $("detectionWizardHud").classList.remove("hidden");
+    
+    await runStage1Geometry();
+  }
+
+  async function runStage1Geometry() {
+    wizardState.step = 1;
+    updateWizardUI("STAGE 1", "Automatic Geometry", "Searching for sharp nesting mockup borders in the mockup image...", []);
+    
+    try {
+      // Call the detect API with mode="geometry"
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "geometry" })
+      });
+      
+      const layers = (payload.proposal && payload.proposal.raw_artwork_area && payload.proposal.raw_artwork_area.layers) || [];
+      if (layers.length > 0) {
+        wizardState.layers = layers;
+        wizardState.layerIndex = layers.length - 1; // Default to the innermost (smallest) layer
+        showWizardLayer();
+      } else {
+        toast("No sharp geometric frames found. Transitioning to Stage 2...");
+        await runStage2SamCenter();
+      }
+    } catch (error) {
+      console.warn("Stage 1 Geometry failed:", error);
+      toast("No sharp geometric borders found. Proceeding to Stage 2...");
+      await runStage2SamCenter();
+    }
+  }
+
+  function showWizardLayer() {
+    const currentLayer = wizardState.layers[wizardState.layerIndex];
+    if (!currentLayer) return;
+    
+    // Dynamically apply selected layer to state so user sees it drawn on the SVG overlay
+    if (!state.selected.artwork_area) {
+      state.selected.artwork_area = {};
+    }
+    state.selected.artwork_area.corners = JSON.parse(JSON.stringify(currentLayer));
+    
+    const xs = currentLayer.map(c => c.x);
+    const ys = currentLayer.map(c => c.y);
+    state.selected.artwork_area.x = Math.min(...xs);
+    state.selected.artwork_area.y = Math.min(...ys);
+    state.selected.artwork_area.width = Math.max(...xs) - Math.min(...xs);
+    state.selected.artwork_area.height = Math.max(...ys) - Math.min(...ys);
+    
+    updateCoordinateLabels();
+    drawSelection();
+    
+    // Enable SVG polygon visibility
+    $("selectionSvg").classList.remove("hidden");
+    
+    const actions = [
+      { text: "Approve Border", class: "primary", onclick: () => approveWizardSelection() },
+      { text: "Next Border", class: "secondary", onclick: () => {
+          wizardState.layerIndex = (wizardState.layerIndex - 1 + wizardState.layers.length) % wizardState.layers.length;
+          showWizardLayer();
+        } 
+      },
+      { text: "Skip to SAM", class: "danger", onclick: () => runStage2SamCenter() }
+    ];
+    
+    const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[2]];
+    
+    updateWizardUI(
+      "STAGE 1", 
+      "Automatic Geometry", 
+      `Found ${wizardState.layers.length} nesting border layers. Currently showing innermost (Layer ${wizardState.layerIndex + 1}/${wizardState.layers.length}).`, 
+      filteredActions
+    );
+  }
+
+  async function runStage2SamCenter() {
+    wizardState.step = 2;
+    updateWizardUI("STAGE 2", "Automatic SAM 2.1 Center Guess", "Running local SAM 2.1 model centered around the image middle... Please wait...", []);
+    
+    try {
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "sam_center" })
+      });
+      
+      const proposal = payload.proposal;
+      if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
+        state.selected.artwork_area = proposal.artwork_area;
+        updateCoordinateLabels();
+        drawSelection();
+        
+        $("selectionSvg").classList.remove("hidden");
+        
+        const actions = [
+          { text: "Approve Guess", class: "primary", onclick: () => approveWizardSelection() },
+          { text: "Retry", class: "secondary", onclick: () => runStage2SamCenter() },
+          { text: "Reject & Click Manually", class: "danger", onclick: () => runStage3UserClick() }
+        ];
+        
+        updateWizardUI(
+          "STAGE 2",
+          "Automatic SAM 2.1 Center Guess",
+          "SAM 2.1 found a frame centered around the middle of the mockup. Is this correct?",
+          actions
+        );
+      } else {
+        toast("SAM 2.1 center guess failed. Moving to Stage 3...");
+        runStage3UserClick();
+      }
+    } catch (error) {
+      console.warn("Stage 2 SAM Center failed:", error);
+      toast("SAM 2.1 center guess failed. Moving to Stage 3...");
+      runStage3UserClick();
+    }
+  }
+
+  function runStage3UserClick() {
+    wizardState.step = 3;
+    wizardState.proposedCorners = null;
+    
+    // Hide current polygon handles so user knows we are waiting for a click
+    $("selectionSvg").classList.add("hidden");
+    
+    const actions = [
+      { text: "Lock & Continue", class: "primary", disabled: true, id: "btnLockContinue", onclick: () => runStage4FineTune() },
+      { text: "Cancel", class: "danger", onclick: () => closeWizard() }
+    ];
+    
+    updateWizardUI(
+      "STAGE 3",
+      "Semi-Automatic Click",
+      "Local AI guess failed. Click ONCE inside the middle of the frame artwork on the mockup above.",
+      actions
+    );
+    
+    enableCanvasClickListener();
+  }
+
+  function enableCanvasClickListener() {
+    disableCanvasClickListener();
+    
+    const image = $("canvasImage");
+    const selectionSvg = $("selectionSvg");
+    
+    // Hide the SVG overlay completely during Stage 3 so there are absolutely no polygons/handles blocking click events
+    selectionSvg.classList.add("hidden");
+    selectionSvg.classList.add("wizard-clicking");
+    
+    wizardState.clickListener = async (e) => {
+      const rect = image.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      
+      const naturalWidth = image.naturalWidth;
+      const naturalHeight = image.naturalHeight;
+      
+      const naturalX = Math.round((clickX / rect.width) * naturalWidth);
+      const naturalY = Math.round((clickY / rect.height) * naturalHeight);
+      
+      updateWizardUI(
+        "STAGE 3",
+        "Semi-Automatic Click",
+        "Analyzing clicked point with local SAM 2.1... Please wait...",
+        []
+      );
+      
+      try {
+        const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "sam_point",
+            point: { x: naturalX, y: naturalY }
+          })
+        });
+        
+        const proposal = payload.proposal;
+        if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
+          state.selected.artwork_area = proposal.artwork_area;
+          wizardState.proposedCorners = proposal.artwork_area.corners;
+          
+          updateCoordinateLabels();
+          
+          // Re-enable and draw the new polygon overlay
+          selectionSvg.classList.remove("hidden");
+          drawSelection();
+          
+          const actions = [
+            { text: "Lock & Continue", class: "primary", onclick: () => runStage4FineTune() },
+            { text: "Try another spot", class: "secondary", onclick: () => runStage3UserClick() },
+            { text: "Cancel", class: "danger", onclick: () => closeWizard() }
+          ];
+          
+          updateWizardUI(
+            "STAGE 3",
+            "Semi-Automatic Click",
+            "Frame generated! If correct, click 'Lock & Continue'. Otherwise click elsewhere on the mockup image to try again.",
+            actions
+          );
+        } else {
+          toast("Could not resolve frame from this point. Please click elsewhere.");
+          runStage3UserClick();
+        }
+      } catch (error) {
+        toast(`SAM 2.1 failed: ${error.message}. Click elsewhere.`);
+        runStage3UserClick();
+      }
+    };
+    
+    image.addEventListener("click", wizardState.clickListener);
+  }
+
+  function disableCanvasClickListener() {
+    if (wizardState.clickListener) {
+      $("canvasImage").removeEventListener("click", wizardState.clickListener);
+      wizardState.clickListener = null;
+    }
+    $("selectionSvg").classList.remove("wizard-clicking");
+    $("selectionSvg").classList.remove("hidden");
+  }
+
+  function runStage4FineTune() {
+    disableCanvasClickListener();
+    wizardState.step = 4;
+    
+    $("selectionSvg").classList.remove("hidden");
+    drawSelection();
+    
+    const actions = [
+      { text: "Confirm & Save", class: "primary", onclick: () => approveWizardSelection() },
+      { text: "Restart Wizard", class: "secondary", onclick: () => startDetectionWizard() }
+    ];
+    
+    updateWizardUI(
+      "STAGE 4",
+      "Fine-Tuning / Dragging",
+      "DRAG the red corner crosshair handles directly on the mockup to make pixel-perfect adjustments.",
+      actions
+    );
+  }
+
+  async function approveWizardSelection() {
+    setBusy(true);
+    closeWizard();
+    
+    try {
+      await saveTemplate();
+      
+      // Call activate/approve endpoint to publish template
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, { method: "POST" });
+      state.selected = payload.template;
+      updateTemplateInQueue(state.selected);
+      renderEditor();
+      
+      toast("Template successfully approved and active!");
+      setStatus("Template approved and active!");
+    } catch (error) {
+      toast("Failed to save approved boundary: " + error.message);
+      setStatus("Approval failed", true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function closeWizard() {
+    disableCanvasClickListener();
+    wizardState.active = false;
+    $("detectionWizardHud").classList.add("hidden");
+    $("proposalState").classList.remove("hidden");
+  }
+
+  function updateWizardUI(badge, title, instruction, actions) {
+    $("wizardStepIndicator").textContent = badge;
+    $("wizardTitle").textContent = title;
+    $("wizardInstruction").textContent = instruction;
+    
+    const actionsContainer = $("wizardActions");
+    actionsContainer.innerHTML = "";
+    
+    actions.forEach(act => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `wizard-btn ${act.class || ""}`;
+      btn.textContent = act.text;
+      if (act.disabled) btn.disabled = true;
+      if (act.id) btn.id = act.id;
+      btn.onclick = act.onclick;
+      actionsContainer.appendChild(btn);
+    });
+  }
+
+  function handleWizardEscapeKey() {
+    if (!wizardState.active) return;
+    if (wizardState.step === 1) {
+      runStage2SamCenter();
+    } else if (wizardState.step === 2) {
+      runStage3UserClick();
+    } else if (wizardState.step === 3) {
+      closeWizard();
+    } else if (wizardState.step === 4) {
+      approveWizardSelection();
     }
   }
 
@@ -853,8 +1185,8 @@
     $("vertexLocation").value = state.settings.VERTEX_LOCATION || "global";
     $("vertexResolution").value = state.settings.VERTEX_MEDIA_RESOLUTION || "high";
     $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
-    $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
-    $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
+    if ($("classicBlurSize")) $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
+    if ($("classicSearchRadius")) $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
     $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
     await loadLocalModels(false);
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
@@ -873,8 +1205,8 @@
           VERTEX_MEDIA_RESOLUTION: $("vertexResolution").value,
           VERTEX_AUTH_MODE: $("vertexAuth").value,
           DETECTION_REFINEMENT: $("refinementMode").value,
-          CLASSIC_BLUR_SIZE: $("classicBlurSize").value,
-          CLASSIC_SEARCH_RADIUS: $("classicSearchRadius").value,
+          CLASSIC_BLUR_SIZE: $("classicBlurSize") ? $("classicBlurSize").value : "3",
+          CLASSIC_SEARCH_RADIUS: $("classicSearchRadius") ? $("classicSearchRadius").value : "20",
           LOCAL_DETECTION_URL: $("localUrl").value,
           LOCAL_DETECTION_MODEL: $("localModel").value
         })
@@ -973,8 +1305,12 @@
     $("dropzone").classList.remove("drag");
   }));
   $("dropzone").addEventListener("drop", (event) => importFiles(event.dataTransfer.files));
-  // Spacebar key detection for panning mode
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && wizardState.active) {
+      event.preventDefault();
+      handleWizardEscapeKey();
+      return;
+    }
     if (event.code === "Space" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "SELECT") {
       event.preventDefault();
       if (!state.spacePressed) {
@@ -1041,7 +1377,7 @@
       const isCanvasBgClick = event.button === 0 && (
         event.target === workspace || 
         event.target === $("stage") || 
-        event.target === $("canvasImage") ||
+        (event.target === $("canvasImage") && !(wizardState.active && wizardState.step === 3)) ||
         event.target === $("selectionSvg")
       );
 

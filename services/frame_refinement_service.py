@@ -370,7 +370,7 @@ def _inner_strongest_line(
     boundary: int,
     prefer_high: bool,
 ) -> int:
-    """Scan local candidates and prefer the inner boundary when multiple edge clusters are present."""
+    """Scan local candidates and prefer the qualified edge cluster peak closest to the original coordinate."""
     candidates: list[tuple[int, int]] = []
     start = max(1, center - radius)
     end = min(boundary - 2, center + radius)
@@ -418,10 +418,11 @@ def _inner_strongest_line(
     if not best_positions:
         return center
         
-    # If multiple separate boundary edges exist, prefer the inner opening edge
-    if len(best_positions) > 1:
-        return best_positions[-1] if prefer_high else best_positions[0]
-    return best_positions[0]
+    # Prioritize the physical edge cluster closest to the original coordinate (the raw AI corner).
+    # This prevents the snapper from drifting or jumping to distant wood frame borders
+    # or internal poster print artwork textures.
+    closest_pos = min(best_positions, key=lambda pos: abs(pos - center))
+    return closest_pos
 
 
 def refine_perspective_corners(
@@ -446,13 +447,6 @@ def refine_perspective_corners(
             cx = int(p["x"])
             cy = int(p["y"])
             
-            # Local span range for edge alignment
-            span_start_v = max(0, cy - search_radius)
-            span_end_v = min(height, cy + search_radius)
-            
-            span_start_h = max(0, cx - search_radius)
-            span_end_h = min(width, cx + search_radius)
-            
             # Map corner index to directional inner edge preferences:
             # Corner 0 (Top-Left): inner opening is at larger x, larger y (True, True)
             # Corner 1 (Top-Right): inner opening is at smaller x, larger y (False, True)
@@ -460,6 +454,28 @@ def refine_perspective_corners(
             # Corner 3 (Bottom-Left): inner opening is at larger x, smaller y (True, False)
             prefer_high_x = idx in (0, 3)
             prefer_high_y = idx in (0, 1)
+            
+            # Use asymmetric directional search spans centered at the corner to prevent
+            # summing edges/noise from outside the corner (e.g. wall, outer frame border).
+            # 1. Vertical span for X snapping:
+            # For top corners (0, 1), the vertical edge goes DOWN (positive Y).
+            # For bottom corners (2, 3), the vertical edge goes UP (negative Y).
+            if idx in (0, 1):
+                span_start_v = max(0, cy - 2)
+                span_end_v = min(height, cy + search_radius)
+            else:
+                span_start_v = max(0, cy - search_radius)
+                span_end_v = min(height, cy + 2)
+                
+            # 2. Horizontal span for Y snapping:
+            # For left corners (0, 3), the horizontal edge goes RIGHT (positive X).
+            # For right corners (1, 2), the horizontal edge goes LEFT (negative X).
+            if idx in (0, 3):
+                span_start_h = max(0, cx - 2)
+                span_end_h = min(width, cx + search_radius)
+            else:
+                span_start_h = max(0, cx - search_radius)
+                span_end_h = min(width, cx + 2)
             
             # 1. Snap vertical boundary (X coordinate)
             snapped_x = _inner_strongest_line(
@@ -495,6 +511,20 @@ def refine_perspective_corners(
                 "x": snapped_x,
                 "y": snapped_y
             })
+            
+        # Global high-precision safety gate: if any refined corner shifts by more than 12 pixels
+        # from the original raw AI coordinate, reject the entire refinement to avoid distorting
+        # a perfect AI detection.
+        import math
+        import logging
+        max_allowed_shift = 12
+        for orig, ref in zip(corners, refined_corners):
+            dist = math.sqrt((ref["x"] - orig["x"])**2 + (ref["y"] - orig["y"])**2)
+            if dist > max_allowed_shift:
+                logging.getLogger("refine_corners").warning(
+                    f"Refinement rejected to preserve perfect AI corners: corner shifted by {dist:.1f}px (limit is {max_allowed_shift}px)"
+                )
+                return corners
             
         return refined_corners
     except Exception:

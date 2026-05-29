@@ -10,15 +10,14 @@ from services.frame_refinement_service import refine_artwork_area, refine_perspe
 
 
 PROMPT = """Find the exact inner artwork replacement area in this product mockup.
-If the frame has perspective, skew, or is shot at an angle, detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
+Detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
 1. Top-Left corner [x, y]
 2. Top-Right corner [x, y]
 3. Bottom-Right corner [x, y]
 4. Bottom-Left corner [x, y]
 Return these 4 corners as an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (x represents horizontal percentage, y represents vertical percentage).
 A gray dashed placeholder rectangle (often around words like YOUR ARTWORK HERE or ART HERE) is the strongest signal.
-
-If the frame is a flat, non-rotated 2D rectangle, you can alternatively return the bounding box under the 'box_2d' key in the normalized format [y_min, x_min, y_max, x_max].
+Even if the frame is a flat, non-rotated 2D rectangle, you MUST return the exact 4 corners under the 'corners' key. Do NOT return a 2D bounding box (box_2d).
 Ignore overlapping decorations and shadows. Do not infer shape from the words themselves."""
 
 
@@ -46,6 +45,7 @@ class VertexDetectionProvider:
         model: str = "gemini-2.5-flash",
         media_resolution: str = "high",
         refine: bool = True,
+        search_radius: int = 20,
         client: Any | None = None,
     ):
         if not project_id:
@@ -55,6 +55,7 @@ class VertexDetectionProvider:
         self.model = model or "gemini-2.5-flash"
         self.media_resolution = media_resolution or "high"
         self.refine = refine
+        self.search_radius = search_radius
         self.client = client or self._create_client()
 
     def _create_client(self):
@@ -183,7 +184,7 @@ class VertexDetectionProvider:
                 
                 # Apply local edge refinement to all 4 corners!
                 if self.refine:
-                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=60)
+                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=self.search_radius)
                     refined = refined_corners != normalized_corners
                     logger.info("Refined corners: %s", json.dumps(refined_corners))
                     logger.info("Refinement changed corners: %s", refined)

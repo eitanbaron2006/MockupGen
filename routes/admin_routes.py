@@ -273,8 +273,16 @@ def detect_admin_template(template_id: str):
     except TemplateImportError:
         background = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "background.png"
     try:
+        payload = request.get_json(silent=True) or {}
+        mode = payload.get("mode", "auto")
+        point = payload.get("point")
+
         provider = build_provider(catalog().get_settings(), current_app.config)
-        proposal = provider.detect(background)
+        if provider.__class__.__name__ == "ClassicDetectionProvider":
+            proposal = getattr(provider, "detect")(background, mode=mode, point=point)
+        else:
+            proposal = provider.detect(background)
+
         if template.get("status") == "draft":
             preview = catalog().update_template(
                 template_id,

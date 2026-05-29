@@ -131,6 +131,15 @@
               <span>W <strong id="coordW">-</strong></span>
               <span>H <strong id="coordH">-</strong></span>
             </div>
+            
+            <!-- Embedded Premium Detection Wizard HUD -->
+            <div class="detection-wizard-foot hidden" id="detectionWizardHud">
+              <span class="wizard-badge" id="wizardStepIndicator">STAGE 1</span>
+              <strong class="wizard-title" id="wizardTitle">Automatic Geometry</strong>:
+              <span class="wizard-instruction" id="wizardInstruction">Detecting sharp mockup frame borders...</span>
+              <div class="wizard-actions" id="wizardActions"></div>
+            </div>
+            
             <div class="sub" id="proposalState">Select a mockup to start.</div>
           </div>
         </section>
@@ -316,20 +325,13 @@
       <section class="engine-config hidden" id="classicConfig">
         <div class="model-cost">
           <div>
-            <strong>Classic edge detection</strong>
-            <div class="cost-meta">Pixel and contour scan. No AI model and no external cost.</div>
+            <strong>Offline Edge & Object Detection (SAM 2.1 / Geometric)</strong>
+            <div class="cost-meta">High-fidelity localized computer vision with zero cloud costs or external API dependency.</div>
           </div>
         </div>
-        <div class="guide-note">Classic detection runs entirely in this backend without credentials. Adjust the parameters below if the automatic edge scan fails to snap to the correct boundaries.</div>
-        <div class="config-row">
-          <div>
-            <label for="classicBlurSize">Blur Size (Noise reduction)</label>
-            <input type="number" id="classicBlurSize" class="text-input" value="3" min="1" max="9" step="2">
-          </div>
-          <div>
-            <label for="classicSearchRadius">Search Radius (px)</label>
-            <input type="number" id="classicSearchRadius" class="text-input" value="20" min="5" max="100">
-          </div>
+        <div class="guide-note" style="margin-top: 15px; border-left-color: var(--success); background: rgba(46, 204, 113, 0.05);">
+          <strong style="display: block; margin-bottom: 5px; color: var(--success);">Local AI Mode Active:</strong>
+          This mode runs the local <strong>SAM 2.1</strong> model (<code>sam2.1_l.pt</code>) combined with an advanced multi-layered geometric quadrilateral solver. It automatically detects the innermost mockup border with absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
         </div>
       </section>
       <div class="engine-actions">

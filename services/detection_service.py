@@ -146,6 +146,7 @@ def build_provider(settings: dict[str, str], config: dict[str, Any]) -> Detectio
                 "DETECTION_REFINEMENT", config.get("DETECTION_REFINEMENT", "hybrid")
             )
             != "ai_only",
+            search_radius=int(settings.get("CLASSIC_SEARCH_RADIUS", config.get("CLASSIC_SEARCH_RADIUS", 20))),
         )
     if selected == "local":
         from services.local_detection_service import LocalDetectionProvider
