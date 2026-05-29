@@ -315,6 +315,98 @@
                   <option value="auto">Auto</option>
                 </select>
               </div>
+              <div class="effects-section">
+                <div class="label-row">
+                  <label>Realism Effects</label>
+                </div>
+                <!-- Inner Shadow Toggle and Details -->
+                <div class="effect-group">
+                  <div class="effect-header">
+                    <label>
+                      <input type="checkbox" id="innerShadowEnabled">
+                      Inner Frame Shadow
+                    </label>
+                  </div>
+                  <div id="innerShadowControls" class="effect-controls hidden">
+                    <div class="slider-row">
+                      <label for="shadowOpacity">Opacity</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="shadowOpacity" min="0" max="1" step="0.05" value="0.4">
+                        <span id="shadowOpacityVal">40%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="shadowBlur">Blur Radius</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="shadowBlur" min="0" max="50" step="1" value="15">
+                        <span id="shadowBlurVal">15px</span>
+                      </div>
+                    </div>
+                    
+                    <div class="shadow-sides-grid">
+                      <div class="slider-row">
+                        <label for="shadowTop">Top depth</label>
+                        <div class="slider-container-row">
+                          <input type="range" id="shadowTop" min="0" max="100" step="1" value="10">
+                          <span id="shadowTopVal">10px</span>
+                        </div>
+                      </div>
+                      <div class="slider-row">
+                        <label for="shadowBottom">Bottom depth</label>
+                        <div class="slider-container-row">
+                          <input type="range" id="shadowBottom" min="0" max="100" step="1" value="10">
+                          <span id="shadowBottomVal">10px</span>
+                        </div>
+                      </div>
+                      <div class="slider-row">
+                        <label for="shadowLeft">Left depth</label>
+                        <div class="slider-container-row">
+                          <input type="range" id="shadowLeft" min="0" max="100" step="1" value="10">
+                          <span id="shadowLeftVal">10px</span>
+                        </div>
+                      </div>
+                      <div class="slider-row">
+                        <label for="shadowRight">Right depth</label>
+                        <div class="slider-container-row">
+                          <input type="range" id="shadowRight" min="0" max="100" step="1" value="10">
+                          <span id="shadowRightVal">10px</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button type="button" class="link-sides-button" id="linkShadowSides">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                      Link all sides
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Glass Reflection Toggle and Details -->
+                <div class="effect-group">
+                  <div class="effect-header">
+                    <label>
+                      <input type="checkbox" id="glassReflectionEnabled">
+                      Glass Reflection Cover
+                    </label>
+                  </div>
+                  <div id="glassReflectionControls" class="effect-controls hidden">
+                    <div class="select-row">
+                      <label for="reflectionType">Style</label>
+                      <select id="reflectionType">
+                        <option value="diagonal">Diagonal Sheen</option>
+                        <option value="double_glare">Double Glare</option>
+                      </select>
+                    </div>
+                    <div class="slider-row">
+                      <label for="reflectionOpacity">Opacity</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="reflectionOpacity" min="0" max="1" step="0.05" value="0.15">
+                        <span id="reflectionOpacityVal">15%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="engine-summary">
                 <label>Detection engine</label>
                 <div class="engine-current">

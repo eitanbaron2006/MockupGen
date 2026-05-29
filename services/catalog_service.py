@@ -60,6 +60,7 @@ class CatalogService:
                     detection_provider TEXT,
                     detection_confidence REAL,
                     raw_artwork_area TEXT,
+                    effects TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -71,6 +72,10 @@ class CatalogService:
             )
             try:
                 connection.execute("ALTER TABLE templates ADD COLUMN raw_artwork_area TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                connection.execute("ALTER TABLE templates ADD COLUMN effects TEXT")
             except sqlite3.OperationalError:
                 pass
         self._seed_existing_templates(templates_folder)
@@ -169,8 +174,8 @@ class CatalogService:
                     canvas_height, artwork_area, fit_mode, orientation,
                     background_name, preview_name, foreground_name, mask_name,
                     source_filename, detection_provider, detection_confidence,
-                    raw_artwork_area, created_at, updated_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    raw_artwork_area, effects, created_at, updated_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["template_id"],
@@ -190,6 +195,7 @@ class CatalogService:
                     record.get("detection_provider"),
                     record.get("detection_confidence"),
                     json.dumps(record.get("raw_artwork_area")) if record.get("raw_artwork_area") else None,
+                    json.dumps(record.get("effects")) if record.get("effects") else None,
                     timestamp,
                     timestamp,
                 ),
@@ -252,6 +258,7 @@ class CatalogService:
             "detection_provider",
             "detection_confidence",
             "status",
+            "effects",
         }
         assignments: list[str] = []
         values: list[Any] = []
@@ -259,7 +266,7 @@ class CatalogService:
             if key not in allowed:
                 continue
             assignments.append(f"{key} = ?")
-            values.append(json.dumps(value) if key in {"artwork_area", "raw_artwork_area"} else value)
+            values.append(json.dumps(value) if key in {"artwork_area", "raw_artwork_area", "effects"} else value)
         if not assignments:
             current = self.get_template(template_id)
             if not current:
@@ -311,6 +318,9 @@ class CatalogService:
         )
         template["raw_artwork_area"] = (
             json.loads(template["raw_artwork_area"]) if template.get("raw_artwork_area") else None
+        )
+        template["effects"] = (
+            json.loads(template["effects"]) if template.get("effects") else None
         )
         return template
 

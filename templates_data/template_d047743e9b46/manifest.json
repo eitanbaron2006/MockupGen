@@ -37,5 +37,21 @@
   "supported_modes": [
     "simple"
   ],
-  "output_format": "png"
+  "output_format": "png",
+  "effects": {
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.8,
+      "type": "double_glare"
+    },
+    "inner_shadow": {
+      "blur": 19,
+      "bottom": 28,
+      "enabled": true,
+      "left": 28,
+      "opacity": 0.35,
+      "right": 28,
+      "top": 28
+    }
+  }
 }

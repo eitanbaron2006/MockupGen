@@ -1,4 +1,5 @@
 import hmac
+import json
 import secrets
 from functools import wraps
 from pathlib import Path
@@ -234,7 +235,28 @@ def update_admin_template(template_id: str):
             changes["fit_mode"] = payload["fit_mode"]
         if "category_id" in payload:
             changes["category_id"] = int(payload["category_id"])
+        if "effects" in payload:
+            effects = payload["effects"]
+            if effects is None or isinstance(effects, dict):
+                changes["effects"] = effects
+            else:
+                return json_error("Effects must be a dictionary or null", 400)
         updated = catalog().update_template(template_id, changes)
+        
+        # If the template is published (active), keep the manifest.json on disk synchronized!
+        if updated.get("status") == "active":
+            templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
+            manifest_path = templates_folder / template_id / "manifest.json"
+            if manifest_path.is_file():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["name"] = updated["name"]
+                manifest["artwork_area"] = updated["artwork_area"]
+                manifest["fit_mode"] = updated["fit_mode"]
+                manifest["orientation"] = updated["orientation"]
+                manifest["effects"] = updated.get("effects")
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
     except (ValueError, CatalogError, DetectionError) as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template": updated})

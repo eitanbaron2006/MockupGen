@@ -228,11 +228,135 @@ def _mask_for_artwork(
     raise InvalidTemplateError("Mask size must match the canvas or artwork area")
 
 
-def _apply_realism_filter(artwork_layer: Image.Image) -> Image.Image:
+def _apply_inner_shadow(artwork_layer: Image.Image, config: dict) -> Image.Image:
+    if not config or not config.get("enabled", False):
+        return artwork_layer
+
+    width, height = artwork_layer.size
+
+    top = int(config.get("top", 0))
+    right = int(config.get("right", 0))
+    bottom = int(config.get("bottom", 0))
+    left = int(config.get("left", 0))
+    opacity = float(config.get("opacity", 0.4))
+    blur = int(config.get("blur", 15))
+
+    left = min(max(0, left), width)
+    right = min(max(0, right), width)
+    top = min(max(0, top), height)
+    bottom = min(max(0, bottom), height)
+
+    if top <= 0 and right <= 0 and bottom <= 0 and left <= 0:
+        return artwork_layer
+
+    # Build composite mask
+    mask = Image.new("L", (width, height), 0)
+
+    # Left edge shadow
+    if left > 0:
+        left_grad = bytes(int(255 * (1.0 - x / left)) for x in range(left))
+        grad_small = Image.frombytes("L", (left, 1), left_grad)
+        grad_large = grad_small.resize((left, height), Image.Resampling.BILINEAR)
+        edge_mask = Image.new("L", (width, height), 0)
+        edge_mask.paste(grad_large, (0, 0))
+        mask = ImageChops.lighter(mask, edge_mask)
+
+    # Right edge shadow
+    if right > 0:
+        right_grad = bytes(int(255 * (x / right)) for x in range(right))
+        grad_small = Image.frombytes("L", (right, 1), right_grad)
+        grad_large = grad_small.resize((right, height), Image.Resampling.BILINEAR)
+        edge_mask = Image.new("L", (width, height), 0)
+        edge_mask.paste(grad_large, (width - right, 0))
+        mask = ImageChops.lighter(mask, edge_mask)
+
+    # Top edge shadow
+    if top > 0:
+        top_grad = bytes(int(255 * (1.0 - y / top)) for y in range(top))
+        grad_small = Image.frombytes("L", (1, top), top_grad)
+        grad_large = grad_small.resize((width, top), Image.Resampling.BILINEAR)
+        edge_mask = Image.new("L", (width, height), 0)
+        edge_mask.paste(grad_large, (0, 0))
+        mask = ImageChops.lighter(mask, edge_mask)
+
+    # Bottom edge shadow
+    if bottom > 0:
+        bottom_grad = bytes(int(255 * (y / bottom)) for y in range(bottom))
+        grad_small = Image.frombytes("L", (1, bottom), bottom_grad)
+        grad_large = grad_small.resize((width, bottom), Image.Resampling.BILINEAR)
+        edge_mask = Image.new("L", (width, height), 0)
+        edge_mask.paste(grad_large, (0, height - bottom))
+        mask = ImageChops.lighter(mask, edge_mask)
+
+    if blur > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=blur))
+
+    if opacity != 1.0:
+        mask = mask.point(lambda p: int(p * opacity))
+
+    shadow_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    shadow_layer.paste((0, 0, 0, 255), (0, 0, 0, 0), mask=mask)
+
+    orig_alpha = artwork_layer.getchannel("A")
+    artwork_layer = Image.alpha_composite(artwork_layer, shadow_layer)
+    artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), orig_alpha))
+
+    return artwork_layer
+
+
+def _apply_glass_reflection(artwork_layer: Image.Image, config: dict) -> Image.Image:
+    if not config or not config.get("enabled", False):
+        return artwork_layer
+
+    width, height = artwork_layer.size
+    opacity = float(config.get("opacity", 0.15))
+    ref_type = config.get("type", "diagonal")
+
+    if opacity <= 0:
+        return artwork_layer
+
+    # Generate a 16x16 grid for high smoothness and bilinear scale it to the artwork size
+    grid_size = 16
+    grad_data = []
+
+    if ref_type == "double_glare":
+        # Double diagonal glare bands at x+y = 8 and x+y = 20 on a 16x16 grid
+        for row in range(grid_size):
+            for col in range(grid_size):
+                d = row + col  # ranges from 0 to 30
+                intensity1 = max(0.0, 1.0 - abs(d - 8) / 3.5)
+                intensity2 = max(0.0, 1.0 - abs(d - 20) / 4.5)
+                val = int(255 * max(intensity1 * 0.9, intensity2 * 0.6))
+                grad_data.append(val)
+    else:
+        # Standard diagonal sheen (default)
+        for row in range(grid_size):
+            for col in range(grid_size):
+                val = int(255 * ((row + col) / 30.0))
+                grad_data.append(val)
+
+    grad_small = Image.frombytes("L", (grid_size, grid_size), bytes(grad_data))
+    grad_large = grad_small.resize((width, height), Image.Resampling.BILINEAR)
+
+    # Scale the mask by opacity
+    if opacity != 1.0:
+        grad_large = grad_large.point(lambda p: int(p * opacity))
+
+    reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    reflection_layer.paste((255, 255, 255, 255), (0, 0, 0, 0), mask=grad_large)
+
+    orig_alpha = artwork_layer.getchannel("A")
+    artwork_layer = Image.alpha_composite(artwork_layer, reflection_layer)
+    artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), orig_alpha))
+
+    return artwork_layer
+
+
+def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = None) -> Image.Image:
     # 1. Convert to RGBA
     img = artwork_layer.convert("RGBA")
     r, g, b, a = img.split()
-    
+
     # 2. Black & White Point Compression (Print Mapping)
     # Compress luminance range slightly to map pure screen black/white to physical print (0->8, 255->246)
     lut = [int(i * (246 - 8) / 255 + 8) for i in range(256)]
@@ -240,39 +364,48 @@ def _apply_realism_filter(artwork_layer: Image.Image) -> Image.Image:
     g = g.point(lut)
     b = b.point(lut)
     img = Image.merge("RGBA", (r, g, b, a))
-    
+
     # 3. High-Frequency Fine Paper Grain
     width, height = img.size
     # Generate a tiny pre-cached 128x128 noise patch with values in [250, 255]
     noise_bytes = bytes(random.randint(250, 255) for _ in range(128 * 128))
     noise_patch = Image.frombytes("L", (128, 128), noise_bytes)
-    
+
     # Tile the patch to match target size
     noise_tile = Image.new("L", (width, height))
     for x in range(0, width, 128):
         for y in range(0, height, 128):
             noise_tile.paste(noise_patch, (x, y))
-            
+
     noise_rgba = Image.merge("RGBA", (noise_tile, noise_tile, noise_tile, Image.new("L", (width, height), 255)))
     img = ImageChops.multiply(img, noise_rgba)
-    
-    # 4. Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
-    # Generate diagonal gradient starting at 3/255 opacity (1.1%) and ending at 13/255 opacity (5.1%)
-    grad_data = []
-    for row in range(8):
-        for col in range(8):
-            val = int(3 + 10 * ((col + row) / 14.0))
-            grad_data.append(val)
-    grad_small = Image.frombytes("L", (8, 8), bytes(grad_data))
-    grad_large = grad_small.resize((width, height), Image.Resampling.BILINEAR)
-    
-    sheen = Image.merge("RGBA", (
-        Image.new("L", (width, height), 255),
-        Image.new("L", (width, height), 255),
-        Image.new("L", (width, height), 255),
-        grad_large
-    ))
-    img = Image.alpha_composite(img, sheen)
+
+    # Apply custom inner shadow if configured and enabled
+    if effects and effects.get("inner_shadow", {}).get("enabled", False):
+        img = _apply_inner_shadow(img, effects["inner_shadow"])
+
+    # Apply custom glass reflection if configured and enabled, otherwise apply default sheen
+    custom_glass = effects.get("glass_reflection", {}) if effects else None
+    if custom_glass and custom_glass.get("enabled", False):
+        img = _apply_glass_reflection(img, custom_glass)
+    else:
+        # 4. Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
+        # Generate diagonal gradient starting at 3/255 opacity (1.1%) and ending at 13/255 opacity (5.1%)
+        grad_data = []
+        for row in range(8):
+            for col in range(8):
+                val = int(3 + 10 * ((col + row) / 14.0))
+                grad_data.append(val)
+        grad_small = Image.frombytes("L", (8, 8), bytes(grad_data))
+        grad_large = grad_small.resize((width, height), Image.Resampling.BILINEAR)
+
+        sheen = Image.merge("RGBA", (
+            Image.new("L", (width, height), 255),
+            Image.new("L", (width, height), 255),
+            Image.new("L", (width, height), 255),
+            grad_large
+        ))
+        img = Image.alpha_composite(img, sheen)
     return img
 
 
@@ -403,9 +536,9 @@ def render_simple_mockup(
         mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
         artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))
 
-    # Apply scene integration filters (Print contrast, Paper Grain, Diagonal glass reflection sheen) if enabled
+    # Apply scene integration filters (Print contrast, Paper Grain, Custom/Default reflection & shadows) if enabled
     if realism:
-        artwork_layer = _apply_realism_filter(artwork_layer)
+        artwork_layer = _apply_realism_filter(artwork_layer, manifest.get("effects"))
 
     if realism:
         # Premium Super Sample Anti-Aliased (SSAA) rendering and edge softening

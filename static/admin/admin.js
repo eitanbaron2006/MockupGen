@@ -498,6 +498,47 @@
     document.querySelectorAll(".direction").forEach((element) => {
       element.classList.toggle("active", element.dataset.direction === template.orientation);
     });
+
+    // Populate Realism Effects values
+    const effects = template.effects || {
+      inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
+      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+    };
+    if (!template.effects) {
+      template.effects = effects;
+    }
+    
+    // Set inner shadow fields
+    const shadowEnabled = effects.inner_shadow.enabled || false;
+    $("innerShadowEnabled").checked = shadowEnabled;
+    $("innerShadowControls").classList.toggle("hidden", !shadowEnabled);
+    
+    $("shadowOpacity").value = effects.inner_shadow.opacity ?? 0.4;
+    $("shadowOpacityVal").textContent = Math.round((effects.inner_shadow.opacity ?? 0.4) * 100) + "%";
+    
+    $("shadowBlur").value = effects.inner_shadow.blur ?? 15;
+    $("shadowBlurVal").textContent = (effects.inner_shadow.blur ?? 15) + "px";
+    
+    $("shadowTop").value = effects.inner_shadow.top ?? 10;
+    $("shadowTopVal").textContent = (effects.inner_shadow.top ?? 10) + "px";
+    
+    $("shadowBottom").value = effects.inner_shadow.bottom ?? 10;
+    $("shadowBottomVal").textContent = (effects.inner_shadow.bottom ?? 10) + "px";
+    
+    $("shadowLeft").value = effects.inner_shadow.left ?? 10;
+    $("shadowLeftVal").textContent = (effects.inner_shadow.left ?? 10) + "px";
+    
+    $("shadowRight").value = effects.inner_shadow.right ?? 10;
+    $("shadowRightVal").textContent = (effects.inner_shadow.right ?? 10) + "px";
+    
+    // Set glass reflection fields
+    const glassEnabled = effects.glass_reflection.enabled || false;
+    $("glassReflectionEnabled").checked = glassEnabled;
+    $("glassReflectionControls").classList.toggle("hidden", !glassEnabled);
+    
+    $("reflectionType").value = effects.glass_reflection.type || "diagonal";
+    $("reflectionOpacity").value = effects.glass_reflection.opacity ?? 0.15;
+    $("reflectionOpacityVal").textContent = Math.round((effects.glass_reflection.opacity ?? 0.15) * 100) + "%";
     if (template.detection_provider) {
       $("confidence").textContent = confidenceLabel(template.detection_confidence);
     } else {
@@ -1045,7 +1086,8 @@
         name: $("templateName").value,
         category_id: Number($("categorySelect").value),
         artwork_area: state.selected.artwork_area,
-        fit_mode: $("fitMode").value
+        fit_mode: $("fitMode").value,
+        effects: state.selected.effects || null
       })
     });
     state.selected = payload.template;
@@ -1066,7 +1108,8 @@
           name: template.name,
           category_id: template.category_id,
           artwork_area: template.artwork_area,
-          fit_mode: template.fit_mode
+          fit_mode: template.fit_mode,
+          effects: template.effects || null
         })
       });
       const idx = state.templates.findIndex(t => t.template_id === template.template_id);
@@ -2010,6 +2053,172 @@
       }
     };
   }
+
+  // Realism Effects Event Listeners & Live Preview Updates
+  let refreshPreviewTimeout = null;
+
+  async function refreshPreviewMockup() {
+    if (!state.selected || !state.isPreviewingMockup) return;
+    
+    // Disable download interactions temporarily to show rendering state
+    if ($("downloadMockupButton")) {
+      $("downloadMockupButton").style.pointerEvents = "none";
+      $("downloadMockupButton").style.opacity = "0.5";
+    }
+    if ($("toolbarDownloadButton")) {
+      $("toolbarDownloadButton").style.pointerEvents = "none";
+      $("toolbarDownloadButton").style.opacity = "0.5";
+      $("toolbarDownloadButton").setAttribute("title", "Generating high-fidelity download...");
+    }
+    
+    try {
+      const overlayImage = state.selectionStyle.overlayImage;
+      if (!overlayImage) return;
+
+      const file = dataURLtoFile(overlayImage, state.selectionStyle.overlayImageName || "artwork.png");
+      const formData = new FormData();
+      formData.append("mode", "simple");
+      formData.append("template_id", state.selected.template_id);
+      formData.append("artwork", file);
+      formData.append("realism", "true");
+      
+      let resolvedFitMode = state.selected.fit_mode;
+      if (resolvedFitMode === "auto") {
+        resolvedFitMode = resolveFitMode(
+          "auto",
+          state.selectionStyle.overlayImageWidth,
+          state.selectionStyle.overlayImageHeight,
+          state.selected.artwork_area.width,
+          state.selected.artwork_area.height
+        );
+      }
+      formData.append("fit_mode", resolvedFitMode);
+
+      const response = await fetch("/api/mockups/render", {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrf },
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Rendering failed");
+
+      if (state.isPreviewingMockup) {
+        if ($("selectionRenderedMockup")) {
+          $("selectionRenderedMockup").src = data.output_url;
+          $("selectionRenderedMockup").classList.remove("hidden");
+        }
+        $("selectionImageOverlay").classList.add("hidden");
+
+        if ($("downloadMockupButton")) {
+          $("downloadMockupButton").href = data.output_url;
+          $("downloadMockupButton").style.pointerEvents = "auto";
+          $("downloadMockupButton").style.opacity = "1";
+        }
+        if ($("toolbarDownloadButton")) {
+          $("toolbarDownloadButton").href = data.output_url;
+          $("toolbarDownloadButton").style.pointerEvents = "auto";
+          $("toolbarDownloadButton").style.opacity = "1";
+          $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
+        }
+      }
+    } catch (err) {
+      console.error("Live-preview refresh render failed:", err);
+    }
+  }
+
+  function updateEffectsState() {
+    if (!state.selected) return;
+    if (!state.selected.effects) {
+      state.selected.effects = {
+        inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
+        glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+      };
+    }
+    const effects = state.selected.effects;
+    
+    effects.inner_shadow.enabled = $("innerShadowEnabled").checked;
+    effects.inner_shadow.opacity = Number($("shadowOpacity").value);
+    effects.inner_shadow.blur = Number($("shadowBlur").value);
+    effects.inner_shadow.top = Number($("shadowTop").value);
+    effects.inner_shadow.bottom = Number($("shadowBottom").value);
+    effects.inner_shadow.left = Number($("shadowLeft").value);
+    effects.inner_shadow.right = Number($("shadowRight").value);
+    
+    effects.glass_reflection.enabled = $("glassReflectionEnabled").checked;
+    effects.glass_reflection.type = $("reflectionType").value;
+    effects.glass_reflection.opacity = Number($("reflectionOpacity").value);
+    
+    persistTemplateState(state.selected);
+
+    // Debounce live-refresh in preview mode
+    if (state.isPreviewingMockup) {
+      if (refreshPreviewTimeout) clearTimeout(refreshPreviewTimeout);
+      refreshPreviewTimeout = setTimeout(() => {
+        refreshPreviewMockup();
+      }, 250);
+    }
+  }
+
+  // Link button toggle
+  $("linkShadowSides").onclick = (e) => {
+    e.preventDefault();
+    $("linkShadowSides").classList.toggle("active");
+  };
+
+  // Shadow enabled checkbox
+  $("innerShadowEnabled").onchange = (e) => {
+    $("innerShadowControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+
+  // Shadow Opacity slider
+  $("shadowOpacity").oninput = (e) => {
+    $("shadowOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+
+  // Shadow Blur slider
+  $("shadowBlur").oninput = (e) => {
+    $("shadowBlurVal").textContent = e.target.value + "px";
+    updateEffectsState();
+  };
+
+  // Handle shadow side sliders with linking support
+  const shadowSides = ["Top", "Bottom", "Left", "Right"];
+  shadowSides.forEach(side => {
+    $(`shadow${side}`).oninput = (e) => {
+      const val = e.target.value;
+      $(`shadow${side}Val`).textContent = val + "px";
+      
+      if ($("linkShadowSides").classList.contains("active")) {
+        shadowSides.forEach(otherSide => {
+          if (otherSide !== side) {
+            $(`shadow${otherSide}`).value = val;
+            $(`shadow${otherSide}Val`).textContent = val + "px";
+          }
+        });
+      }
+      updateEffectsState();
+    };
+  });
+
+  // Glass enabled checkbox
+  $("glassReflectionEnabled").onchange = (e) => {
+    $("glassReflectionControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+
+  // Glass reflection type select
+  $("reflectionType").onchange = () => {
+    updateEffectsState();
+  };
+
+  // Glass Opacity slider
+  $("reflectionOpacity").oninput = (e) => {
+    $("reflectionOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {

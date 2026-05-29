@@ -157,6 +157,7 @@ def publish_template(
         "preview": "preview.png",
         "supported_modes": ["simple"],
         "output_format": "png",
+        "effects": template.get("effects"),
     }
     (published_folder / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
