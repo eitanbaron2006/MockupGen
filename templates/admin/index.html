@@ -691,6 +691,15 @@
       </div>
     </div>
   </div>
+  <!-- Premium Lightbox Mockup Preview Overlay -->
+  <div id="lightboxOverlay" class="lightbox-overlay hidden" aria-label="Mockup Preview" role="dialog" aria-modal="true">
+    <button class="lightbox-close" id="closeLightboxBtn" aria-label="Close preview">&times;</button>
+    <div class="lightbox-content">
+      <img id="lightboxImage" src="" alt="Mockup Preview">
+      <div class="lightbox-caption" id="lightboxCaption">Mockup Preview</div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" aria-live="polite"></div>
   <script src="{{ url_for('static', filename='admin/admin.js') }}?v=2"></script>
 </body>

@@ -2405,6 +2405,61 @@
     if (event.target === $("testModal")) $("testModal").classList.remove("open");
   };
 
+  // Lightbox Preview Handlers
+  function showLightbox(src, title) {
+    const overlay = $("lightboxOverlay");
+    const img = $("lightboxImage");
+    const caption = $("lightboxCaption");
+    if (!overlay || !img) return;
+    
+    img.src = src;
+    if (caption) {
+      caption.textContent = title || "Mockup Preview";
+    }
+    overlay.classList.remove("hidden");
+  }
+
+  function hideLightbox() {
+    const overlay = $("lightboxOverlay");
+    if (overlay) {
+      overlay.classList.add("hidden");
+    }
+  }
+
+  if ($("closeLightboxBtn")) {
+    $("closeLightboxBtn").onclick = hideLightbox;
+  }
+  if ($("lightboxOverlay")) {
+    $("lightboxOverlay").onclick = (e) => {
+      if (e.target === $("lightboxOverlay") || e.target === $("closeLightboxBtn")) {
+        hideLightbox();
+      }
+    };
+  }
+
+  // Hook single preview click
+  if ($("testResultImage")) {
+    $("testResultImage").onclick = () => {
+      const src = $("testResultImage").src;
+      const templateSelect = $("testTemplateSelect");
+      const title = templateSelect ? templateSelect.options[templateSelect.selectedIndex]?.text : "Generated Mockup";
+      showLightbox(src, title);
+    };
+  }
+
+  // Hook batch previews using event delegation on the grid container
+  const batchContainer = $("testBatchResults");
+  if (batchContainer) {
+    batchContainer.addEventListener("click", (e) => {
+      if (e.target.classList.contains("batch-card-img")) {
+        const src = e.target.src;
+        const card = e.target.closest(".batch-result-card");
+        const title = card ? card.querySelector(".batch-card-title")?.textContent : "Generated Mockup";
+        showLightbox(src, title);
+      }
+    });
+  }
+
   // Bind upload triggers on the active artwork container (Click & Drag-and-drop)
   const artworkContainer = $("testArtworkPreviewContainer");
   if (artworkContainer) {
