@@ -526,17 +526,67 @@ def render_green_frame_mockup(
 
 
 def _draw_rect(base: np.ndarray, region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings) -> None:
-    repl = np.asarray(_source_image(art, region.w, region.h, settings).convert("RGBA"))
-    for yy in range(region.h):
-        gy = region.y + yy
-        for xx in range(region.w):
-            gx = region.x + xx
-            if state.clip_mask[gy, gx]:
-                source_alpha = float(repl[yy, xx, 3]) / 255.0
-                alpha = float(state.soft_mask[gy, gx]) * source_alpha
-                if alpha > 0.001:
-                    sr, sg, sb = repl[yy, xx, :3]
-                    _blend_pixel(base, gy, gx, float(sr), float(sg), float(sb), alpha)
+    h, w = region.h, region.w
+    base_crop = base[region.y : region.y + h, region.x : region.x + w].astype(np.float32)
+    repl = np.asarray(_source_image(art, w, h, settings).convert("RGBA")).astype(np.float32)
+    clip_mask = state.clip_mask[region.y : region.y + h, region.x : region.x + w]
+    soft_mask = state.soft_mask[region.y : region.y + h, region.x : region.x + w]
+    
+    source_alpha = repl[:, :, 3] / 255.0
+    alpha = soft_mask * source_alpha
+    valid = clip_mask & (alpha > 0.001)
+    if not np.any(valid):
+        return
+        
+    sr = repl[valid, 0]
+    sg = repl[valid, 1]
+    sb = repl[valid, 2]
+    
+    bg_r = base_crop[valid, 0]
+    bg_g = base_crop[valid, 1]
+    bg_b = base_crop[valid, 2]
+    
+    a = alpha[valid]
+    inv = 1.0 - a
+    
+    blend_idx = a < 0.999
+    if np.any(blend_idx):
+        bgr = bg_r[blend_idx]
+        bgg = bg_g[blend_idx]
+        bgb = bg_b[blend_idx]
+        
+        s_r = sr[blend_idx]
+        s_g = sg[blend_idx]
+        s_b = sb[blend_idx]
+        
+        in_v = inv[blend_idx]
+        spill = (bgg > bgr + 20) & (bgg > bgb + 20)
+        
+        if np.any(spill):
+            preserve = np.clip(in_v[spill] * 0.12, 0.0, 1.0)
+            bgr[spill] = s_r[spill] * (1.0 - preserve) + bgr[spill] * preserve
+            bgg[spill] = s_g[spill] * (1.0 - preserve) + bgg[spill] * preserve
+            bgb[spill] = s_b[spill] * (1.0 - preserve) + bgb[spill] * preserve
+            
+        no_spill = ~spill
+        if np.any(no_spill):
+            max_rb = np.maximum(bgr[no_spill], bgb[no_spill])
+            neutral_g = np.minimum(bgg[no_spill], max_rb + 14.0)
+            edge_mix = np.clip(in_v[no_spill] * 1.1, 0.0, 1.0)
+            bgr[no_spill] = bgr[no_spill] * (1.0 - edge_mix) + s_r[no_spill] * edge_mix
+            bgg[no_spill] = neutral_g * (1.0 - edge_mix) + s_g[no_spill] * edge_mix
+            bgb[no_spill] = bgb[no_spill] * (1.0 - edge_mix) + s_b[no_spill] * edge_mix
+            
+        bg_r[blend_idx] = bgr
+        bg_g[blend_idx] = bgg
+        bg_b[blend_idx] = bgb
+        
+    base_crop[valid, 0] = np.round(sr * a + bg_r * inv)
+    base_crop[valid, 1] = np.round(sg * a + bg_g * inv)
+    base_crop[valid, 2] = np.round(sb * a + bg_b * inv)
+    base_crop[valid, 3] = 255.0
+    
+    base[region.y : region.y + h, region.x : region.x + w] = np.clip(base_crop, 0, 255).astype(np.uint8)
 
 
 def _dist(a: dict[str, float], b: dict[str, float]) -> float:
@@ -616,39 +666,46 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
     target_w = max(2, round(max(_dist(warp["tl"], warp["tr"]), _dist(warp["bl"], warp["br"]))))
     target_h = max(2, round(max(_dist(warp["tl"], warp["bl"]), _dist(warp["tr"], warp["br"]))))
     src = _source_image(art, target_w, target_h, settings)
-    src_arr = np.asarray(src.convert("RGBA")).astype(np.float32)
+    
+    ss = max(1, settings.aa_scale)
     src_pts = [{"x": 0.0, "y": 0.0}, {"x": float(src.width - 1), "y": 0.0}, {"x": float(src.width - 1), "y": float(src.height - 1)}, {"x": 0.0, "y": float(src.height - 1)}]
     dst_pts = [warp["tl"], warp["tr"], warp["br"], warp["bl"]]
-    h = _homography(src_pts, dst_pts)
+    dst_pts_scaled = [{"x": p["x"] * ss, "y": p["y"] * ss} for p in dst_pts]
+    
+    h = _homography(src_pts, dst_pts_scaled)
     if h is None:
         return None
     try:
         inv = np.linalg.inv(h.reshape(3, 3)).reshape(9)
     except np.linalg.LinAlgError:
         return None
-    ss = max(1, settings.aa_scale)
+        
+    coefficients = inv[:8]
     out_w, out_h = max(1, round(region.w * ss)), max(1, round(region.h * ss))
-    alpha = np.zeros((out_h, out_w), dtype=np.float32)
-    rgb = np.zeros((out_h, out_w, 3), dtype=np.float32)
-    for oy in range(out_h):
-        dy = region.y + (oy + 0.5) / ss
-        for ox in range(out_w):
-            dx = region.x + (ox + 0.5) / ss
-            a = _sample_float(state.soft_mask, dx, dy)
-            if a <= 0.001:
-                continue
-            sx, sy = _apply_h(inv, dx, dy)
-            if math.isfinite(sx) and math.isfinite(sy):
-                sampled = _sample_rgba(src_arr, sx, sy)
-                rgb[oy, ox] = sampled[:3]
-                alpha[oy, ox] = a * (sampled[3] / 255.0)
+    
+    warped_full = src.transform(
+        (state.width * ss, state.height * ss),
+        Image.Transform.PERSPECTIVE,
+        coefficients,
+        Image.Resampling.BICUBIC,
+    )
+    
+    rx0, ry0 = round(region.x * ss), round(region.y * ss)
+    warped_region = warped_full.crop((rx0, ry0, rx0 + out_w, ry0 + out_h))
+    
+    soft_mask_np = state.soft_mask[region.y : region.y + region.h, region.x : region.x + region.w]
+    soft_mask_uint8 = np.clip(soft_mask_np * 255.0, 0, 255).astype(np.uint8)
+    soft_mask_region_img = Image.fromarray(soft_mask_uint8, mode="L")
+    soft_mask_region_scaled = soft_mask_region_img.resize((out_w, out_h), Image.Resampling.BILINEAR)
+    
     blur_radius = round(settings.edge_aa_radius * max(1, ss / 2))
     if blur_radius > 0:
-        alpha = _blur_float_field(alpha, blur_radius)
-    out = np.zeros((out_h, out_w, 4), dtype=np.uint8)
-    out[:, :, :3] = np.clip(np.round(rgb), 0, 255).astype(np.uint8)
-    out[:, :, 3] = np.clip(np.round(alpha * 255), 0, 255).astype(np.uint8)
-    return Image.fromarray(out, "RGBA")
+        soft_mask_region_scaled = soft_mask_region_scaled.filter(ImageFilter.BoxBlur(blur_radius))
+        
+    final_alpha = ImageChops.multiply(warped_region.getchannel("A"), soft_mask_region_scaled)
+    warped_region.putalpha(final_alpha)
+    
+    return warped_region
 
 
 def _inner_shadow(region: GreenRegion, state: GreenFrameDetection, settings: GreenFrameSettings) -> Optional[Image.Image]:
