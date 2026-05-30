@@ -7,24 +7,24 @@
   "artwork_area": {
     "x": 456,
     "y": 308,
-    "width": 444,
-    "height": 584,
+    "width": 445,
+    "height": 586,
     "corners": [
       {
         "x": 456,
         "y": 308
       },
       {
-        "x": 900,
+        "x": 901,
         "y": 308
       },
       {
-        "x": 900,
-        "y": 892
+        "x": 901,
+        "y": 894
       },
       {
         "x": 456,
-        "y": 892
+        "y": 893
       }
     ]
   },
@@ -40,18 +40,18 @@
   "output_format": "png",
   "effects": {
     "glass_reflection": {
-      "enabled": false,
+      "enabled": true,
       "opacity": 0.3,
       "type": "double_glare"
     },
     "inner_shadow": {
-      "blur": 3,
-      "bottom": 6,
+      "blur": 8,
+      "bottom": 14,
       "enabled": true,
-      "left": 6,
-      "opacity": 0.25,
-      "right": 6,
-      "top": 6
+      "left": 14,
+      "opacity": 0.45,
+      "right": 14,
+      "top": 14
     }
   }
 }

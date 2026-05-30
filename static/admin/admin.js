@@ -644,7 +644,13 @@
       });
     }
     if ($("overlayImageName")) {
-      $("overlayImageName").textContent = style.overlayImageName || "No image selected";
+      const name = style.overlayImageName || "No image selected";
+      $("overlayImageName").textContent = name;
+      if (style.overlayImageName) {
+        $("overlayImageName").setAttribute("title", style.overlayImageName);
+      } else {
+        $("overlayImageName").removeAttribute("title");
+      }
     }
     if ($("polygonColorSwatch")) $("polygonColorSwatch").style.background = style.polygonColor;
     if ($("crossColorIcon")) $("crossColorIcon").style.color = style.crossColor;
@@ -717,6 +723,10 @@
         applySelectionStyle();
         saveSelectionStylePreference();
         drawSelection();
+        
+        if (state.isPreviewingMockup) {
+          refreshPreviewMockup();
+        }
       };
       img.src = dataUrl;
     } catch (error) {

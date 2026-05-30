@@ -1207,6 +1207,7 @@ h2 {
   box-shadow: var(--shadow);
   left: 43px;
   min-width: 172px;
+  max-width: 250px;
   padding: 10px;
   position: absolute;
   top: 0;
@@ -3173,7 +3174,7 @@ input[type="checkbox"]:disabled {
 .slider-container-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .slider-container-row input[type="range"] {
@@ -3186,20 +3187,21 @@ input[type="checkbox"]:disabled {
   cursor: pointer;
   border: none;
   padding: 0;
+  min-width: 0;
 }
 
 .slider-container-row span {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--muted);
-  min-width: 34px;
+  min-width: 28px;
   text-align: right;
 }
 
 .shadow-sides-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 8px 6px;
   margin-top: 4px;
   border-top: 1px dashed var(--line);
   padding-top: 8px;
