@@ -39,47 +39,17 @@
   ],
   "output_format": "png",
   "effects": {
-    "inner_shadow": {
+    "color_tint": {
       "enabled": false,
-      "top": 10,
-      "right": 10,
-      "bottom": 10,
-      "left": 10,
-      "opacity": 0.4,
-      "blur": 15,
-      "target": "artwork"
+      "intensity": 0.2,
+      "target": "artwork",
+      "temperature": 25
     },
     "glass_reflection": {
       "enabled": false,
-      "type": "diagonal",
       "opacity": 0.15,
-      "target": "artwork"
-    },
-    "matte_finish": {
-      "enabled": false,
-      "shadow_lift": 0.08,
-      "contrast": -0.14,
-      "target": "artwork"
-    },
-    "color_tint": {
-      "enabled": false,
-      "temperature": 25,
-      "intensity": 0.2,
-      "target": "artwork"
-    },
-    "gobo_shadow": {
-      "enabled": false,
-      "opacity": 0.3,
-      "scale": 1,
-      "target": "artwork"
-    },
-    "photoshop_adjustments": {
-      "enabled": false,
-      "brightness": 0.22,
-      "contrast": 0.12,
-      "saturation": 0,
-      "color_filter": "none",
-      "target": "artwork"
+      "target": "artwork",
+      "type": "diagonal"
     },
     "global_png_overlay": {
       "enabled": false,
@@ -89,13 +59,43 @@
     },
     "global_reflections": {
       "enabled": false,
-      "window_type": "none",
-      "window_opacity": 0.2,
-      "window_blur": 20,
-      "rays_type": "none",
-      "rays_opacity": 0.2,
       "rays_angle": 0,
-      "target": "all"
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": false,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": -0.14,
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0.22,
+      "color_filter": "none",
+      "contrast": 0.12,
+      "enabled": false,
+      "saturation": 0,
+      "target": "artwork"
     }
   },
   "raw_artwork_area": {
