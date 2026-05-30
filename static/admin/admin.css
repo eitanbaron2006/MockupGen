@@ -1040,6 +1040,11 @@ h2 {
   color: rgba(255, 255, 255, .76);
 }
 
+.effect-update-overlay {
+  background: rgba(21, 20, 15, .48);
+  z-index: 6;
+}
+
 .selection-style-toolbar {
   align-items: center;
   background: rgba(247, 241, 222, .82);
@@ -3119,8 +3124,7 @@ input[type="checkbox"]:disabled {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.effect-group:focus-within,
-.effect-group:hover {
+.effect-group:focus-within {
   border-color: var(--faint);
 }
 
@@ -3152,6 +3156,17 @@ input[type="checkbox"]:disabled {
   accent-color: var(--accent, #007bff);
   cursor: pointer;
   margin: 0;
+}
+
+.effect-header input[type="checkbox"]:hover:not(:disabled) {
+  background-color: var(--page);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.effect-header input[type="checkbox"]:checked:hover:not(:disabled) {
+  background-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .effect-controls {

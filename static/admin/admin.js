@@ -2573,7 +2573,13 @@
     }
   }
 
-  function updateEffectsState() {
+  function setEffectUpdateLoading(active) {
+    const overlay = $("effectUpdateOverlay");
+    if (!overlay) return;
+    overlay.classList.toggle("hidden", !active);
+  }
+
+  async function updateEffectsState(options = {}) {
     if (!state.selected) return;
     if (!state.selected.effects) {
       state.selected.effects = defaultEffects();
@@ -2664,14 +2670,36 @@
 
     state.selected.effects = effects;
 
-    persistTemplateState(state.selected);
+    const showLoading = Boolean(options.showLoading);
+    const loadingStartedAt = Date.now();
+    if (showLoading) {
+      setEffectUpdateLoading(true);
+      setStatus("Applying effect changes...");
+    }
 
-    // Debounce live-refresh in preview mode
-    if (state.isPreviewingMockup) {
-      if (refreshPreviewTimeout) clearTimeout(refreshPreviewTimeout);
-      refreshPreviewTimeout = setTimeout(() => {
-        refreshPreviewMockup();
-      }, 250);
+    try {
+      await persistTemplateState(state.selected);
+
+      // Debounce live-refresh in preview mode, except checkbox changes show a loading overlay until refresh completes.
+      if (state.isPreviewingMockup) {
+        if (refreshPreviewTimeout) clearTimeout(refreshPreviewTimeout);
+        if (showLoading) {
+          await refreshPreviewMockup();
+        } else {
+          refreshPreviewTimeout = setTimeout(() => {
+            refreshPreviewMockup();
+          }, 250);
+        }
+      }
+    } finally {
+      if (showLoading) {
+        const elapsed = Date.now() - loadingStartedAt;
+        if (elapsed < 450) {
+          await new Promise((resolve) => setTimeout(resolve, 450 - elapsed));
+        }
+        setEffectUpdateLoading(false);
+        setStatus("Effect changes applied");
+      }
     }
   }
 
@@ -2780,7 +2808,7 @@
     if (!def) return;
 
     if (e.target.dataset.originalId === def.enabledId) {
-      updateEffectsState();
+      await updateEffectsState({ showLoading: true });
       return;
     }
 
@@ -2816,8 +2844,8 @@
   };
 
   // Shadow enabled checkbox
-  $("innerShadowEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("innerShadowEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
 
   // Shadow Opacity slider
@@ -2852,8 +2880,8 @@
   });
 
   // Glass enabled checkbox
-  $("glassReflectionEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("glassReflectionEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
 
   // Glass reflection type select
@@ -2868,8 +2896,8 @@
   };
 
   // Matte finish enabled checkbox
-  $("matteFinishEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("matteFinishEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Matte Shadow Lift slider
   $("matteShadowLift").oninput = (e) => {
@@ -2883,8 +2911,8 @@
   };
 
   // Color tint enabled checkbox
-  $("colorTintEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("colorTintEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Color Temperature slider
   $("tintTemperature").oninput = (e) => {
@@ -2900,8 +2928,8 @@
   };
 
   // Gobo shadow enabled checkbox
-  $("goboShadowEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("goboShadowEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Gobo shadow Opacity slider
   $("goboOpacity").oninput = (e) => {
@@ -2915,8 +2943,8 @@
   };
 
   // Photoshop adjustments enabled checkbox
-  $("photoshopAdjustmentsEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("photoshopAdjustmentsEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Photoshop filter select
   $("photoshopColorFilter").onchange = () => {
@@ -2942,8 +2970,8 @@
   };
 
   // Global reflections enabled checkbox
-  $("globalReflectionsEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("globalReflectionsEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Window shadow type select
   $("globalWindowType").onchange = () => {
@@ -2975,8 +3003,8 @@
   };
 
   // Global PNG Overlay enabled checkbox
-  $("globalPngOverlayEnabled").onchange = (e) => {
-    updateEffectsState();
+  $("globalPngOverlayEnabled").onchange = async (e) => {
+    await updateEffectsState({ showLoading: true });
   };
   // Trigger file click
   $("globalOverlayUploadBtn").onclick = () => $("globalOverlayUploadInput").click();

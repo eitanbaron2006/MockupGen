@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=5">
 </head>
 
 <body class="admin-page">
@@ -140,6 +140,11 @@
                 <span class="spinner"></span>
                 <strong id="analysisLabel">Detection is analyzing the frame</strong>
                 <small id="analysisSub">This can take several seconds.</small>
+              </div>
+              <div id="effectUpdateOverlay" class="analysis-overlay effect-update-overlay hidden">
+                <span class="spinner"></span>
+                <strong>Applying effect changes</strong>
+                <small>Updating the mockup preview.</small>
               </div>
             </div>
             <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
@@ -980,7 +985,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=3"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=5"></script>
 </body>
 
 </html>
