@@ -3336,3 +3336,56 @@ input[type="checkbox"]:disabled {
   cursor: zoom-in;
 }
 
+/* Realism Target Segmented Controls */
+.target-segment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 8px;
+  width: 100%;
+}
+
+.target-segment-row .segment-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.segmented-control {
+  display: flex;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segment-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 3px 8px;
+  min-width: 42px;
+  text-align: center;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+
+.segment-btn:hover {
+  color: var(--ink);
+  background: rgba(21, 20, 15, 0.04);
+}
+
+.segment-btn.active {
+  background: var(--accent);
+  color: #ffffff !important;
+}
+
+

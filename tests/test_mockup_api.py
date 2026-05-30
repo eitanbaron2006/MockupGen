@@ -646,3 +646,82 @@ def test_global_realism_effects(tmp_path):
         assert top_left_pixel != (0, 0, 255, 255)  # The background blue must be shifted by the global environmental effects!
 
 
+def test_targeted_realism_effects(tmp_path):
+    # Tests that target routing (artwork vs mockup vs all) strictly targets the correct layers
+    client, folders = build_client(tmp_path)
+    template_folder = folders["TEMPLATES_FOLDER"] / "target_effects_test"
+    template_folder.mkdir(parents=True)
+    
+    # We will test using photoshop_adjustments since it is highly visible
+    manifest = {
+        "template_id": "target_effects_test",
+        "name": "Target Effects Test Mockup",
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "artwork_area": {
+            "x": 2,
+            "y": 2,
+            "width": 6,
+            "height": 6
+        },
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+        "effects": {
+            "photoshop_adjustments": {
+                "enabled": True,
+                "brightness": 0.5,
+                "contrast": 0.5,
+                "saturation": 0.5,
+                "color_filter": "vintage",
+                "target": "mockup" # Target mockup background only!
+            }
+        }
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    save_image(template_folder / "background.png", (10, 10), (0, 0, 255, 255)) # Pure Blue background
+    save_image(template_folder / "preview.png", (10, 10), (0, 0, 255, 255))
+
+    # Render with pure solid red artwork (255, 0, 0, 255)
+    # Note: disabled the default glass cover sheen by enabling a custom glass reflection with 0 opacity, targeting artwork
+    manifest["effects"]["glass_reflection"] = {
+        "enabled": True,
+        "type": "diagonal",
+        "opacity": 0.0,
+        "target": "artwork"
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    response = client.post(
+        "/api/mockups/render",
+        data={
+            "template_id": "target_effects_test",
+            "mode": "simple",
+            "output_format": "png",
+            "artwork": (image_bytes((6, 6), (255, 0, 0, 255)), "artwork.png"),
+            "realism": "true",
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+
+    generated_path = folders["OUTPUT_FOLDER"] / Path(payload["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        # Check background pixel at (0, 0)
+        bg_pixel = output.getpixel((0, 0))
+        # Since photoshop adjustments targeted 'mockup', the blue background must be altered!
+        assert bg_pixel != (0, 0, 255, 255)
+
+        # Check artwork pixel at (5, 5) (well inside the 6x6 artwork area)
+        art_pixel = output.getpixel((5, 5))
+        # Since photoshop adjustments targeted 'mockup', the red artwork must NOT be affected by the vintage LUT curves!
+        # (It only undergoes default B&W point print compression: 255 -> 246, i.e. 246, 8, 8, 255)
+        assert art_pixel[0] == 246
+        assert art_pixel[1] == 8
+        assert art_pixel[2] == 8
+
+
+

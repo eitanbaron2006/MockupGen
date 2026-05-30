@@ -625,40 +625,75 @@ def _apply_global_png_overlay(img: Image.Image, opts: dict) -> Image.Image:
         return img
 
 
-def _apply_global_realism_effects(img: Image.Image, effects: dict | None) -> Image.Image:
+def _apply_effects_by_target(img: Image.Image, effects: dict | None, target_name: str) -> Image.Image:
     if not effects:
         return img
         
     img = img.convert("RGBA")
     
+    # 1. Inner shadow
+    if effects.get("inner_shadow", {}).get("enabled", False):
+        opts = effects["inner_shadow"]
+        if opts.get("target", "artwork") == target_name:
+            img = _apply_inner_shadow(img, opts)
+            
+    # 2. Glass reflection (only if explicitly enabled for this target)
+    if effects.get("glass_reflection", {}).get("enabled", False):
+        opts = effects["glass_reflection"]
+        if opts.get("target", "artwork") == target_name:
+            img = _apply_glass_reflection(img, opts)
+            
+    # 3. Faded Matte Finish
+    if effects.get("matte_finish", {}).get("enabled", False):
+        opts = effects["matte_finish"]
+        if opts.get("target", "artwork") == target_name:
+            img = _apply_matte_finish(img, opts)
+            
+    # 4. Ambient light warmth tint
+    if effects.get("color_tint", {}).get("enabled", False):
+        opts = effects["color_tint"]
+        if opts.get("target", "artwork") == target_name:
+            img = _apply_color_tint(img, opts)
+            
+    # 5. Sunlight blinds shadow (Gobo)
+    if effects.get("gobo_shadow", {}).get("enabled", False):
+        opts = effects["gobo_shadow"]
+        if opts.get("target", "artwork") == target_name:
+            img = _apply_gobo_shadow(img, opts)
+            
+    # 6. Photoshop Adjustments
     if effects.get("photoshop_adjustments", {}).get("enabled", False):
-        img = _apply_photoshop_adjustments(img, effects["photoshop_adjustments"])
-        
+        opts = effects["photoshop_adjustments"]
+        if opts.get("target", "all") == target_name:
+            img = _apply_photoshop_adjustments(img, opts)
+            
+    # 7. Global Reflections & Rays
     if effects.get("global_reflections", {}).get("enabled", False):
-        ref_opts = effects["global_reflections"]
-        
-        window_type = ref_opts.get("window_type", "none")
-        window_opacity = float(ref_opts.get("window_opacity", 0.0))
-        if window_type != "none" and window_opacity > 0.001:
-            width, height = img.size
-            window_blur = float(ref_opts.get("window_blur", 20.0))
-            blur_px = max(2, int(window_blur * width / 800))
-            
-            window_mask = _create_window_frame_mask(width, height, window_type, blur_px)
-            window_mask = window_mask.point(lambda p: int(p * window_opacity))
-            
-            reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 255))
-            img = Image.composite(reflection_layer, img, window_mask)
-            
-        rays_type = ref_opts.get("rays_type", "none")
-        rays_opacity = float(ref_opts.get("rays_opacity", 0.0))
-        rays_angle = float(ref_opts.get("rays_angle", 0.0))
-        if rays_type != "none" and rays_opacity > 0.001:
-            img = _apply_sun_rays(img, rays_type, opacity=rays_opacity, angle=rays_angle)
-            
+        opts = effects["global_reflections"]
+        if opts.get("target", "all") == target_name:
+            window_type = opts.get("window_type", "none")
+            window_opacity = float(opts.get("window_opacity", 0.0))
+            if window_type != "none" and window_opacity > 0.001:
+                width, height = img.size
+                window_blur = float(opts.get("window_blur", 20.0))
+                blur_px = max(2, int(window_blur * width / 800))
+                window_mask = _create_window_frame_mask(width, height, window_type, blur_px)
+                window_mask = window_mask.point(lambda p: int(p * window_opacity))
+                reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+                img = Image.composite(reflection_layer, img, window_mask)
+                
+            rays_type = opts.get("rays_type", "none")
+            rays_opacity = float(opts.get("rays_opacity", 0.0))
+            rays_angle = float(opts.get("rays_angle", 0.0))
+            if rays_type != "none" and rays_opacity > 0.001:
+                img = _apply_sun_rays(img, rays_type, opacity=rays_opacity, angle=rays_angle)
+                
+    # 8. Global PNG Overlay
     if effects.get("global_png_overlay", {}).get("enabled", False):
-        img = _apply_global_png_overlay(img, effects["global_png_overlay"])
-        
+        opts = effects["global_png_overlay"]
+        if opts.get("target", "all") == target_name:
+            img = _apply_global_png_overlay(img, opts)
+            
     return img
 
 
@@ -690,29 +725,19 @@ def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = Non
     noise_rgba = Image.merge("RGBA", (noise_tile, noise_tile, noise_tile, Image.new("L", (width, height), 255)))
     img = ImageChops.multiply(img, noise_rgba)
 
-    # Apply premium realism filters if configured
+    # Apply premium targeted artwork filters
     if effects:
-        # 4. Faded Matte Finish (Lift shadows, soften highlights/contrast)
-        if effects.get("matte_finish", {}).get("enabled", False):
-            img = _apply_matte_finish(img, effects["matte_finish"])
+        img = _apply_effects_by_target(img, effects, "artwork")
 
-        # 5. Ambient Light Warmth / Temperature Tinting
-        if effects.get("color_tint", {}).get("enabled", False):
-            img = _apply_color_tint(img, effects["color_tint"])
-
-        # 6. Sunlight Window Blinds (Gobo Shadow Play)
-        if effects.get("gobo_shadow", {}).get("enabled", False):
-            img = _apply_gobo_shadow(img, effects["gobo_shadow"])
-
-    # 7. Apply custom inner shadow if configured and enabled
-    if effects and effects.get("inner_shadow", {}).get("enabled", False):
-        img = _apply_inner_shadow(img, effects["inner_shadow"])
-
-    # 8. Apply custom glass reflection if configured and enabled, otherwise apply default sheen
-    custom_glass = effects.get("glass_reflection", {}) if effects else None
-    if custom_glass and custom_glass.get("enabled", False):
-        img = _apply_glass_reflection(img, custom_glass)
-    else:
+    # 8. Glass reflection default sheen logic on artwork target (backward-compatible sheen)
+    custom_glass = effects.get("glass_reflection", {}) if effects else {}
+    glass_enabled = custom_glass.get("enabled", False)
+    glass_target = custom_glass.get("target", "artwork")
+    
+    if glass_enabled and glass_target == "artwork":
+        # Handled in the target dispatcher already, so skip applying it again
+        pass
+    elif not glass_enabled:
         # Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
         # Generate diagonal gradient starting at 3/255 opacity (1.1%) and ending at 13/255 opacity (5.1%)
         grad_data = []
@@ -826,6 +851,10 @@ def render_simple_mockup(
 
     canvas_size, area = _validated_canvas_and_area(manifest)
     background = load_rgba(_safe_asset_path(template_folder, manifest["background"]))
+    if realism:
+        active_effects = effects if effects is not None else manifest.get("effects")
+        background = _apply_effects_by_target(background, active_effects, "mockup")
+
     foreground_path = _optional_asset_path(template_folder, manifest.get("foreground"))
     if background.size != canvas_size:
         raise InvalidTemplateError("Background must match canvas size")
@@ -910,7 +939,7 @@ def render_simple_mockup(
 
     if realism:
         active_effects = effects if effects is not None else manifest.get("effects")
-        composed = _apply_global_realism_effects(composed, active_effects)
+        composed = _apply_effects_by_target(composed, active_effects, "all")
 
     output_folder.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

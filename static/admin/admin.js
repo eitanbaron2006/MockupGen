@@ -501,18 +501,33 @@
 
     // Populate Realism Effects values
     const effects = template.effects || {
-      inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
-      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
-      matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
-      color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
-      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 },
-      photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" },
-      global_png_overlay: { enabled: false, image: "", opacity: 0.5 },
-      global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 }
+      inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15, target: "artwork" },
+      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15, target: "artwork" },
+      matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15, target: "artwork" },
+      color_tint: { enabled: false, temperature: 25, intensity: 0.2, target: "artwork" },
+      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0, target: "artwork" },
+      photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none", target: "all" },
+      global_png_overlay: { enabled: false, image: "", opacity: 0.5, target: "all" },
+      global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0, target: "all" }
     };
     if (!template.effects) {
       template.effects = effects;
     }
+
+    // Update segmented controls highlights
+    document.querySelectorAll(".segmented-control[data-effect-key]").forEach((ctrl) => {
+      const key = ctrl.getAttribute("data-effect-key");
+      if (effects[key]) {
+        const fallbackTarget = ["inner_shadow", "glass_reflection", "matte_finish", "color_tint", "gobo_shadow"].includes(key) 
+          ? "artwork" 
+          : "all";
+        const currentTarget = effects[key].target || fallbackTarget;
+        
+        ctrl.querySelectorAll(".segment-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.getAttribute("data-target-val") === currentTarget);
+        });
+      }
+    });
     
     // Set inner shadow fields
     const shadowEnabled = effects.inner_shadow.enabled || false;
@@ -2318,6 +2333,15 @@
     effects.global_png_overlay.enabled = $("globalPngOverlayEnabled").checked;
     effects.global_png_overlay.opacity = Number($("globalOverlayOpacity").value);
     
+    // Parse target switches from segmented controls
+    document.querySelectorAll(".segmented-control[data-effect-key]").forEach((ctrl) => {
+      const key = ctrl.getAttribute("data-effect-key");
+      const activeBtn = ctrl.querySelector(".segment-btn.active");
+      if (activeBtn && effects[key]) {
+        effects[key].target = activeBtn.getAttribute("data-target-val");
+      }
+    });
+
     persistTemplateState(state.selected);
 
     // Debounce live-refresh in preview mode
@@ -2328,6 +2352,19 @@
       }, 250);
     }
   }
+
+  // Target segment buttons click delegation
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".segment-btn");
+    if (!btn) return;
+    
+    const ctrl = btn.closest(".segmented-control");
+    if (!ctrl) return;
+    
+    ctrl.querySelectorAll(".segment-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    updateEffectsState();
+  });
 
   // Link button toggle
   $("linkShadowSides").onclick = (e) => {
