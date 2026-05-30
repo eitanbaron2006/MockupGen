@@ -645,7 +645,11 @@
     }
     if ($("overlayImageName")) {
       const name = style.overlayImageName || "No image selected";
-      $("overlayImageName").textContent = name;
+      let displayName = name;
+      if (style.overlayImageName && style.overlayImageName.length > 25) {
+        displayName = style.overlayImageName.substring(0, 12) + "..." + style.overlayImageName.substring(style.overlayImageName.length - 10);
+      }
+      $("overlayImageName").textContent = displayName;
       if (style.overlayImageName) {
         $("overlayImageName").setAttribute("title", style.overlayImageName);
       } else {

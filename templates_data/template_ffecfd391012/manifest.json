@@ -28,7 +28,7 @@
       }
     ]
   },
-  "fit_mode": "cover",
+  "fit_mode": "stretch",
   "orientation": "portrait",
   "background": "background.png",
   "foreground": null,
@@ -47,7 +47,7 @@
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
-      "enabled": false,
+      "enabled": true,
       "left": 10,
       "opacity": 0.4,
       "right": 10,

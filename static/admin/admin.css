@@ -1255,6 +1255,14 @@ h2 {
   text-transform: uppercase;
 }
 
+.style-segment:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+
+.style-segment:nth-child(n+3) {
+  border-top: 1px solid var(--line);
+}
+
 .style-segment.active {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1273,6 +1281,7 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: help;
 }
 
 .style-clear-image {
