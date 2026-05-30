@@ -168,6 +168,7 @@
     spacePressed: false,
     lastSelectedTemplateId: null,
     isPreviewingMockup: false,
+    wasPreviewingMockup: false,
     globalOverlayPlacementActive: false,
     globalOverlayDrag: null
   };
@@ -1274,10 +1275,18 @@
           button.textContent = "Position with mouse";
         }
       } else {
+        state.wasPreviewingMockup = state.isPreviewingMockup;
         state.isPreviewingMockup = false;
         if ($("selectionRenderedMockup")) $("selectionRenderedMockup").classList.add("hidden");
         $("selectionSvg").classList.add("hidden");
         $("selectionImageOverlay").classList.add("hidden");
+      }
+    } else {
+      if (state.wasPreviewingMockup) {
+        state.wasPreviewingMockup = false;
+        togglePreviewMode();
+      } else {
+        drawSelection();
       }
     }
     renderGlobalOverlayPlacement();
