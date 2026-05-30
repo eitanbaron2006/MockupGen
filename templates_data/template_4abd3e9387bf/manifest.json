@@ -45,13 +45,13 @@
       "type": "diagonal"
     },
     "inner_shadow": {
-      "blur": 33,
-      "bottom": 29,
+      "blur": 15,
+      "bottom": 10,
       "enabled": true,
-      "left": 29,
-      "opacity": 0.6,
-      "right": 29,
-      "top": 29
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
     }
   }
 }

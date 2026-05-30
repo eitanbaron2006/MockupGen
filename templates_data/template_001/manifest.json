@@ -39,19 +39,19 @@
   ],
   "output_format": "png",
   "effects": {
-    "inner_shadow": {
-      "enabled": false,
-      "top": 10,
-      "right": 10,
-      "bottom": 10,
-      "left": 10,
-      "opacity": 0.4,
-      "blur": 15
-    },
     "glass_reflection": {
       "enabled": false,
-      "type": "diagonal",
-      "opacity": 0.15
+      "opacity": 0.15,
+      "type": "diagonal"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": true,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
     }
   }
 }

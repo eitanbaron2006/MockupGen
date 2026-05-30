@@ -2233,6 +2233,45 @@
     $("reflectionOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
     updateEffectsState();
   };
+
+  // Apply to all button event listener
+  if ($("applyEffectsToAllBtn")) {
+    $("applyEffectsToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects) {
+        toast("No realism effects to apply.");
+        return;
+      }
+      
+      const activeEffects = state.selected.effects;
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying realism effects to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: activeEffects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Realism effects applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error("Apply to all failed:", err);
+        toast("Failed to apply realism effects to all mockups.");
+        setStatus("Ready");
+      }
+    };
+  }
+
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {

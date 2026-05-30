@@ -8,7 +8,25 @@
     "x": 312,
     "y": 326,
     "width": 641,
-    "height": 705
+    "height": 705,
+    "corners": [
+      {
+        "x": 312,
+        "y": 326
+      },
+      {
+        "x": 953,
+        "y": 326
+      },
+      {
+        "x": 953,
+        "y": 1031
+      },
+      {
+        "x": 312,
+        "y": 1031
+      }
+    ]
   },
   "fit_mode": "cover",
   "orientation": "portrait",
@@ -19,5 +37,21 @@
   "supported_modes": [
     "simple"
   ],
-  "output_format": "png"
+  "output_format": "png",
+  "effects": {
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "type": "diagonal"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": true,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
+    }
+  }
 }

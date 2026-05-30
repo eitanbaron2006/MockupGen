@@ -41,17 +41,17 @@
   "effects": {
     "glass_reflection": {
       "enabled": false,
-      "opacity": 0.8,
-      "type": "double_glare"
+      "opacity": 0.15,
+      "type": "diagonal"
     },
     "inner_shadow": {
-      "blur": 19,
-      "bottom": 28,
+      "blur": 15,
+      "bottom": 10,
       "enabled": true,
-      "left": 28,
-      "opacity": 0.35,
-      "right": 28,
-      "top": 28
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
     }
   }
 }

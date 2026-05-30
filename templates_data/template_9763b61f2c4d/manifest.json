@@ -6,11 +6,29 @@
   "canvas_height": 1254,
   "artwork_area": {
     "x": 231,
-    "y": 364,
-    "width": 850,
-    "height": 430
+    "y": 365,
+    "width": 849,
+    "height": 429,
+    "corners": [
+      {
+        "x": 231,
+        "y": 365
+      },
+      {
+        "x": 1080,
+        "y": 365
+      },
+      {
+        "x": 1080,
+        "y": 794
+      },
+      {
+        "x": 231,
+        "y": 794
+      }
+    ]
   },
-  "fit_mode": "cover",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
@@ -19,5 +37,21 @@
   "supported_modes": [
     "simple"
   ],
-  "output_format": "png"
+  "output_format": "png",
+  "effects": {
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "type": "diagonal"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": true,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
+    }
+  }
 }
