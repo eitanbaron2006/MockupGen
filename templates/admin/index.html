@@ -491,6 +491,139 @@
                   </div>
                 </div>
 
+                <!-- Photoshop Color Adjustments Toggle and Details -->
+                <div class="effect-group">
+                  <div class="effect-header" style="justify-content: space-between; width: 100%;">
+                    <label style="margin: 0;">
+                      <input type="checkbox" id="photoshopAdjustmentsEnabled">
+                      Photoshop Color Filters
+                    </label>
+                    <button type="button" class="link-button" id="applyPhotoshopToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                  </div>
+                  <div id="photoshopAdjustmentsControls" class="effect-controls hidden">
+                    <div class="select-row">
+                      <label for="photoshopColorFilter">Filter Profile</label>
+                      <select id="photoshopColorFilter">
+                        <option value="none">None (Neutral)</option>
+                        <option value="vintage">Retro Vintage</option>
+                        <option value="cinematic">Cinematic Teal & Orange</option>
+                        <option value="cool_nordic">Cool Nordic Blue</option>
+                        <option value="warm_sunset">Warm Sunset</option>
+                        <option value="dramatic_bw">Dramatic Black & White</option>
+                      </select>
+                    </div>
+                    <div class="slider-row">
+                      <label for="photoshopBrightness">Brightness</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="photoshopBrightness" min="-0.5" max="0.5" step="0.02" value="0">
+                        <span id="photoshopBrightnessVal">+0%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="photoshopContrast">Contrast</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="photoshopContrast" min="-0.5" max="0.5" step="0.02" value="0">
+                        <span id="photoshopContrastVal">+0%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="photoshopSaturation">Saturation</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="photoshopSaturation" min="-0.5" max="0.5" step="0.02" value="0">
+                        <span id="photoshopSaturationVal">+0%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Global Reflections Toggle and Details -->
+                <div class="effect-group">
+                  <div class="effect-header" style="justify-content: space-between; width: 100%;">
+                    <label style="margin: 0;">
+                      <input type="checkbox" id="globalReflectionsEnabled">
+                      Global Scene Reflections & Rays
+                    </label>
+                    <button type="button" class="link-button" id="applyGlobalReflectionsToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                  </div>
+                  <div id="globalReflectionsControls" class="effect-controls hidden">
+                    <div class="select-row">
+                      <label for="globalWindowType">Window Shadow Reflection</label>
+                      <select id="globalWindowType">
+                        <option value="none">None</option>
+                        <option value="diagonal">Diagonal Sheen</option>
+                        <option value="window_frame">Quad Window Grid</option>
+                        <option value="foliage">Organic Foliage Shadows</option>
+                      </select>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalWindowOpacity">Window Opacity</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalWindowOpacity" min="0" max="0.8" step="0.05" value="0.2">
+                        <span id="globalWindowOpacityVal">20%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalWindowBlur">Window Softness Blur</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalWindowBlur" min="5" max="50" step="1" value="20">
+                        <span id="globalWindowBlurVal">20px</span>
+                      </div>
+                    </div>
+                    <div style="border-top: 1px solid var(--line-soft); margin: 8px 0; padding-top: 8px;"></div>
+                    <div class="select-row">
+                      <label for="globalRaysType">Volumetric Sun Rays</label>
+                      <select id="globalRaysType">
+                        <option value="none">None</option>
+                        <option value="warm_sunlight">Golden Warm Sunlight</option>
+                        <option value="cool_beams">Cool Volumetric Beams</option>
+                      </select>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalRaysOpacity">Rays Opacity</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalRaysOpacity" min="0" max="0.8" step="0.05" value="0.2">
+                        <span id="globalRaysOpacityVal">20%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalRaysAngle">Rays Angle</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalRaysAngle" min="-90" max="90" step="5" value="0">
+                        <span id="globalRaysAngleVal">0°</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Global PNG Overlay Toggle and Details -->
+                <div class="effect-group">
+                  <div class="effect-header" style="justify-content: space-between; width: 100%;">
+                    <label style="margin: 0;">
+                      <input type="checkbox" id="globalPngOverlayEnabled">
+                      Global Custom PNG Overlay
+                    </label>
+                    <button type="button" class="link-button" id="applyGlobalOverlayToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                  </div>
+                  <div id="globalPngOverlayControls" class="effect-controls hidden">
+                    <div class="slider-row" style="align-items: center; margin-bottom: 12px; flex-direction: column;">
+                      <label style="align-self: flex-start; margin-bottom: 4px;">Overlay File</label>
+                      <div style="display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%;">
+                        <button type="button" class="btn compact" id="globalOverlayUploadBtn" style="flex: 1; height: 28px; font-size: 9px; padding: 0 8px;">Upload PNG</button>
+                        <input type="file" id="globalOverlayUploadInput" accept="image/png" style="display: none;">
+                        <span id="globalOverlayName" class="file-title" style="margin: 0; flex: 1.5; font-size: 11px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="No file uploaded">No file</span>
+                        <button type="button" class="queue-delete" id="clearGlobalOverlayBtn" style="height: 24px; width: 24px; padding: 0; flex-shrink: 0;" title="Clear overlay">×</button>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayOpacity">Overlay Opacity</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayOpacity" min="0" max="1" step="0.05" value="0.5">
+                        <span id="globalOverlayOpacityVal">50%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
               <div class="engine-summary">
                 <label>Detection engine</label>

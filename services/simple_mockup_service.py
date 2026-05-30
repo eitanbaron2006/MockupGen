@@ -1,13 +1,15 @@
 import json
 import math
 import random
+import base64
+from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance
 
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 
@@ -452,6 +454,214 @@ def _apply_gobo_shadow(artwork_layer: Image.Image, opts: dict) -> Image.Image:
     return Image.merge("RGBA", (r, g, b, a))
 
 
+def _apply_photoshop_adjustments(img: Image.Image, opts: dict) -> Image.Image:
+    if not opts or not opts.get("enabled", False):
+        return img
+    
+    # 1. Brightness
+    brightness = float(opts.get("brightness", 0.0))
+    if brightness != 0.0:
+        factor = 1.0 + brightness
+        img = ImageEnhance.Brightness(img).enhance(max(0.0, factor))
+        
+    # 2. Contrast
+    contrast = float(opts.get("contrast", 0.0))
+    if contrast != 0.0:
+        factor = 1.0 + contrast
+        img = ImageEnhance.Contrast(img).enhance(max(0.0, factor))
+        
+    # 3. Saturation
+    saturation = float(opts.get("saturation", 0.0))
+    if saturation != 0.0:
+        factor = 1.0 + saturation
+        img = ImageEnhance.Color(img).enhance(max(0.0, factor))
+        
+    # 4. Color Filters (LUT curves)
+    color_filter = opts.get("color_filter", "none")
+    if color_filter != "none":
+        img = img.convert("RGBA")
+        r, g, b, a = img.split()
+        if color_filter == "dramatic_bw":
+            gray = img.convert("L")
+            gray = ImageEnhance.Contrast(gray).enhance(1.4)
+            img = Image.merge("RGBA", (gray, gray, gray, a))
+        elif color_filter == "vintage":
+            r_lut = [max(0, min(255, int(i * 1.05 + 5))) for i in range(256)]
+            g_lut = [max(0, min(255, int(i * 1.02))) for i in range(256)]
+            b_lut = [max(0, min(255, int(i * 0.88 + 12))) for i in range(256)]
+            r = r.point(r_lut)
+            g = g.point(g_lut)
+            b = b.point(b_lut)
+            img = Image.merge("RGBA", (r, g, b, a))
+            img = ImageEnhance.Color(img).enhance(0.9)
+        elif color_filter == "cinematic":
+            r_lut = [max(0, min(255, int(i * 1.1 - 6 if i > 128 else i * 0.9))) for i in range(256)]
+            g_lut = [max(0, min(255, int(i * 1.02))) for i in range(256)]
+            b_lut = [max(0, min(255, int(i * 0.88 + 10 if i > 128 else i * 1.08 + 10))) for i in range(256)]
+            r = r.point(r_lut)
+            g = g.point(g_lut)
+            b = b.point(b_lut)
+            img = Image.merge("RGBA", (r, g, b, a))
+            img = ImageEnhance.Contrast(img).enhance(1.15)
+        elif color_filter == "cool_nordic":
+            r_lut = [max(0, min(255, int(i * 0.94))) for i in range(256)]
+            g_lut = [max(0, min(255, int(i * 0.98))) for i in range(256)]
+            b_lut = [max(0, min(255, int(i * 1.06 + 8))) for i in range(256)]
+            r = r.point(r_lut)
+            g = g.point(g_lut)
+            b = b.point(b_lut)
+            img = Image.merge("RGBA", (r, g, b, a))
+            img = ImageEnhance.Color(img).enhance(0.85)
+        elif color_filter == "warm_sunset":
+            r_lut = [max(0, min(255, int(i * 1.1 + 12))) for i in range(256)]
+            g_lut = [max(0, min(255, int(i * 1.05 + 4))) for i in range(256)]
+            b_lut = [max(0, min(255, int(i * 0.9))) for i in range(256)]
+            r = r.point(r_lut)
+            g = g.point(g_lut)
+            b = b.point(b_lut)
+            img = Image.merge("RGBA", (r, g, b, a))
+            img = ImageEnhance.Color(img).enhance(1.05)
+            
+    return img
+
+
+def _create_window_frame_mask(width: int, height: int, style: str, blur: float) -> Image.Image:
+    mask = Image.new("L", (512, 512), 0)
+    draw = ImageDraw.Draw(mask)
+    
+    if style == "window_frame":
+        draw.rectangle([40, 40, 230, 230], fill=255)
+        draw.rectangle([282, 40, 472, 230], fill=255)
+        draw.rectangle([40, 282, 230, 472], fill=255)
+        draw.rectangle([282, 282, 472, 472], fill=255)
+    elif style == "foliage":
+        random_gen = random.Random(42)
+        for _ in range(15):
+            cx = random_gen.randint(80, 432)
+            cy = random_gen.randint(80, 432)
+            rx = random_gen.randint(30, 100)
+            ry = random_gen.randint(20, 60)
+            leaf = Image.new("L", (512, 512), 0)
+            leaf_draw = ImageDraw.Draw(leaf)
+            leaf_draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=255)
+            leaf = leaf.rotate(random_gen.randint(0, 180), fillcolor=0)
+            mask = ImageChops.lighter(mask, leaf)
+    else:
+        draw.polygon([(0, 0), (220, 0), (512, 292), (512, 512), (292, 512), (0, 220)], fill=255)
+        
+    mask = mask.resize((width, height), Image.Resampling.BILINEAR)
+    if blur > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(blur))
+    return mask
+
+
+def _apply_sun_rays(img: Image.Image, rays_type: str, opacity: float, angle: float) -> Image.Image:
+    if rays_type == "none" or opacity <= 0.001:
+        return img
+        
+    width, height = img.size
+    rays_mask_img = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(rays_mask_img)
+    
+    center_x = -150
+    center_y = -150
+    
+    max_length = math.sqrt(width**2 + height**2) * 1.8
+    num_rays = 20
+    base_angle_rad = math.radians(angle)
+    
+    for i in range(num_rays):
+        w_ang = math.radians(1.5 + (i % 4) * 1.2)
+        r_ang = math.radians(i * (90.0 / num_rays)) + base_angle_rad
+        
+        x1 = center_x + max_length * math.cos(r_ang - w_ang)
+        y1 = center_y + max_length * math.sin(r_ang - w_ang)
+        x2 = center_x + max_length * math.cos(r_ang + w_ang)
+        y2 = center_y + max_length * math.sin(r_ang + w_ang)
+        
+        draw.polygon([(center_x, center_y), (x1, y1), (x2, y2)], fill=255)
+        
+    blur_radius = max(20, int(width / 22))
+    rays_mask_img = rays_mask_img.filter(ImageFilter.GaussianBlur(blur_radius))
+    rays_mask_img = rays_mask_img.point(lambda p: int(p * opacity))
+    
+    if rays_type == "cool_beams":
+        light_color = (225, 240, 255, 255)
+    else:
+        light_color = (255, 232, 185, 255)
+        
+    light_layer = Image.new("RGBA", (width, height), light_color)
+    return Image.composite(light_layer, img.convert("RGBA"), rays_mask_img)
+
+
+def _apply_global_png_overlay(img: Image.Image, opts: dict) -> Image.Image:
+    if not opts or not opts.get("enabled", False):
+        return img
+        
+    data_url = opts.get("image", "")
+    opacity = float(opts.get("opacity", 0.5))
+    
+    if not data_url or opacity <= 0.001:
+        return img
+        
+    try:
+        if "," in data_url:
+            b64_str = data_url.split(",")[1]
+        else:
+            b64_str = data_url
+            
+        overlay_bytes = base64.b64decode(b64_str)
+        overlay = Image.open(BytesIO(overlay_bytes)).convert("RGBA")
+        overlay = overlay.resize(img.size, Image.Resampling.LANCZOS)
+        
+        if opacity < 1.0:
+            r, g, b, a = overlay.split()
+            a = a.point(lambda p: int(p * opacity))
+            overlay = Image.merge("RGBA", (r, g, b, a))
+            
+        return Image.alpha_composite(img.convert("RGBA"), overlay)
+    except Exception as e:
+        print(f"Error applying global PNG overlay: {e}")
+        return img
+
+
+def _apply_global_realism_effects(img: Image.Image, effects: dict | None) -> Image.Image:
+    if not effects:
+        return img
+        
+    img = img.convert("RGBA")
+    
+    if effects.get("photoshop_adjustments", {}).get("enabled", False):
+        img = _apply_photoshop_adjustments(img, effects["photoshop_adjustments"])
+        
+    if effects.get("global_reflections", {}).get("enabled", False):
+        ref_opts = effects["global_reflections"]
+        
+        window_type = ref_opts.get("window_type", "none")
+        window_opacity = float(ref_opts.get("window_opacity", 0.0))
+        if window_type != "none" and window_opacity > 0.001:
+            width, height = img.size
+            window_blur = float(ref_opts.get("window_blur", 20.0))
+            blur_px = max(2, int(window_blur * width / 800))
+            
+            window_mask = _create_window_frame_mask(width, height, window_type, blur_px)
+            window_mask = window_mask.point(lambda p: int(p * window_opacity))
+            
+            reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+            img = Image.composite(reflection_layer, img, window_mask)
+            
+        rays_type = ref_opts.get("rays_type", "none")
+        rays_opacity = float(ref_opts.get("rays_opacity", 0.0))
+        rays_angle = float(ref_opts.get("rays_angle", 0.0))
+        if rays_type != "none" and rays_opacity > 0.001:
+            img = _apply_sun_rays(img, rays_type, opacity=rays_opacity, angle=rays_angle)
+            
+    if effects.get("global_png_overlay", {}).get("enabled", False):
+        img = _apply_global_png_overlay(img, effects["global_png_overlay"])
+        
+    return img
+
+
 def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = None) -> Image.Image:
     # 1. Convert to RGBA
     img = artwork_layer.convert("RGBA")
@@ -697,6 +907,10 @@ def render_simple_mockup(
         if foreground.size != canvas_size:
             raise InvalidTemplateError("Foreground must match canvas size")
         composed = Image.alpha_composite(composed, foreground)
+
+    if realism:
+        active_effects = effects if effects is not None else manifest.get("effects")
+        composed = _apply_global_realism_effects(composed, active_effects)
 
     output_folder.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

@@ -569,3 +569,80 @@ def test_per_mockup_realism_effects(tmp_path):
         pixel_with_shadow = output.getpixel((3, 3))
         assert pixel_with_shadow[0] < 255
 
+
+def test_global_realism_effects(tmp_path):
+    # Tests that global Photoshop color filters, volumetric sun rays, window frame reflections, and global PNG overlays are correctly applied
+    client, folders = build_client(tmp_path)
+    template_folder = folders["TEMPLATES_FOLDER"] / "global_effects_test"
+    template_folder.mkdir(parents=True)
+    
+    # 4x4 transparent green block base64 encoded overlay
+    overlay_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AYbERIZM8O26gAAADFJREFUCNdj/M/A8J+BEYgZGBgY/zMw/Gf8z8AIEwRxmBgYGBhRJM/A8B8mCJJn+P8fADuWDAZt9u/kAAAAAElFTkSuQmCC"
+    
+    manifest = {
+        "template_id": "global_effects_test",
+        "name": "Global Effects Test Mockup",
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "artwork_area": {
+            "x": 2,
+            "y": 2,
+            "width": 6,
+            "height": 6
+        },
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+        "effects": {
+            "photoshop_adjustments": {
+                "enabled": True,
+                "brightness": 0.2,
+                "contrast": -0.1,
+                "saturation": 0.1,
+                "color_filter": "vintage"
+            },
+            "global_reflections": {
+                "enabled": True,
+                "window_type": "foliage",
+                "window_opacity": 0.4,
+                "window_blur": 5,
+                "rays_type": "warm_sunlight",
+                "rays_opacity": 0.3,
+                "rays_angle": 15
+            },
+            "global_png_overlay": {
+                "enabled": True,
+                "image": overlay_b64,
+                "opacity": 0.8
+            }
+        }
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    save_image(template_folder / "background.png", (10, 10), (0, 0, 255, 255))
+    save_image(template_folder / "preview.png", (10, 10), (0, 0, 255, 255))
+
+    # Render with pure solid red artwork (255, 0, 0, 255)
+    response = client.post(
+        "/api/mockups/render",
+        data={
+            "template_id": "global_effects_test",
+            "mode": "simple",
+            "output_format": "png",
+            "artwork": (image_bytes((6, 6), (255, 0, 0, 255)), "artwork.png"),
+            "realism": "true",
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+
+    generated_path = folders["OUTPUT_FOLDER"] / Path(payload["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.size == (10, 10)
+        # Check that global PNG overlay, vintage tone, and foliage shadow composite properly without throwing PIL errors
+        top_left_pixel = output.getpixel((0, 0))
+        assert top_left_pixel != (0, 0, 255, 255)  # The background blue must be shifted by the global environmental effects!
+
+

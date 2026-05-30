@@ -49,6 +49,20 @@
       "opacity": 0.25,
       "type": "double_glare"
     },
+    "global_png_overlay": {
+      "enabled": false,
+      "image": "",
+      "opacity": 0.5
+    },
+    "global_reflections": {
+      "enabled": false,
+      "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
     "gobo_shadow": {
       "enabled": false,
       "opacity": 0.65,
@@ -67,6 +81,13 @@
       "contrast": 0.02,
       "enabled": false,
       "shadow_lift": 0.02
+    },
+    "photoshop_adjustments": {
+      "brightness": 0.02,
+      "color_filter": "none",
+      "contrast": 0.32,
+      "enabled": true,
+      "saturation": 0.28
     }
   }
 }

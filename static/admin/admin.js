@@ -505,7 +505,10 @@
       glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
       matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
       color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
-      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 }
+      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 },
+      photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" },
+      global_png_overlay: { enabled: false, image: "", opacity: 0.5 },
+      global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 }
     };
     if (!template.effects) {
       template.effects = effects;
@@ -579,6 +582,62 @@
     $("goboOpacityVal").textContent = Math.round((effects.gobo_shadow.opacity ?? 0.3) * 100) + "%";
     $("goboScale").value = effects.gobo_shadow.scale ?? 1.0;
     $("goboScaleVal").textContent = (effects.gobo_shadow.scale ?? 1.0) + "x";
+
+    // Set Photoshop Adjustments
+    if (!effects.photoshop_adjustments) {
+      effects.photoshop_adjustments = { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" };
+    }
+    const psEnabled = effects.photoshop_adjustments.enabled || false;
+    $("photoshopAdjustmentsEnabled").checked = psEnabled;
+    $("photoshopAdjustmentsControls").classList.toggle("hidden", !psEnabled);
+    $("photoshopColorFilter").value = effects.photoshop_adjustments.color_filter || "none";
+    $("photoshopBrightness").value = effects.photoshop_adjustments.brightness ?? 0.0;
+    const psBrtVal = Math.round((effects.photoshop_adjustments.brightness ?? 0.0) * 100);
+    $("photoshopBrightnessVal").textContent = (psBrtVal >= 0 ? "+" : "") + psBrtVal + "%";
+    $("photoshopContrast").value = effects.photoshop_adjustments.contrast ?? 0.0;
+    const psCtrVal = Math.round((effects.photoshop_adjustments.contrast ?? 0.0) * 100);
+    $("photoshopContrastVal").textContent = (psCtrVal >= 0 ? "+" : "") + psCtrVal + "%";
+    $("photoshopSaturation").value = effects.photoshop_adjustments.saturation ?? 0.0;
+    const psSatVal = Math.round((effects.photoshop_adjustments.saturation ?? 0.0) * 100);
+    $("photoshopSaturationVal").textContent = (psSatVal >= 0 ? "+" : "") + psSatVal + "%";
+
+    // Set Global Reflections & Sun rays
+    if (!effects.global_reflections) {
+      effects.global_reflections = { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 };
+    }
+    const refEnabled = effects.global_reflections.enabled || false;
+    $("globalReflectionsEnabled").checked = refEnabled;
+    $("globalReflectionsControls").classList.toggle("hidden", !refEnabled);
+    $("globalWindowType").value = effects.global_reflections.window_type || "none";
+    $("globalWindowOpacity").value = effects.global_reflections.window_opacity ?? 0.2;
+    $("globalWindowOpacityVal").textContent = Math.round((effects.global_reflections.window_opacity ?? 0.2) * 100) + "%";
+    $("globalWindowBlur").value = effects.global_reflections.window_blur ?? 20;
+    $("globalWindowBlurVal").textContent = (effects.global_reflections.window_blur ?? 20) + "px";
+    $("globalRaysType").value = effects.global_reflections.rays_type || "none";
+    $("globalRaysOpacity").value = effects.global_reflections.rays_opacity ?? 0.2;
+    $("globalRaysOpacityVal").textContent = Math.round((effects.global_reflections.rays_opacity ?? 0.2) * 100) + "%";
+    $("globalRaysAngle").value = effects.global_reflections.rays_angle ?? 0;
+    $("globalRaysAngleVal").textContent = (effects.global_reflections.rays_angle ?? 0) + "°";
+
+    // Set Global PNG Overlay
+    if (!effects.global_png_overlay) {
+      effects.global_png_overlay = { enabled: false, image: "", opacity: 0.5 };
+    }
+    const overlayEnabled = effects.global_png_overlay.enabled || false;
+    $("globalPngOverlayEnabled").checked = overlayEnabled;
+    $("globalPngOverlayControls").classList.toggle("hidden", !overlayEnabled);
+    $("globalOverlayOpacity").value = effects.global_png_overlay.opacity ?? 0.5;
+    $("globalOverlayOpacityVal").textContent = Math.round((effects.global_png_overlay.opacity ?? 0.5) * 100) + "%";
+    
+    const overlayImgData = effects.global_png_overlay.image || "";
+    if (overlayImgData) {
+      $("globalOverlayName").textContent = "Overlay loaded";
+      $("globalOverlayName").setAttribute("title", "PNG Overlay base64 encoded");
+    } else {
+      $("globalOverlayName").textContent = "No file";
+      $("globalOverlayName").removeAttribute("title");
+    }
+
     if (template.detection_provider) {
       $("confidence").textContent = confidenceLabel(template.detection_confidence);
     } else {
@@ -2189,7 +2248,10 @@
         glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
         matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
         color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
-        gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 }
+        gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 },
+        photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" },
+        global_png_overlay: { enabled: false, image: "", opacity: 0.5 },
+        global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 }
       };
     }
     const effects = state.selected.effects;
@@ -2226,6 +2288,35 @@
     effects.gobo_shadow.enabled = $("goboShadowEnabled").checked;
     effects.gobo_shadow.opacity = Number($("goboOpacity").value);
     effects.gobo_shadow.scale = Number($("goboScale").value);
+
+    // Parse Photoshop Adjustments
+    if (!effects.photoshop_adjustments) {
+      effects.photoshop_adjustments = { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" };
+    }
+    effects.photoshop_adjustments.enabled = $("photoshopAdjustmentsEnabled").checked;
+    effects.photoshop_adjustments.brightness = Number($("photoshopBrightness").value);
+    effects.photoshop_adjustments.contrast = Number($("photoshopContrast").value);
+    effects.photoshop_adjustments.saturation = Number($("photoshopSaturation").value);
+    effects.photoshop_adjustments.color_filter = $("photoshopColorFilter").value;
+
+    // Parse Global Reflections
+    if (!effects.global_reflections) {
+      effects.global_reflections = { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 };
+    }
+    effects.global_reflections.enabled = $("globalReflectionsEnabled").checked;
+    effects.global_reflections.window_type = $("globalWindowType").value;
+    effects.global_reflections.window_opacity = Number($("globalWindowOpacity").value);
+    effects.global_reflections.window_blur = Number($("globalWindowBlur").value);
+    effects.global_reflections.rays_type = $("globalRaysType").value;
+    effects.global_reflections.rays_opacity = Number($("globalRaysOpacity").value);
+    effects.global_reflections.rays_angle = Number($("globalRaysAngle").value);
+
+    // Parse Global PNG Overlay
+    if (!effects.global_png_overlay) {
+      effects.global_png_overlay = { enabled: false, image: "", opacity: 0.5 };
+    }
+    effects.global_png_overlay.enabled = $("globalPngOverlayEnabled").checked;
+    effects.global_png_overlay.opacity = Number($("globalOverlayOpacity").value);
     
     persistTemplateState(state.selected);
 
@@ -2348,6 +2439,123 @@
     updateEffectsState();
   };
 
+  // Photoshop adjustments enabled checkbox
+  $("photoshopAdjustmentsEnabled").onchange = (e) => {
+    $("photoshopAdjustmentsControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Photoshop filter select
+  $("photoshopColorFilter").onchange = () => {
+    updateEffectsState();
+  };
+  // Photoshop brightness slider
+  $("photoshopBrightness").oninput = (e) => {
+    const val = Math.round(Number(e.target.value) * 100);
+    $("photoshopBrightnessVal").textContent = (val >= 0 ? "+" : "") + val + "%";
+    updateEffectsState();
+  };
+  // Photoshop contrast slider
+  $("photoshopContrast").oninput = (e) => {
+    const val = Math.round(Number(e.target.value) * 100);
+    $("photoshopContrastVal").textContent = (val >= 0 ? "+" : "") + val + "%";
+    updateEffectsState();
+  };
+  // Photoshop saturation slider
+  $("photoshopSaturation").oninput = (e) => {
+    const val = Math.round(Number(e.target.value) * 100);
+    $("photoshopSaturationVal").textContent = (val >= 0 ? "+" : "") + val + "%";
+    updateEffectsState();
+  };
+
+  // Global reflections enabled checkbox
+  $("globalReflectionsEnabled").onchange = (e) => {
+    $("globalReflectionsControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Window shadow type select
+  $("globalWindowType").onchange = () => {
+    updateEffectsState();
+  };
+  // Window opacity slider
+  $("globalWindowOpacity").oninput = (e) => {
+    $("globalWindowOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+  // Window blur softness slider
+  $("globalWindowBlur").oninput = (e) => {
+    $("globalWindowBlurVal").textContent = e.target.value + "px";
+    updateEffectsState();
+  };
+  // Rays type select
+  $("globalRaysType").onchange = () => {
+    updateEffectsState();
+  };
+  // Rays opacity slider
+  $("globalRaysOpacity").oninput = (e) => {
+    $("globalRaysOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+  // Rays angle slider
+  $("globalRaysAngle").oninput = (e) => {
+    $("globalRaysAngleVal").textContent = e.target.value + "°";
+    updateEffectsState();
+  };
+
+  // Global PNG Overlay enabled checkbox
+  $("globalPngOverlayEnabled").onchange = (e) => {
+    $("globalPngOverlayControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Trigger file click
+  $("globalOverlayUploadBtn").onclick = () => $("globalOverlayUploadInput").click();
+  // Upload PNG overlay
+  $("globalOverlayUploadInput").onchange = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        if (state.selected) {
+          if (!state.selected.effects) state.selected.effects = {};
+          if (!state.selected.effects.global_png_overlay) {
+            state.selected.effects.global_png_overlay = { enabled: true, image: "", opacity: 0.5 };
+          }
+          state.selected.effects.global_png_overlay.image = dataUrl;
+          state.selected.effects.global_png_overlay.enabled = true;
+          
+          $("globalOverlayName").textContent = "Overlay loaded";
+          $("globalOverlayName").setAttribute("title", file.name);
+          
+          updateEffectsState();
+          
+          if (state.isPreviewingMockup) {
+            refreshPreviewMockup();
+          }
+        }
+      } catch (err) {
+        toast("Failed to read overlay image: " + err.message);
+      }
+    }
+    event.target.value = "";
+  };
+  // Clear PNG overlay
+  $("clearGlobalOverlayBtn").onclick = (e) => {
+    e.preventDefault();
+    if (state.selected && state.selected.effects && state.selected.effects.global_png_overlay) {
+      state.selected.effects.global_png_overlay.image = "";
+      $("globalOverlayName").textContent = "No file";
+      $("globalOverlayName").removeAttribute("title");
+      updateEffectsState();
+      if (state.isPreviewingMockup) {
+        refreshPreviewMockup();
+      }
+    }
+  };
+  // Global PNG overlay opacity slider
+  $("globalOverlayOpacity").oninput = (e) => {
+    $("globalOverlayOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+
   // Apply Matte to all button event listener
   if ($("applyMatteToAllBtn")) {
     $("applyMatteToAllBtn").onclick = async (e) => {
@@ -2466,6 +2674,129 @@
       } catch (err) {
         console.error(err);
         toast("Failed to apply Sunlight Blinds settings.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Photoshop Adjustments to all button event listener
+  if ($("applyPhotoshopToAllBtn")) {
+    $("applyPhotoshopToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.photoshop_adjustments) {
+        toast("No photoshop adjustment settings to apply.");
+        return;
+      }
+      
+      const activePS = JSON.parse(JSON.stringify(state.selected.effects.photoshop_adjustments));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Photoshop Color Filter settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.photoshop_adjustments = JSON.parse(JSON.stringify(activePS));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Photoshop settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Photoshop settings.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Global Reflections & Sun rays to all button event listener
+  if ($("applyGlobalReflectionsToAllBtn")) {
+    $("applyGlobalReflectionsToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.global_reflections) {
+        toast("No global reflections settings to apply.");
+        return;
+      }
+      
+      const activeRef = JSON.parse(JSON.stringify(state.selected.effects.global_reflections));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Global Reflections & Rays settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.global_reflections = JSON.parse(JSON.stringify(activeRef));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Global Reflections & Rays settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Global Reflections & Rays settings.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Global PNG Overlay to all button event listener
+  if ($("applyGlobalOverlayToAllBtn")) {
+    $("applyGlobalOverlayToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.global_png_overlay) {
+        toast("No global PNG overlay settings to apply.");
+        return;
+      }
+      
+      const activeOverlay = JSON.parse(JSON.stringify(state.selected.effects.global_png_overlay));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Global PNG Overlay settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.global_png_overlay = JSON.parse(JSON.stringify(activeOverlay));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Global PNG Overlay settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Global PNG Overlay settings.");
         setStatus("Ready");
       }
     };
