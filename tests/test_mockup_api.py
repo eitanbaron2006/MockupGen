@@ -1,5 +1,6 @@
 import io
 import json
+import base64
 import sys
 from pathlib import Path
 
@@ -16,6 +17,11 @@ def image_bytes(size: tuple[int, int], color: tuple[int, int, int, int]) -> io.B
     Image.new("RGBA", size, color).save(stream, format="PNG")
     stream.seek(0)
     return stream
+
+
+def image_data_url(size: tuple[int, int], color: tuple[int, int, int, int]) -> str:
+    stream = image_bytes(size, color)
+    return "data:image/png;base64," + base64.b64encode(stream.getvalue()).decode("ascii")
 
 
 def striped_image_bytes() -> io.BytesIO:
@@ -1030,6 +1036,34 @@ def test_global_realism_effects(tmp_path):
         # Check that global PNG overlay, vintage tone, and foliage shadow composite properly without throwing PIL errors
         top_left_pixel = output.getpixel((0, 0))
         assert top_left_pixel != (0, 0, 255, 255)  # The background blue must be shifted by the global environmental effects!
+
+
+def test_global_png_overlay_transform_tint_and_blend_controls():
+    from services.simple_mockup_service import _apply_global_png_overlay
+
+    base = Image.new("RGBA", (10, 10), (100, 100, 100, 255))
+    result = _apply_global_png_overlay(
+        base,
+        {
+            "enabled": True,
+            "image": image_data_url((2, 2), (255, 0, 0, 255)),
+            "opacity": 1,
+            "scale": 0.4,
+            "position_x": -0.6,
+            "position_y": 0,
+            "rotation": 0,
+            "blend_mode": "multiply",
+            "tint_color": "#00ff00",
+            "tint_strength": 1,
+            "blur": 0,
+            "flip_x": False,
+            "flip_y": False,
+            "repeat": False,
+        },
+    )
+
+    assert result.getpixel((2, 5))[:3] == (0, 100, 0)
+    assert result.getpixel((8, 5))[:3] == (100, 100, 100)
 
 
 def test_targeted_realism_effects(tmp_path):

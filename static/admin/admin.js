@@ -191,7 +191,24 @@
     color_tint: { enabled: false, temperature: 25, intensity: 0.2, target: "artwork" },
     gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0, target: "artwork" },
     photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none", target: "all" },
-    global_png_overlay: { enabled: false, image: "", opacity: 0.5, target: "all" },
+    global_png_overlay: {
+      enabled: false,
+      image: "",
+      opacity: 0.5,
+      scale: 1,
+      position_x: 0,
+      position_y: 0,
+      rotation: 0,
+      anchor: "center",
+      blend_mode: "normal",
+      tint_color: "#ffffff",
+      tint_strength: 0,
+      blur: 0,
+      flip_x: false,
+      flip_y: false,
+      repeat: false,
+      target: "all"
+    },
     global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0, target: "all" }
   };
   const EFFECT_DOM = {
@@ -273,7 +290,19 @@
       controlsId: "globalPngOverlayControls",
       label: "Global Custom PNG Overlay",
       fields: [
-        { id: "globalOverlayOpacity", valueId: "globalOverlayOpacityVal", prop: "opacity", type: "number", format: "percent" }
+        { id: "globalOverlayOpacity", valueId: "globalOverlayOpacityVal", prop: "opacity", type: "number", format: "percent" },
+        { id: "globalOverlayScale", valueId: "globalOverlayScaleVal", prop: "scale", type: "number", format: "percent" },
+        { id: "globalOverlayPositionX", valueId: "globalOverlayPositionXVal", prop: "position_x", type: "number", format: "signedPercent" },
+        { id: "globalOverlayPositionY", valueId: "globalOverlayPositionYVal", prop: "position_y", type: "number", format: "signedPercent" },
+        { id: "globalOverlayRotation", valueId: "globalOverlayRotationVal", prop: "rotation", type: "number", suffix: "°" },
+        { id: "globalOverlayAnchor", prop: "anchor", type: "string" },
+        { id: "globalOverlayBlendMode", prop: "blend_mode", type: "string" },
+        { id: "globalOverlayTintColor", prop: "tint_color", type: "string" },
+        { id: "globalOverlayTintStrength", valueId: "globalOverlayTintStrengthVal", prop: "tint_strength", type: "number", format: "percent" },
+        { id: "globalOverlayBlur", valueId: "globalOverlayBlurVal", prop: "blur", type: "number", suffix: "px" },
+        { id: "globalOverlayFlipX", prop: "flip_x", type: "boolean" },
+        { id: "globalOverlayFlipY", prop: "flip_y", type: "boolean" },
+        { id: "globalOverlayRepeat", prop: "repeat", type: "boolean" }
       ]
     }
   };
@@ -432,7 +461,8 @@
       const element = getFieldElement(root, field.id);
       if (!element) return;
       const value = config[field.prop] ?? DEFAULT_EFFECTS[key][field.prop];
-      element.value = value;
+      if (field.type === "boolean") element.checked = Boolean(value);
+      else element.value = value;
       setEffectValueLabel(field, value, root);
     });
     const target = config.target || DEFAULT_EFFECTS[key].target;
@@ -461,7 +491,9 @@
     def.fields.forEach((field) => {
       const element = getFieldElement(root, field.id);
       if (!element) return;
-      config[field.prop] = field.type === "number" ? Number(element.value) : element.value;
+      if (field.type === "number") config[field.prop] = Number(element.value);
+      else if (field.type === "boolean") config[field.prop] = element.checked;
+      else config[field.prop] = element.value;
     });
     const activeTarget = root.querySelector(".segmented-control[data-effect-key] .segment-btn.active");
     if (activeTarget) config.target = activeTarget.getAttribute("data-target-val");
@@ -1053,8 +1085,14 @@
       overlayPanelRoot.dataset.effectCollapsed = String(!overlayEnabled);
       updateEffectPanelCollapsed(overlayPanelRoot);
     }
-    $("globalOverlayOpacity").value = globalPngOverlayEffect.opacity ?? 0.5;
-    $("globalOverlayOpacityVal").textContent = Math.round((globalPngOverlayEffect.opacity ?? 0.5) * 100) + "%";
+    EFFECT_DOM.global_png_overlay.fields.forEach((field) => {
+      const element = $(field.id);
+      if (!element) return;
+      const value = globalPngOverlayEffect[field.prop] ?? DEFAULT_EFFECTS.global_png_overlay[field.prop];
+      if (field.type === "boolean") element.checked = Boolean(value);
+      else element.value = value;
+      setEffectValueLabel(field, value);
+    });
     
     const overlayImgData = globalPngOverlayEffect.image || "";
     const overlayRoot = effectGroupForKey("global_png_overlay", "1");
@@ -2877,10 +2915,16 @@
 
     // Parse Global PNG Overlay
     if (!effects.global_png_overlay) {
-      effects.global_png_overlay = { enabled: false, image: "", opacity: 0.5 };
+      effects.global_png_overlay = cloneObject(DEFAULT_EFFECTS.global_png_overlay);
     }
     effects.global_png_overlay.enabled = $("globalPngOverlayEnabled").checked;
-    effects.global_png_overlay.opacity = Number($("globalOverlayOpacity").value);
+    EFFECT_DOM.global_png_overlay.fields.forEach((field) => {
+      const element = $(field.id);
+      if (!element) return;
+      if (field.type === "number") effects.global_png_overlay[field.prop] = Number(element.value);
+      else if (field.type === "boolean") effects.global_png_overlay[field.prop] = element.checked;
+      else effects.global_png_overlay[field.prop] = element.value;
+    });
     const primaryOverlayRoot = effectGroupForKey("global_png_overlay", "1");
     effects.global_png_overlay.image = primaryOverlayRoot?.dataset.overlayImage || primaryEffect(state.selected.effects, "global_png_overlay").image || "";
     
@@ -3251,7 +3295,7 @@
         if (state.selected) {
           if (!state.selected.effects) state.selected.effects = {};
           if (!state.selected.effects.global_png_overlay) {
-            state.selected.effects.global_png_overlay = { enabled: true, image: "", opacity: 0.5 };
+            state.selected.effects.global_png_overlay = cloneObject(DEFAULT_EFFECTS.global_png_overlay);
           }
           const overlayRoot = effectGroupForKey("global_png_overlay", "1");
           if (overlayRoot) overlayRoot.dataset.overlayImage = dataUrl;
@@ -3298,10 +3342,15 @@
     }
   };
   // Global PNG overlay opacity slider
-  $("globalOverlayOpacity").oninput = (e) => {
-    $("globalOverlayOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
-    updateEffectsState();
-  };
+  EFFECT_DOM.global_png_overlay.fields.forEach((field) => {
+    const element = $(field.id);
+    if (!element) return;
+    const eventName = field.type === "string" || field.type === "boolean" ? "change" : "input";
+    element.addEventListener(eventName, async (event) => {
+      if (field.valueId) setEffectValueLabel(field, field.type === "boolean" ? event.target.checked : event.target.value);
+      await updateEffectsState(field.type === "boolean" ? { showLoading: true } : {});
+    });
+  });
 
   // Apply Matte to all button event listener
   if ($("applyMatteToAllBtn")) {

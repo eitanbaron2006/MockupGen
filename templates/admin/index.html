@@ -791,6 +791,88 @@
                         <span id="globalOverlayOpacityVal">50%</span>
                       </div>
                     </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayScale">Size</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayScale" min="0.05" max="3" step="0.05" value="1">
+                        <span id="globalOverlayScaleVal">100%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayPositionX">Position X</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayPositionX" min="-1" max="1" step="0.01" value="0">
+                        <span id="globalOverlayPositionXVal">+0%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayPositionY">Position Y</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayPositionY" min="-1" max="1" step="0.01" value="0">
+                        <span id="globalOverlayPositionYVal">+0%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayRotation">Rotation</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayRotation" min="-180" max="180" step="1" value="0">
+                        <span id="globalOverlayRotationVal">0°</span>
+                      </div>
+                    </div>
+                    <div class="select-row">
+                      <label for="globalOverlayAnchor">Anchor</label>
+                      <select id="globalOverlayAnchor">
+                        <option value="center">Center</option>
+                        <option value="top_left">Top left</option>
+                        <option value="top">Top</option>
+                        <option value="top_right">Top right</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                        <option value="bottom_left">Bottom left</option>
+                        <option value="bottom">Bottom</option>
+                        <option value="bottom_right">Bottom right</option>
+                      </select>
+                    </div>
+                    <div class="select-row">
+                      <label for="globalOverlayBlendMode">Blend Mode</label>
+                      <select id="globalOverlayBlendMode">
+                        <option value="normal">Normal</option>
+                        <option value="multiply">Multiply</option>
+                        <option value="screen">Screen</option>
+                        <option value="overlay">Overlay</option>
+                        <option value="soft_light">Soft light</option>
+                      </select>
+                    </div>
+                    <div class="select-row">
+                      <label for="globalOverlayTintColor">Tint Color</label>
+                      <input type="color" id="globalOverlayTintColor" value="#ffffff">
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayTintStrength">Tint Strength</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayTintStrength" min="0" max="1" step="0.05" value="0">
+                        <span id="globalOverlayTintStrengthVal">0%</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="globalOverlayBlur">Blur</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="globalOverlayBlur" min="0" max="40" step="1" value="0">
+                        <span id="globalOverlayBlurVal">0px</span>
+                      </div>
+                    </div>
+                    <label class="compact-check">
+                      <input type="checkbox" id="globalOverlayFlipX">
+                      Flip X
+                    </label>
+                    <label class="compact-check">
+                      <input type="checkbox" id="globalOverlayFlipY">
+                      Flip Y
+                    </label>
+                    <label class="compact-check">
+                      <input type="checkbox" id="globalOverlayRepeat">
+                      Repeat tile
+                    </label>
                   </div>
                 </div>
 

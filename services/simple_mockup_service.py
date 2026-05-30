@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance, ImageOps
 
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 from services.image_utils import get_perspective_coefficients
@@ -926,7 +926,7 @@ def _apply_global_png_overlay(img: Image.Image, opts: dict) -> Image.Image:
         return img
         
     data_url = opts.get("image", "")
-    opacity = float(opts.get("opacity", 0.5))
+    opacity = max(0.0, min(1.0, float(opts.get("opacity", 0.5))))
     
     if not data_url or opacity <= 0.001:
         return img
@@ -939,17 +939,103 @@ def _apply_global_png_overlay(img: Image.Image, opts: dict) -> Image.Image:
             
         overlay_bytes = base64.b64decode(b64_str)
         overlay = Image.open(BytesIO(overlay_bytes)).convert("RGBA")
-        overlay = overlay.resize(img.size, Image.Resampling.LANCZOS)
+        base = img.convert("RGBA")
+        canvas_w, canvas_h = base.size
+
+        if opts.get("flip_x", False):
+            overlay = ImageOps.mirror(overlay)
+        if opts.get("flip_y", False):
+            overlay = ImageOps.flip(overlay)
+
+        tint_strength = max(0.0, min(1.0, float(opts.get("tint_strength", 0.0))))
+        tint_color = _parse_hex_color(opts.get("tint_color"), (255, 255, 255, 255))
+        if tint_strength > 0:
+            r, g, b, a = overlay.split()
+            tint_layer = Image.new("RGBA", overlay.size, tint_color)
+            tinted = Image.merge("RGBA", (*tint_layer.split()[:3], a))
+            overlay = Image.blend(overlay, tinted, tint_strength)
+
+        if "scale" in opts:
+            scale = max(0.01, min(5.0, float(opts.get("scale", 1.0))))
+            target_w = max(1, int(round(canvas_w * scale)))
+            target_h = max(1, int(round(target_w * overlay.height / max(1, overlay.width))))
+            overlay = overlay.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        else:
+            overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
+
+        rotation = float(opts.get("rotation", 0.0))
+        if abs(rotation) > 0.001:
+            overlay = overlay.rotate(-rotation, resample=Image.Resampling.BICUBIC, expand=True)
+
+        blur = max(0.0, min(80.0, float(opts.get("blur", 0.0))))
+        if blur > 0:
+            overlay = overlay.filter(ImageFilter.GaussianBlur(radius=blur))
         
         if opacity < 1.0:
             r, g, b, a = overlay.split()
             a = a.point(lambda p: int(p * opacity))
             overlay = Image.merge("RGBA", (r, g, b, a))
-            
-        return Image.alpha_composite(img.convert("RGBA"), overlay)
+
+        overlay_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        if bool(opts.get("repeat", False)):
+            for y in range(-overlay.height, canvas_h + overlay.height, overlay.height):
+                for x in range(-overlay.width, canvas_w + overlay.width, overlay.width):
+                    overlay_layer.alpha_composite(overlay, (x, y))
+        else:
+            position_x = max(-1.0, min(1.0, float(opts.get("position_x", 0.0))))
+            position_y = max(-1.0, min(1.0, float(opts.get("position_y", 0.0))))
+            anchor = str(opts.get("anchor", "center"))
+            anchor_map = {
+                "top_left": (0.0, 0.0),
+                "top": (0.5, 0.0),
+                "top_right": (1.0, 0.0),
+                "left": (0.0, 0.5),
+                "center": (0.5, 0.5),
+                "right": (1.0, 0.5),
+                "bottom_left": (0.0, 1.0),
+                "bottom": (0.5, 1.0),
+                "bottom_right": (1.0, 1.0),
+            }
+            ax, ay = anchor_map.get(anchor, anchor_map["center"])
+            point_x = (position_x + 1.0) * canvas_w / 2.0
+            point_y = (position_y + 1.0) * canvas_h / 2.0
+            left = int(round(point_x - overlay.width * ax))
+            top = int(round(point_y - overlay.height * ay))
+            overlay_layer.alpha_composite(overlay, (left, top))
+
+        blend_mode = str(opts.get("blend_mode", "normal")).lower()
+        if blend_mode == "normal":
+            return Image.alpha_composite(base, overlay_layer)
+        return _blend_overlay_layer(base, overlay_layer, blend_mode)
     except Exception as e:
         print(f"Error applying global PNG overlay: {e}")
         return img
+
+
+def _blend_overlay_layer(base: Image.Image, overlay: Image.Image, mode: str) -> Image.Image:
+    import numpy as np
+
+    base_arr = np.asarray(base.convert("RGBA"), dtype=np.float32) / 255.0
+    over_arr = np.asarray(overlay.convert("RGBA"), dtype=np.float32) / 255.0
+    b = base_arr[:, :, :3]
+    o = over_arr[:, :, :3]
+    a = over_arr[:, :, 3:4]
+
+    if mode == "multiply":
+        blended = b * o
+    elif mode == "screen":
+        blended = 1 - (1 - b) * (1 - o)
+    elif mode == "overlay":
+        blended = np.where(b <= 0.5, 2 * b * o, 1 - 2 * (1 - b) * (1 - o))
+    elif mode == "soft_light":
+        blended = (1 - 2 * o) * b * b + 2 * o * b
+    else:
+        blended = o
+
+    out_rgb = b * (1 - a) + blended * a
+    out_a = base_arr[:, :, 3:4]
+    out = np.dstack([out_rgb, out_a])
+    return Image.fromarray(np.clip(out * 255, 0, 255).astype(np.uint8), "RGBA")
 
 
 def _effect_instances(effects: dict, key: str) -> list[dict]:
