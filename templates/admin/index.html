@@ -94,6 +94,11 @@
               <div id="selectionImageOverlay" class="selection-image-overlay hidden">
                 <img id="selectionOverlayImg" src="" alt="Overlay artwork">
               </div>
+              <div id="globalOverlayPlacementLayer" class="global-overlay-placement hidden" aria-label="Drag global PNG overlay">
+                <div id="globalOverlayPlacementItem" class="global-overlay-placement-item">
+                  <img id="globalOverlayPlacementImg" src="" alt="Global PNG overlay placement preview">
+                </div>
+              </div>
               <img id="selectionRenderedMockup" class="selection-rendered-mockup hidden" alt="Rendered mockup">
               <svg id="selectionSvg" class="selection-svg hidden">
                 <defs>
@@ -784,6 +789,7 @@
                         <button type="button" class="queue-delete" id="clearGlobalOverlayBtn" style="height: 24px; width: 24px; padding: 0; flex-shrink: 0;" title="Clear overlay">×</button>
                       </div>
                     </div>
+                    <button type="button" class="btn compact" id="globalOverlayPlaceBtn" style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with mouse</button>
                     <div class="slider-row">
                       <label for="globalOverlayOpacity">Overlay Opacity</label>
                       <div class="slider-container-row">

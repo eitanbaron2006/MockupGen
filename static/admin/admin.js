@@ -167,7 +167,9 @@
     panStart: { x: 0, y: 0 },
     spacePressed: false,
     lastSelectedTemplateId: null,
-    isPreviewingMockup: false
+    isPreviewingMockup: false,
+    globalOverlayPlacementActive: false,
+    globalOverlayDrag: null
   };
   const wizardState = {
     active: false,
@@ -865,6 +867,7 @@
     $("approveButton").disabled = state.busy || !hasTemplate;
     $("publishButton").disabled = state.busy || !hasTemplate;
     if (!template) {
+      setGlobalOverlayPlacementActive(false);
       $("currentTitle").textContent = "Select a mockup";
       $("confidence").textContent = "";
       $("coordX").textContent = "-";
@@ -1168,6 +1171,116 @@
     if (textEl) {
       textEl.textContent = `${Math.round(state.zoom * 100)}%`;
     }
+    renderGlobalOverlayPlacement();
+  }
+
+  function activeGlobalOverlayRoot() {
+    return effectGroupForKey("global_png_overlay", "1");
+  }
+
+  function activeGlobalOverlayImage() {
+    const root = activeGlobalOverlayRoot();
+    const fromRoot = root?.dataset.overlayImage || "";
+    const fromState = primaryEffect(state.selected?.effects || {}, "global_png_overlay").image || "";
+    return fromRoot || fromState;
+  }
+
+  function activeGlobalOverlayConfig() {
+    const config = { ...cloneObject(DEFAULT_EFFECTS.global_png_overlay), ...primaryEffect(state.selected?.effects || {}, "global_png_overlay") };
+    EFFECT_DOM.global_png_overlay.fields.forEach((field) => {
+      const element = $(field.id);
+      if (!element) return;
+      if (field.type === "number") config[field.prop] = Number(element.value);
+      else if (field.type === "boolean") config[field.prop] = element.checked;
+      else config[field.prop] = element.value;
+    });
+    config.image = activeGlobalOverlayImage();
+    return config;
+  }
+
+  function anchorFractions(anchor) {
+    return {
+      top_left: [0, 0],
+      top: [0.5, 0],
+      top_right: [1, 0],
+      left: [0, 0.5],
+      center: [0.5, 0.5],
+      right: [1, 0.5],
+      bottom_left: [0, 1],
+      bottom: [0.5, 1],
+      bottom_right: [1, 1]
+    }[anchor] || [0.5, 0.5];
+  }
+
+  function renderGlobalOverlayPlacement() {
+    const layer = $("globalOverlayPlacementLayer");
+    const item = $("globalOverlayPlacementItem");
+    const img = $("globalOverlayPlacementImg");
+    if (!layer || !item || !img) return;
+    if (!state.globalOverlayPlacementActive || !state.selected || state.isPreviewingMockup) {
+      layer.classList.add("hidden");
+      img.src = "";
+      return;
+    }
+    const rect = getRenderedImageRect($("canvasImage"));
+    const config = activeGlobalOverlayConfig();
+    if (!rect || !config.image) {
+      layer.classList.add("hidden");
+      return;
+    }
+    layer.classList.remove("hidden");
+    layer.style.left = `${rect.left}px`;
+    layer.style.top = `${rect.top}px`;
+    layer.style.width = `${rect.width}px`;
+    layer.style.height = `${rect.height}px`;
+
+    const naturalRatio = img.naturalWidth && img.naturalHeight ? img.naturalHeight / img.naturalWidth : 1;
+    const width = Math.max(1, rect.width * Math.max(0.01, Number(config.scale) || 1));
+    const height = Math.max(1, width * naturalRatio);
+    const [ax, ay] = anchorFractions(config.anchor);
+    const pointX = (Number(config.position_x || 0) + 1) * rect.width / 2;
+    const pointY = (Number(config.position_y || 0) + 1) * rect.height / 2;
+
+    item.style.width = `${width}px`;
+    item.style.height = `${height}px`;
+    item.style.left = `${pointX - width * ax}px`;
+    item.style.top = `${pointY - height * ay}px`;
+    item.style.opacity = String(config.opacity ?? 0.5);
+    item.style.transform = `rotate(${Number(config.rotation || 0)}deg)`;
+    item.style.transformOrigin = `${ax * 100}% ${ay * 100}%`;
+    item.style.mixBlendMode = config.blend_mode === "normal" ? "normal" : config.blend_mode.replace("_", "-");
+    item.style.filter = `blur(${Number(config.blur || 0)}px)`;
+    item.classList.toggle("repeat-preview", Boolean(config.repeat));
+    item.style.backgroundImage = config.repeat ? `url("${config.image}")` : "";
+    item.style.backgroundRepeat = config.repeat ? "repeat" : "";
+    item.style.backgroundSize = config.repeat ? `${width}px ${height}px` : "";
+    img.src = config.image;
+    img.style.transform = `scale(${config.flip_x ? -1 : 1}, ${config.flip_y ? -1 : 1})`;
+  }
+
+  function setGlobalOverlayPlacementActive(active) {
+    state.globalOverlayPlacementActive = Boolean(active);
+    const button = $("globalOverlayPlaceBtn");
+    if (button) {
+      button.classList.toggle("active", state.globalOverlayPlacementActive);
+      button.textContent = state.globalOverlayPlacementActive ? "Exit mouse positioning" : "Position with mouse";
+    }
+    if (state.globalOverlayPlacementActive) {
+      if (!activeGlobalOverlayImage()) {
+        toast("Upload a PNG overlay first.");
+        state.globalOverlayPlacementActive = false;
+        if (button) {
+          button.classList.remove("active");
+          button.textContent = "Position with mouse";
+        }
+      } else {
+        state.isPreviewingMockup = false;
+        if ($("selectionRenderedMockup")) $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionSvg").classList.add("hidden");
+        $("selectionImageOverlay").classList.add("hidden");
+      }
+    }
+    renderGlobalOverlayPlacement();
   }
 
   function applySelectionStyle() {
@@ -1339,9 +1452,16 @@
   }
 
   function drawSelection() {
+    if (state.globalOverlayPlacementActive) {
+      $("selectionSvg").classList.add("hidden");
+      $("selectionImageOverlay").classList.add("hidden");
+      renderGlobalOverlayPlacement();
+      return;
+    }
     if (state.isPreviewingMockup) {
       $("selectionSvg").classList.add("hidden");
       $("selectionImageOverlay").classList.add("hidden");
+      renderGlobalOverlayPlacement();
       return;
     }
     const template = state.selected;
@@ -3311,6 +3431,7 @@
           $("globalOverlayName").setAttribute("title", file.name);
           
           updateEffectsState();
+          renderGlobalOverlayPlacement();
           
           if (state.isPreviewingMockup) {
             refreshPreviewMockup();
@@ -3335,6 +3456,7 @@
       }
       $("globalOverlayName").textContent = "No file";
       $("globalOverlayName").removeAttribute("title");
+      setGlobalOverlayPlacementActive(false);
       updateEffectsState();
       if (state.isPreviewingMockup) {
         refreshPreviewMockup();
@@ -3349,8 +3471,62 @@
     element.addEventListener(eventName, async (event) => {
       if (field.valueId) setEffectValueLabel(field, field.type === "boolean" ? event.target.checked : event.target.value);
       await updateEffectsState(field.type === "boolean" ? { showLoading: true } : {});
+      renderGlobalOverlayPlacement();
     });
   });
+
+  if ($("globalOverlayPlaceBtn")) {
+    $("globalOverlayPlaceBtn").onclick = (event) => {
+      event.preventDefault();
+      setGlobalOverlayPlacementActive(!state.globalOverlayPlacementActive);
+    };
+  }
+
+  const placementLayer = $("globalOverlayPlacementLayer");
+  if (placementLayer) {
+    placementLayer.addEventListener("pointerdown", (event) => {
+      if (!state.globalOverlayPlacementActive || !state.selected) return;
+      event.preventDefault();
+      const rect = getRenderedImageRect($("canvasImage"));
+      if (!rect) return;
+      state.globalOverlayDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startPositionX: Number($("globalOverlayPositionX").value || 0),
+        startPositionY: Number($("globalOverlayPositionY").value || 0),
+        rect
+      };
+      placementLayer.classList.add("dragging");
+      placementLayer.setPointerCapture(event.pointerId);
+    });
+
+    placementLayer.addEventListener("pointermove", (event) => {
+      const drag = state.globalOverlayDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      const nextX = Math.max(-1, Math.min(1, drag.startPositionX + ((event.clientX - drag.startX) / (drag.rect.width * state.zoom)) * 2));
+      const nextY = Math.max(-1, Math.min(1, drag.startPositionY + ((event.clientY - drag.startY) / (drag.rect.height * state.zoom)) * 2));
+      $("globalOverlayPositionX").value = nextX.toFixed(2);
+      $("globalOverlayPositionY").value = nextY.toFixed(2);
+      setEffectValueLabel(EFFECT_DOM.global_png_overlay.fields.find((field) => field.id === "globalOverlayPositionX"), nextX);
+      setEffectValueLabel(EFFECT_DOM.global_png_overlay.fields.find((field) => field.id === "globalOverlayPositionY"), nextY);
+      renderGlobalOverlayPlacement();
+    });
+
+    const endPlacementDrag = async (event) => {
+      const drag = state.globalOverlayDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      state.globalOverlayDrag = null;
+      placementLayer.classList.remove("dragging");
+      try {
+        placementLayer.releasePointerCapture(event.pointerId);
+      } catch (_err) { }
+      await updateEffectsState();
+    };
+    placementLayer.addEventListener("pointerup", endPlacementDrag);
+    placementLayer.addEventListener("pointercancel", endPlacementDrag);
+  }
 
   // Apply Matte to all button event listener
   if ($("applyMatteToAllBtn")) {

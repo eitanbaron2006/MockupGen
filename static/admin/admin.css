@@ -3069,6 +3069,44 @@ input[type="checkbox"]:disabled {
   display: block;
 }
 
+.global-overlay-placement {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: grab;
+  overflow: hidden;
+}
+
+.global-overlay-placement.dragging {
+  cursor: grabbing;
+}
+
+.global-overlay-placement-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  will-change: left, top, transform;
+}
+
+.global-overlay-placement-item img {
+  display: block;
+  height: 100%;
+  width: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.global-overlay-placement-item.repeat-preview img {
+  display: none;
+}
+
+#globalOverlayPlaceBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .selection-rendered-mockup {
   position: absolute;
   left: 0;
