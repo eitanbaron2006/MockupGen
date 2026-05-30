@@ -59,7 +59,7 @@
       "offset_x": 0,
       "offset_y": 0,
       "use_perspective": false,
-      "use_vector_clip": false
+      "use_vector_clip": true
     },
     "inner_shadow": {
       "blur": 15,

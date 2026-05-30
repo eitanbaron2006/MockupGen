@@ -39,47 +39,17 @@
   ],
   "output_format": "png",
   "effects": {
-    "inner_shadow": {
-      "enabled": true,
-      "top": 10,
-      "right": 10,
-      "bottom": 10,
-      "left": 10,
-      "opacity": 0.8,
-      "blur": 7,
-      "target": "artwork"
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.95,
+      "target": "artwork",
+      "temperature": 0
     },
     "glass_reflection": {
       "enabled": false,
-      "type": "diagonal",
       "opacity": 0.15,
-      "target": "artwork"
-    },
-    "matte_finish": {
-      "enabled": true,
-      "shadow_lift": 0,
-      "contrast": 0.1,
-      "target": "artwork"
-    },
-    "color_tint": {
-      "enabled": false,
-      "temperature": 0,
-      "intensity": 0.95,
-      "target": "artwork"
-    },
-    "gobo_shadow": {
-      "enabled": false,
-      "opacity": 0.3,
-      "scale": 0.5,
-      "target": "artwork"
-    },
-    "photoshop_adjustments": {
-      "enabled": false,
-      "brightness": 0,
-      "contrast": 0,
-      "saturation": 0,
-      "color_filter": "none",
-      "target": "all"
+      "target": "artwork",
+      "type": "diagonal"
     },
     "global_png_overlay": {
       "enabled": false,
@@ -89,12 +59,42 @@
     },
     "global_reflections": {
       "enabled": false,
-      "window_type": "none",
-      "window_opacity": 0.2,
-      "window_blur": 20,
-      "rays_type": "none",
-      "rays_opacity": 0.2,
       "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 0.5,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 7,
+      "bottom": 10,
+      "enabled": true,
+      "left": 10,
+      "opacity": 0.8,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": 0.1,
+      "enabled": true,
+      "shadow_lift": 0,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0,
+      "color_filter": "none",
+      "contrast": 0,
+      "enabled": false,
+      "saturation": 0,
       "target": "all"
     }
   },

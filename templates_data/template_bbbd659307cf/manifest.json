@@ -5,34 +5,34 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 384,
-    "y": 201,
-    "width": 601,
-    "height": 450,
+    "x": 388,
+    "y": 206,
+    "width": 594,
+    "height": 442,
     "corners": [
       {
-        "x": 384,
-        "y": 204
+        "x": 388,
+        "y": 207
       },
       {
-        "x": 985,
-        "y": 201
+        "x": 981,
+        "y": 206
       },
       {
-        "x": 985,
-        "y": 651
+        "x": 982,
+        "y": 647
       },
       {
-        "x": 386,
-        "y": 651
+        "x": 388,
+        "y": 648
       }
     ]
   },
-  "fit_mode": "cover",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": null,
+  "mask": "mask.png",
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -44,6 +44,23 @@
       "opacity": 0.15,
       "type": "diagonal"
     },
+    "green_frame_mockups": {
+      "aa_scale": 1,
+      "artwork_scale": 1,
+      "contain_bg_color": "#ffffff",
+      "edge_aa_radius": 0,
+      "edge_expand": 0,
+      "enable_inner_shadow": false,
+      "feather_radius": 2,
+      "fit_mode": "stretch",
+      "inner_shadow_size": 10,
+      "inner_shadow_strength": 0.35,
+      "mask_build_quality": 2,
+      "offset_x": 0,
+      "offset_y": 0,
+      "use_perspective": false,
+      "use_vector_clip": true
+    },
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
@@ -53,5 +70,91 @@
       "right": 10,
       "top": 10
     }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 23,
+    "green_pixels": 261206,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 388,
+        "y": 207
+      },
+      {
+        "x": 981,
+        "y": 206
+      },
+      {
+        "x": 982,
+        "y": 647
+      },
+      {
+        "x": 388,
+        "y": 648
+      }
+    ],
+    "regions": [
+      {
+        "area": 311056,
+        "corners": [
+          {
+            "x": 388,
+            "y": 207
+          },
+          {
+            "x": 981,
+            "y": 206
+          },
+          {
+            "x": 982,
+            "y": 647
+          },
+          {
+            "x": 388,
+            "y": 648
+          }
+        ],
+        "height": 487,
+        "inner_corners": [
+          {
+            "x": 388,
+            "y": 207
+          },
+          {
+            "x": 981,
+            "y": 206
+          },
+          {
+            "x": 982,
+            "y": 647
+          },
+          {
+            "x": 388,
+            "y": 648
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 366,
+            "y": 185
+          },
+          {
+            "x": 1003,
+            "y": 184
+          },
+          {
+            "x": 1004,
+            "y": 669
+          },
+          {
+            "x": 366,
+            "y": 670
+          }
+        ],
+        "width": 639,
+        "x": 366,
+        "y": 184
+      }
+    ]
   }
 }
