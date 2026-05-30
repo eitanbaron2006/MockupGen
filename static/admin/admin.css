@@ -372,7 +372,7 @@ h2 {
 .content {
   display: grid;
   gap: 16px;
-  grid-template-columns: 300px minmax(430px, 1fr) 296px;
+  grid-template-columns: 300px minmax(430px, 1fr) 328px;
   height: calc(100dvh - 66px);
   min-height: 0;
   overflow: hidden;
@@ -2848,7 +2848,7 @@ input[type="checkbox"]:disabled {
   }
 
   .content {
-    grid-template-columns: 260px minmax(370px, 1fr) 272px;
+    grid-template-columns: 260px minmax(370px, 1fr) 300px;
     gap: 11px;
     padding: 12px;
   }
@@ -3165,6 +3165,42 @@ input[type="checkbox"]:disabled {
 
 .effect-controls.hidden {
   display: none !important;
+}
+
+.effect-add-instance,
+.effect-remove-instance {
+  flex: 0 0 auto;
+  font-size: 17px;
+  height: 24px;
+  margin-left: 2px;
+  width: 24px;
+}
+
+.effect-remove-instance {
+  color: var(--muted);
+}
+
+.effect-remove-instance:hover {
+  color: var(--accent);
+}
+
+.effect-instance-secondary {
+  margin-top: -4px;
+}
+
+.effect-instance-label {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--faint);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-left: 7px;
+  padding: 2px 5px;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .slider-row,

@@ -184,6 +184,287 @@
     selectedTemplates: new Set()
   };
   const $ = (id) => document.getElementById(id);
+  const DEFAULT_EFFECTS = {
+    inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15, target: "artwork" },
+    glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15, target: "artwork" },
+    matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15, target: "artwork" },
+    color_tint: { enabled: false, temperature: 25, intensity: 0.2, target: "artwork" },
+    gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0, target: "artwork" },
+    photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none", target: "all" },
+    global_png_overlay: { enabled: false, image: "", opacity: 0.5, target: "all" },
+    global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0, target: "all" }
+  };
+  const EFFECT_DOM = {
+    inner_shadow: {
+      enabledId: "innerShadowEnabled",
+      controlsId: "innerShadowControls",
+      label: "Inner Frame Shadow",
+      fields: [
+        { id: "shadowOpacity", valueId: "shadowOpacityVal", prop: "opacity", type: "number", format: "percent" },
+        { id: "shadowBlur", valueId: "shadowBlurVal", prop: "blur", type: "number", suffix: "px" },
+        { id: "shadowTop", valueId: "shadowTopVal", prop: "top", type: "number", suffix: "px" },
+        { id: "shadowBottom", valueId: "shadowBottomVal", prop: "bottom", type: "number", suffix: "px" },
+        { id: "shadowLeft", valueId: "shadowLeftVal", prop: "left", type: "number", suffix: "px" },
+        { id: "shadowRight", valueId: "shadowRightVal", prop: "right", type: "number", suffix: "px" }
+      ]
+    },
+    glass_reflection: {
+      enabledId: "glassReflectionEnabled",
+      controlsId: "glassReflectionControls",
+      label: "Glass Reflection Cover",
+      fields: [
+        { id: "reflectionType", prop: "type", type: "string" },
+        { id: "reflectionOpacity", valueId: "reflectionOpacityVal", prop: "opacity", type: "number", format: "percent" }
+      ]
+    },
+    matte_finish: {
+      enabledId: "matteFinishEnabled",
+      controlsId: "matteFinishControls",
+      label: "Faded Matte Paper",
+      fields: [
+        { id: "matteShadowLift", valueId: "matteShadowLiftVal", prop: "shadow_lift", type: "number", format: "percent" },
+        { id: "matteContrast", valueId: "matteContrastVal", prop: "contrast", type: "number", format: "signedPercent" }
+      ]
+    },
+    color_tint: {
+      enabledId: "colorTintEnabled",
+      controlsId: "colorTintControls",
+      label: "Ambient Light Warmth",
+      fields: [
+        { id: "tintTemperature", valueId: "tintTemperatureVal", prop: "temperature", type: "number", format: "signedNumber" },
+        { id: "tintIntensity", valueId: "tintIntensityVal", prop: "intensity", type: "number", format: "percent" }
+      ]
+    },
+    gobo_shadow: {
+      enabledId: "goboShadowEnabled",
+      controlsId: "goboShadowControls",
+      label: "Sunlight Blinds Shadow",
+      fields: [
+        { id: "goboOpacity", valueId: "goboOpacityVal", prop: "opacity", type: "number", format: "percent" },
+        { id: "goboScale", valueId: "goboScaleVal", prop: "scale", type: "number", format: "scale" }
+      ]
+    },
+    photoshop_adjustments: {
+      enabledId: "photoshopAdjustmentsEnabled",
+      controlsId: "photoshopAdjustmentsControls",
+      label: "Photoshop Color Filters",
+      fields: [
+        { id: "photoshopColorFilter", prop: "color_filter", type: "string" },
+        { id: "photoshopBrightness", valueId: "photoshopBrightnessVal", prop: "brightness", type: "number", format: "signedPercent" },
+        { id: "photoshopContrast", valueId: "photoshopContrastVal", prop: "contrast", type: "number", format: "signedPercent" },
+        { id: "photoshopSaturation", valueId: "photoshopSaturationVal", prop: "saturation", type: "number", format: "signedPercent" }
+      ]
+    },
+    global_reflections: {
+      enabledId: "globalReflectionsEnabled",
+      controlsId: "globalReflectionsControls",
+      label: "Global Scene Reflections & Rays",
+      fields: [
+        { id: "globalWindowType", prop: "window_type", type: "string" },
+        { id: "globalWindowOpacity", valueId: "globalWindowOpacityVal", prop: "window_opacity", type: "number", format: "percent" },
+        { id: "globalWindowBlur", valueId: "globalWindowBlurVal", prop: "window_blur", type: "number", suffix: "px" },
+        { id: "globalRaysType", prop: "rays_type", type: "string" },
+        { id: "globalRaysOpacity", valueId: "globalRaysOpacityVal", prop: "rays_opacity", type: "number", format: "percent" },
+        { id: "globalRaysAngle", valueId: "globalRaysAngleVal", prop: "rays_angle", type: "number", suffix: "°" }
+      ]
+    },
+    global_png_overlay: {
+      enabledId: "globalPngOverlayEnabled",
+      controlsId: "globalPngOverlayControls",
+      label: "Global Custom PNG Overlay",
+      fields: [
+        { id: "globalOverlayOpacity", valueId: "globalOverlayOpacityVal", prop: "opacity", type: "number", format: "percent" }
+      ]
+    }
+  };
+
+  function cloneObject(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function defaultEffects() {
+    return cloneObject(DEFAULT_EFFECTS);
+  }
+
+  function effectInstances(effects, key) {
+    const value = effects && effects[key];
+    if (Array.isArray(value)) {
+      return value.filter((item) => item && typeof item === "object").slice(0, 2);
+    }
+    if (value && typeof value === "object") return [value];
+    return [cloneObject(DEFAULT_EFFECTS[key])];
+  }
+
+  function primaryEffect(effects, key) {
+    const instances = effectInstances(effects, key);
+    return { ...cloneObject(DEFAULT_EFFECTS[key]), ...(instances[0] || {}) };
+  }
+
+  function setEffectValueLabel(field, value, root = document) {
+    if (!field.valueId) return;
+    const element = root.querySelector(`#${CSS.escape(field.valueId)}`) || root.querySelector(`[data-original-id="${field.valueId}"]`);
+    if (!element) return;
+    const number = Number(value);
+    if (field.format === "percent") {
+      element.textContent = Math.round(number * 100) + "%";
+    } else if (field.format === "signedPercent") {
+      const percent = Math.round(number * 100);
+      element.textContent = (percent >= 0 ? "+" : "") + percent + "%";
+    } else if (field.format === "signedNumber") {
+      element.textContent = (number > 0 ? "+" : "") + number;
+    } else if (field.format === "scale") {
+      element.textContent = number.toFixed(1) + "x";
+    } else {
+      element.textContent = value + (field.suffix || "");
+    }
+  }
+
+  function getFieldElement(root, id) {
+    return root.querySelector(`#${CSS.escape(id)}`) || root.querySelector(`[data-original-id="${id}"]`);
+  }
+
+  function setEffectInstanceValues(root, key, config) {
+    const def = EFFECT_DOM[key];
+    const enabled = getFieldElement(root, def.enabledId);
+    const controls = getFieldElement(root, def.controlsId);
+    if (enabled) enabled.checked = Boolean(config.enabled);
+    if (controls) controls.classList.toggle("hidden", !Boolean(config.enabled));
+    def.fields.forEach((field) => {
+      const element = getFieldElement(root, field.id);
+      if (!element) return;
+      const value = config[field.prop] ?? DEFAULT_EFFECTS[key][field.prop];
+      element.value = value;
+      setEffectValueLabel(field, value, root);
+    });
+    const target = config.target || DEFAULT_EFFECTS[key].target;
+    root.querySelectorAll(".segmented-control[data-effect-key] .segment-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.getAttribute("data-target-val") === target);
+    });
+    if (key === "global_png_overlay") {
+      root.dataset.overlayImage = config.image || "";
+      const name = getFieldElement(root, "globalOverlayName");
+      if (name) {
+        name.textContent = config.image ? "Overlay loaded" : "No file";
+        if (config.image) {
+          name.setAttribute("title", "PNG Overlay base64 encoded");
+        } else {
+          name.removeAttribute("title");
+        }
+      }
+    }
+  }
+
+  function readEffectInstanceValues(root, key) {
+    const def = EFFECT_DOM[key];
+    const config = cloneObject(DEFAULT_EFFECTS[key]);
+    const enabled = getFieldElement(root, def.enabledId);
+    if (enabled) config.enabled = enabled.checked;
+    def.fields.forEach((field) => {
+      const element = getFieldElement(root, field.id);
+      if (!element) return;
+      config[field.prop] = field.type === "number" ? Number(element.value) : element.value;
+    });
+    const activeTarget = root.querySelector(".segmented-control[data-effect-key] .segment-btn.active");
+    if (activeTarget) config.target = activeTarget.getAttribute("data-target-val");
+    if (key === "global_png_overlay") {
+      config.image = root.dataset.overlayImage || "";
+    }
+    return config;
+  }
+
+  function effectGroupForKey(key, instance = "1") {
+    return document.querySelector(`.effect-group[data-effect-key="${key}"][data-effect-instance="${instance}"]`);
+  }
+
+  function syncEffectAddButton(key) {
+    const group = effectGroupForKey(key, "1");
+    if (!group) return;
+    const button = group.querySelector(".effect-add-instance");
+    if (button) button.classList.toggle("hidden", Boolean(effectGroupForKey(key, "2")));
+  }
+
+  function prepareEffectGroupControls(group, key, instance) {
+    group.dataset.effectKey = key;
+    group.dataset.effectInstance = instance;
+    group.querySelectorAll("[id]").forEach((element) => {
+      const originalId = element.dataset.originalId || element.id;
+      element.dataset.originalId = originalId;
+      if (instance === "2") element.id = `${originalId}Instance2`;
+    });
+    group.querySelectorAll("label[for]").forEach((label) => {
+      const originalFor = label.dataset.originalFor || label.getAttribute("for");
+      label.dataset.originalFor = originalFor;
+      if (instance === "2") label.setAttribute("for", `${originalFor}Instance2`);
+    });
+    group.querySelectorAll(".segmented-control[data-effect-key]").forEach((ctrl) => {
+      ctrl.setAttribute("data-effect-key", key);
+    });
+  }
+
+  function setupEffectInstanceControls() {
+    Object.keys(EFFECT_DOM).forEach((key) => {
+      const def = EFFECT_DOM[key];
+      const enabled = $(def.enabledId);
+      if (!enabled) return;
+      const group = enabled.closest(".effect-group");
+      if (!group || group.dataset.effectKey) return;
+      prepareEffectGroupControls(group, key, "1");
+      const header = group.querySelector(".effect-header");
+      const addButton = document.createElement("button");
+      addButton.type = "button";
+      addButton.className = "icon-button effect-add-instance";
+      addButton.dataset.effectKey = key;
+      addButton.setAttribute("aria-label", `Add ${def.label} instance`);
+      addButton.setAttribute("title", "Add second instance");
+      addButton.textContent = "+";
+      header.appendChild(addButton);
+    });
+  }
+
+  function removeSecondEffectInstance(key) {
+    const second = effectGroupForKey(key, "2");
+    if (second) second.remove();
+    syncEffectAddButton(key);
+    updateEffectsState();
+  }
+
+  function createSecondEffectInstance(key, config) {
+    const original = effectGroupForKey(key, "1");
+    if (!original || effectGroupForKey(key, "2")) return;
+    const clone = original.cloneNode(true);
+    clone.classList.add("effect-instance-secondary");
+    prepareEffectGroupControls(clone, key, "2");
+    const header = clone.querySelector(".effect-header");
+    header.querySelectorAll(".link-button, .effect-add-instance").forEach((button) => button.remove());
+    const titleLabel = header.querySelector("label");
+    if (titleLabel && !titleLabel.querySelector(".effect-instance-label")) {
+      const badge = document.createElement("span");
+      badge.className = "effect-instance-label";
+      badge.textContent = "Second";
+      titleLabel.appendChild(badge);
+    }
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "icon-button effect-remove-instance";
+    deleteButton.dataset.effectKey = key;
+    deleteButton.setAttribute("aria-label", `Remove second ${EFFECT_DOM[key].label} instance`);
+    deleteButton.setAttribute("title", "Remove second instance");
+    deleteButton.textContent = "×";
+    header.appendChild(deleteButton);
+    original.insertAdjacentElement("afterend", clone);
+    setEffectInstanceValues(clone, key, config || cloneObject(DEFAULT_EFFECTS[key]));
+    syncEffectAddButton(key);
+  }
+
+  function renderAdditionalEffectInstances(effects) {
+    Object.keys(EFFECT_DOM).forEach((key) => {
+      const second = effectGroupForKey(key, "2");
+      if (second) second.remove();
+      const instances = effectInstances(effects, key);
+      if (instances[1]) createSecondEffectInstance(key, { ...cloneObject(DEFAULT_EFFECTS[key]), ...instances[1] });
+      syncEffectAddButton(key);
+    });
+  }
 
   async function api(url, options = {}) {
     const headers = { ...(options.headers || {}), "X-CSRF-Token": csrf };
@@ -500,28 +781,27 @@
     });
 
     // Populate Realism Effects values
-    const effects = template.effects || {
-      inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15, target: "artwork" },
-      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15, target: "artwork" },
-      matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15, target: "artwork" },
-      color_tint: { enabled: false, temperature: 25, intensity: 0.2, target: "artwork" },
-      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0, target: "artwork" },
-      photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none", target: "all" },
-      global_png_overlay: { enabled: false, image: "", opacity: 0.5, target: "all" },
-      global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0, target: "all" }
-    };
+    const effects = template.effects || defaultEffects();
     if (!template.effects) {
       template.effects = effects;
     }
+    const innerShadowEffect = primaryEffect(effects, "inner_shadow");
+    const glassReflectionEffect = primaryEffect(effects, "glass_reflection");
+    const matteFinishEffect = primaryEffect(effects, "matte_finish");
+    const colorTintEffect = primaryEffect(effects, "color_tint");
+    const goboShadowEffect = primaryEffect(effects, "gobo_shadow");
+    const photoshopAdjustmentsEffect = primaryEffect(effects, "photoshop_adjustments");
+    const globalReflectionsEffect = primaryEffect(effects, "global_reflections");
+    const globalPngOverlayEffect = primaryEffect(effects, "global_png_overlay");
 
     // Update segmented controls highlights
     document.querySelectorAll(".segmented-control[data-effect-key]").forEach((ctrl) => {
       const key = ctrl.getAttribute("data-effect-key");
-      if (effects[key]) {
+      if (DEFAULT_EFFECTS[key]) {
         const fallbackTarget = ["inner_shadow", "glass_reflection", "matte_finish", "color_tint", "gobo_shadow"].includes(key) 
           ? "artwork" 
           : "all";
-        const currentTarget = effects[key].target || fallbackTarget;
+        const currentTarget = primaryEffect(effects, key).target || fallbackTarget;
         
         ctrl.querySelectorAll(".segment-btn").forEach((btn) => {
           btn.classList.toggle("active", btn.getAttribute("data-target-val") === currentTarget);
@@ -530,121 +810,105 @@
     });
     
     // Set inner shadow fields
-    const shadowEnabled = effects.inner_shadow.enabled || false;
+    const shadowEnabled = innerShadowEffect.enabled || false;
     $("innerShadowEnabled").checked = shadowEnabled;
     $("innerShadowControls").classList.toggle("hidden", !shadowEnabled);
     
-    $("shadowOpacity").value = effects.inner_shadow.opacity ?? 0.4;
-    $("shadowOpacityVal").textContent = Math.round((effects.inner_shadow.opacity ?? 0.4) * 100) + "%";
+    $("shadowOpacity").value = innerShadowEffect.opacity ?? 0.4;
+    $("shadowOpacityVal").textContent = Math.round((innerShadowEffect.opacity ?? 0.4) * 100) + "%";
     
-    $("shadowBlur").value = effects.inner_shadow.blur ?? 15;
-    $("shadowBlurVal").textContent = (effects.inner_shadow.blur ?? 15) + "px";
+    $("shadowBlur").value = innerShadowEffect.blur ?? 15;
+    $("shadowBlurVal").textContent = (innerShadowEffect.blur ?? 15) + "px";
     
-    $("shadowTop").value = effects.inner_shadow.top ?? 10;
-    $("shadowTopVal").textContent = (effects.inner_shadow.top ?? 10) + "px";
+    $("shadowTop").value = innerShadowEffect.top ?? 10;
+    $("shadowTopVal").textContent = (innerShadowEffect.top ?? 10) + "px";
     
-    $("shadowBottom").value = effects.inner_shadow.bottom ?? 10;
-    $("shadowBottomVal").textContent = (effects.inner_shadow.bottom ?? 10) + "px";
+    $("shadowBottom").value = innerShadowEffect.bottom ?? 10;
+    $("shadowBottomVal").textContent = (innerShadowEffect.bottom ?? 10) + "px";
     
-    $("shadowLeft").value = effects.inner_shadow.left ?? 10;
-    $("shadowLeftVal").textContent = (effects.inner_shadow.left ?? 10) + "px";
+    $("shadowLeft").value = innerShadowEffect.left ?? 10;
+    $("shadowLeftVal").textContent = (innerShadowEffect.left ?? 10) + "px";
     
-    $("shadowRight").value = effects.inner_shadow.right ?? 10;
-    $("shadowRightVal").textContent = (effects.inner_shadow.right ?? 10) + "px";
+    $("shadowRight").value = innerShadowEffect.right ?? 10;
+    $("shadowRightVal").textContent = (innerShadowEffect.right ?? 10) + "px";
     
     // Set glass reflection fields
-    const glassEnabled = effects.glass_reflection.enabled || false;
+    const glassEnabled = glassReflectionEffect.enabled || false;
     $("glassReflectionEnabled").checked = glassEnabled;
     $("glassReflectionControls").classList.toggle("hidden", !glassEnabled);
     
-    $("reflectionType").value = effects.glass_reflection.type || "diagonal";
-    $("reflectionOpacity").value = effects.glass_reflection.opacity ?? 0.15;
-    $("reflectionOpacityVal").textContent = Math.round((effects.glass_reflection.opacity ?? 0.15) * 100) + "%";
+    $("reflectionType").value = glassReflectionEffect.type || "diagonal";
+    $("reflectionOpacity").value = glassReflectionEffect.opacity ?? 0.15;
+    $("reflectionOpacityVal").textContent = Math.round((glassReflectionEffect.opacity ?? 0.15) * 100) + "%";
 
     // Set faded matte paper fields
-    if (!effects.matte_finish) {
-      effects.matte_finish = { enabled: false, shadow_lift: 0.08, contrast: -0.15 };
-    }
-    const matteEnabled = effects.matte_finish.enabled || false;
+    const matteEnabled = matteFinishEffect.enabled || false;
     $("matteFinishEnabled").checked = matteEnabled;
     $("matteFinishControls").classList.toggle("hidden", !matteEnabled);
-    $("matteShadowLift").value = effects.matte_finish.shadow_lift ?? 0.08;
-    $("matteShadowLiftVal").textContent = Math.round((effects.matte_finish.shadow_lift ?? 0.08) * 100) + "%";
-    $("matteContrast").value = effects.matte_finish.contrast ?? -0.15;
-    $("matteContrastVal").textContent = Math.round((effects.matte_finish.contrast ?? -0.15) * 100) + "%";
+    $("matteShadowLift").value = matteFinishEffect.shadow_lift ?? 0.08;
+    $("matteShadowLiftVal").textContent = Math.round((matteFinishEffect.shadow_lift ?? 0.08) * 100) + "%";
+    $("matteContrast").value = matteFinishEffect.contrast ?? -0.15;
+    $("matteContrastVal").textContent = Math.round((matteFinishEffect.contrast ?? -0.15) * 100) + "%";
 
     // Set ambient warmth fields
-    if (!effects.color_tint) {
-      effects.color_tint = { enabled: false, temperature: 25, intensity: 0.2 };
-    }
-    const tintEnabled = effects.color_tint.enabled || false;
+    const tintEnabled = colorTintEffect.enabled || false;
     $("colorTintEnabled").checked = tintEnabled;
     $("colorTintControls").classList.toggle("hidden", !tintEnabled);
-    $("tintTemperature").value = effects.color_tint.temperature ?? 25;
-    const tempSign = (effects.color_tint.temperature ?? 25) > 0 ? "+" : "";
-    $("tintTemperatureVal").textContent = tempSign + (effects.color_tint.temperature ?? 25);
-    $("tintIntensity").value = effects.color_tint.intensity ?? 0.2;
-    $("tintIntensityVal").textContent = Math.round((effects.color_tint.intensity ?? 0.2) * 100) + "%";
+    $("tintTemperature").value = colorTintEffect.temperature ?? 25;
+    const tempSign = (colorTintEffect.temperature ?? 25) > 0 ? "+" : "";
+    $("tintTemperatureVal").textContent = tempSign + (colorTintEffect.temperature ?? 25);
+    $("tintIntensity").value = colorTintEffect.intensity ?? 0.2;
+    $("tintIntensityVal").textContent = Math.round((colorTintEffect.intensity ?? 0.2) * 100) + "%";
 
     // Set sunlight blinds fields
-    if (!effects.gobo_shadow) {
-      effects.gobo_shadow = { enabled: false, opacity: 0.3, scale: 1.0 };
-    }
-    const goboEnabled = effects.gobo_shadow.enabled || false;
+    const goboEnabled = goboShadowEffect.enabled || false;
     $("goboShadowEnabled").checked = goboEnabled;
     $("goboShadowControls").classList.toggle("hidden", !goboEnabled);
-    $("goboOpacity").value = effects.gobo_shadow.opacity ?? 0.3;
-    $("goboOpacityVal").textContent = Math.round((effects.gobo_shadow.opacity ?? 0.3) * 100) + "%";
-    $("goboScale").value = effects.gobo_shadow.scale ?? 1.0;
-    $("goboScaleVal").textContent = (effects.gobo_shadow.scale ?? 1.0) + "x";
+    $("goboOpacity").value = goboShadowEffect.opacity ?? 0.3;
+    $("goboOpacityVal").textContent = Math.round((goboShadowEffect.opacity ?? 0.3) * 100) + "%";
+    $("goboScale").value = goboShadowEffect.scale ?? 1.0;
+    $("goboScaleVal").textContent = (goboShadowEffect.scale ?? 1.0) + "x";
 
     // Set Photoshop Adjustments
-    if (!effects.photoshop_adjustments) {
-      effects.photoshop_adjustments = { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" };
-    }
-    const psEnabled = effects.photoshop_adjustments.enabled || false;
+    const psEnabled = photoshopAdjustmentsEffect.enabled || false;
     $("photoshopAdjustmentsEnabled").checked = psEnabled;
     $("photoshopAdjustmentsControls").classList.toggle("hidden", !psEnabled);
-    $("photoshopColorFilter").value = effects.photoshop_adjustments.color_filter || "none";
-    $("photoshopBrightness").value = effects.photoshop_adjustments.brightness ?? 0.0;
-    const psBrtVal = Math.round((effects.photoshop_adjustments.brightness ?? 0.0) * 100);
+    $("photoshopColorFilter").value = photoshopAdjustmentsEffect.color_filter || "none";
+    $("photoshopBrightness").value = photoshopAdjustmentsEffect.brightness ?? 0.0;
+    const psBrtVal = Math.round((photoshopAdjustmentsEffect.brightness ?? 0.0) * 100);
     $("photoshopBrightnessVal").textContent = (psBrtVal >= 0 ? "+" : "") + psBrtVal + "%";
-    $("photoshopContrast").value = effects.photoshop_adjustments.contrast ?? 0.0;
-    const psCtrVal = Math.round((effects.photoshop_adjustments.contrast ?? 0.0) * 100);
+    $("photoshopContrast").value = photoshopAdjustmentsEffect.contrast ?? 0.0;
+    const psCtrVal = Math.round((photoshopAdjustmentsEffect.contrast ?? 0.0) * 100);
     $("photoshopContrastVal").textContent = (psCtrVal >= 0 ? "+" : "") + psCtrVal + "%";
-    $("photoshopSaturation").value = effects.photoshop_adjustments.saturation ?? 0.0;
-    const psSatVal = Math.round((effects.photoshop_adjustments.saturation ?? 0.0) * 100);
+    $("photoshopSaturation").value = photoshopAdjustmentsEffect.saturation ?? 0.0;
+    const psSatVal = Math.round((photoshopAdjustmentsEffect.saturation ?? 0.0) * 100);
     $("photoshopSaturationVal").textContent = (psSatVal >= 0 ? "+" : "") + psSatVal + "%";
 
     // Set Global Reflections & Sun rays
-    if (!effects.global_reflections) {
-      effects.global_reflections = { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 };
-    }
-    const refEnabled = effects.global_reflections.enabled || false;
+    const refEnabled = globalReflectionsEffect.enabled || false;
     $("globalReflectionsEnabled").checked = refEnabled;
     $("globalReflectionsControls").classList.toggle("hidden", !refEnabled);
-    $("globalWindowType").value = effects.global_reflections.window_type || "none";
-    $("globalWindowOpacity").value = effects.global_reflections.window_opacity ?? 0.2;
-    $("globalWindowOpacityVal").textContent = Math.round((effects.global_reflections.window_opacity ?? 0.2) * 100) + "%";
-    $("globalWindowBlur").value = effects.global_reflections.window_blur ?? 20;
-    $("globalWindowBlurVal").textContent = (effects.global_reflections.window_blur ?? 20) + "px";
-    $("globalRaysType").value = effects.global_reflections.rays_type || "none";
-    $("globalRaysOpacity").value = effects.global_reflections.rays_opacity ?? 0.2;
-    $("globalRaysOpacityVal").textContent = Math.round((effects.global_reflections.rays_opacity ?? 0.2) * 100) + "%";
-    $("globalRaysAngle").value = effects.global_reflections.rays_angle ?? 0;
-    $("globalRaysAngleVal").textContent = (effects.global_reflections.rays_angle ?? 0) + "°";
+    $("globalWindowType").value = globalReflectionsEffect.window_type || "none";
+    $("globalWindowOpacity").value = globalReflectionsEffect.window_opacity ?? 0.2;
+    $("globalWindowOpacityVal").textContent = Math.round((globalReflectionsEffect.window_opacity ?? 0.2) * 100) + "%";
+    $("globalWindowBlur").value = globalReflectionsEffect.window_blur ?? 20;
+    $("globalWindowBlurVal").textContent = (globalReflectionsEffect.window_blur ?? 20) + "px";
+    $("globalRaysType").value = globalReflectionsEffect.rays_type || "none";
+    $("globalRaysOpacity").value = globalReflectionsEffect.rays_opacity ?? 0.2;
+    $("globalRaysOpacityVal").textContent = Math.round((globalReflectionsEffect.rays_opacity ?? 0.2) * 100) + "%";
+    $("globalRaysAngle").value = globalReflectionsEffect.rays_angle ?? 0;
+    $("globalRaysAngleVal").textContent = (globalReflectionsEffect.rays_angle ?? 0) + "°";
 
     // Set Global PNG Overlay
-    if (!effects.global_png_overlay) {
-      effects.global_png_overlay = { enabled: false, image: "", opacity: 0.5 };
-    }
-    const overlayEnabled = effects.global_png_overlay.enabled || false;
+    const overlayEnabled = globalPngOverlayEffect.enabled || false;
     $("globalPngOverlayEnabled").checked = overlayEnabled;
     $("globalPngOverlayControls").classList.toggle("hidden", !overlayEnabled);
-    $("globalOverlayOpacity").value = effects.global_png_overlay.opacity ?? 0.5;
-    $("globalOverlayOpacityVal").textContent = Math.round((effects.global_png_overlay.opacity ?? 0.5) * 100) + "%";
+    $("globalOverlayOpacity").value = globalPngOverlayEffect.opacity ?? 0.5;
+    $("globalOverlayOpacityVal").textContent = Math.round((globalPngOverlayEffect.opacity ?? 0.5) * 100) + "%";
     
-    const overlayImgData = effects.global_png_overlay.image || "";
+    const overlayImgData = globalPngOverlayEffect.image || "";
+    const overlayRoot = effectGroupForKey("global_png_overlay", "1");
+    if (overlayRoot) overlayRoot.dataset.overlayImage = overlayImgData;
     if (overlayImgData) {
       $("globalOverlayName").textContent = "Overlay loaded";
       $("globalOverlayName").setAttribute("title", "PNG Overlay base64 encoded");
@@ -659,6 +923,7 @@
       $("confidence").textContent = "";
     }
     updateCoordinateLabels();
+    renderAdditionalEffectInstances(effects);
     if ($("canvasImage").complete) {
       requestAnimationFrame(drawSelection);
     }
@@ -2258,18 +2523,9 @@
   function updateEffectsState() {
     if (!state.selected) return;
     if (!state.selected.effects) {
-      state.selected.effects = {
-        inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
-        glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
-        matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
-        color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
-        gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 },
-        photoshop_adjustments: { enabled: false, brightness: 0.0, contrast: 0.0, saturation: 0.0, color_filter: "none" },
-        global_png_overlay: { enabled: false, image: "", opacity: 0.5 },
-        global_reflections: { enabled: false, window_type: "none", window_opacity: 0.2, window_blur: 20.0, rays_type: "none", rays_opacity: 0.2, rays_angle: 0.0 }
-      };
+      state.selected.effects = defaultEffects();
     }
-    const effects = state.selected.effects;
+    const effects = defaultEffects();
     
     effects.inner_shadow.enabled = $("innerShadowEnabled").checked;
     effects.inner_shadow.opacity = Number($("shadowOpacity").value);
@@ -2332,15 +2588,28 @@
     }
     effects.global_png_overlay.enabled = $("globalPngOverlayEnabled").checked;
     effects.global_png_overlay.opacity = Number($("globalOverlayOpacity").value);
+    const primaryOverlayRoot = effectGroupForKey("global_png_overlay", "1");
+    effects.global_png_overlay.image = primaryOverlayRoot?.dataset.overlayImage || primaryEffect(state.selected.effects, "global_png_overlay").image || "";
     
     // Parse target switches from segmented controls
-    document.querySelectorAll(".segmented-control[data-effect-key]").forEach((ctrl) => {
+    document.querySelectorAll('.effect-group[data-effect-instance="1"] .segmented-control[data-effect-key]').forEach((ctrl) => {
       const key = ctrl.getAttribute("data-effect-key");
       const activeBtn = ctrl.querySelector(".segment-btn.active");
       if (activeBtn && effects[key]) {
         effects[key].target = activeBtn.getAttribute("data-target-val");
       }
     });
+
+    Object.keys(EFFECT_DOM).forEach((key) => {
+      const secondRoot = effectGroupForKey(key, "2");
+      if (!secondRoot) return;
+      effects[key] = [
+        effects[key],
+        readEffectInstanceValues(secondRoot, key)
+      ];
+    });
+
+    state.selected.effects = effects;
 
     persistTemplateState(state.selected);
 
@@ -2353,8 +2622,59 @@
     }
   }
 
+  setupEffectInstanceControls();
+
   // Target segment buttons click delegation
   document.addEventListener("click", (e) => {
+    const addButton = e.target.closest(".effect-add-instance");
+    if (addButton) {
+      e.preventDefault();
+      const key = addButton.dataset.effectKey;
+      if (!key || effectGroupForKey(key, "2")) return;
+      const source = effectGroupForKey(key, "1");
+      createSecondEffectInstance(key, readEffectInstanceValues(source, key));
+      updateEffectsState();
+      return;
+    }
+
+    const removeButton = e.target.closest(".effect-remove-instance");
+    if (removeButton) {
+      e.preventDefault();
+      removeSecondEffectInstance(removeButton.dataset.effectKey);
+      return;
+    }
+
+    const linkButton = e.target.closest('[data-original-id="linkShadowSides"]');
+    if (linkButton && linkButton.id !== "linkShadowSides") {
+      e.preventDefault();
+      linkButton.classList.toggle("active");
+      return;
+    }
+
+    const overlayUploadButton = e.target.closest('[data-original-id="globalOverlayUploadBtn"]');
+    if (overlayUploadButton && overlayUploadButton.id !== "globalOverlayUploadBtn") {
+      e.preventDefault();
+      const root = overlayUploadButton.closest(".effect-group");
+      const input = getFieldElement(root, "globalOverlayUploadInput");
+      if (input) input.click();
+      return;
+    }
+
+    const clearOverlayButton = e.target.closest('[data-original-id="clearGlobalOverlayBtn"]');
+    if (clearOverlayButton && clearOverlayButton.id !== "clearGlobalOverlayBtn") {
+      e.preventDefault();
+      const root = clearOverlayButton.closest(".effect-group");
+      root.dataset.overlayImage = "";
+      const name = getFieldElement(root, "globalOverlayName");
+      if (name) {
+        name.textContent = "No file";
+        name.removeAttribute("title");
+      }
+      updateEffectsState();
+      if (state.isPreviewingMockup) refreshPreviewMockup();
+      return;
+    }
+
     const btn = e.target.closest(".segment-btn");
     if (!btn) return;
     
@@ -2364,6 +2684,71 @@
     ctrl.querySelectorAll(".segment-btn").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     updateEffectsState();
+  });
+
+  document.addEventListener("input", (e) => {
+    const root = e.target.closest('.effect-group[data-effect-instance="2"]');
+    if (!root) return;
+    const key = root.dataset.effectKey;
+    const def = EFFECT_DOM[key];
+    if (!def) return;
+    const originalId = e.target.dataset.originalId;
+    const field = def.fields.find((item) => item.id === originalId);
+    if (!field) return;
+
+    setEffectValueLabel(field, e.target.value, root);
+    if (key === "inner_shadow" && ["shadowTop", "shadowBottom", "shadowLeft", "shadowRight"].includes(originalId)) {
+      const linkButton = getFieldElement(root, "linkShadowSides");
+      if (linkButton?.classList.contains("active")) {
+        ["shadowTop", "shadowBottom", "shadowLeft", "shadowRight"].forEach((id) => {
+          if (id === originalId) return;
+          const input = getFieldElement(root, id);
+          const sideField = def.fields.find((item) => item.id === id);
+          if (input) input.value = e.target.value;
+          if (sideField) setEffectValueLabel(sideField, e.target.value, root);
+        });
+      }
+    }
+    updateEffectsState();
+  });
+
+  document.addEventListener("change", async (e) => {
+    const root = e.target.closest('.effect-group[data-effect-instance="2"]');
+    if (!root) return;
+    const key = root.dataset.effectKey;
+    const def = EFFECT_DOM[key];
+    if (!def) return;
+
+    if (e.target.dataset.originalId === def.enabledId) {
+      const controls = getFieldElement(root, def.controlsId);
+      if (controls) controls.classList.toggle("hidden", !e.target.checked);
+      updateEffectsState();
+      return;
+    }
+
+    if (e.target.dataset.originalId === "globalOverlayUploadInput") {
+      const file = e.target.files[0];
+      if (file) {
+        try {
+          root.dataset.overlayImage = await fileToDataUrl(file);
+          const name = getFieldElement(root, "globalOverlayName");
+          if (name) {
+            name.textContent = "Overlay loaded";
+            name.setAttribute("title", file.name);
+          }
+          updateEffectsState();
+          if (state.isPreviewingMockup) refreshPreviewMockup();
+        } catch (err) {
+          toast("Failed to read overlay image: " + err.message);
+        }
+      }
+      e.target.value = "";
+      return;
+    }
+
+    if (def.fields.some((field) => field.id === e.target.dataset.originalId)) {
+      updateEffectsState();
+    }
   });
 
   // Link button toggle
@@ -2556,8 +2941,15 @@
           if (!state.selected.effects.global_png_overlay) {
             state.selected.effects.global_png_overlay = { enabled: true, image: "", opacity: 0.5 };
           }
-          state.selected.effects.global_png_overlay.image = dataUrl;
-          state.selected.effects.global_png_overlay.enabled = true;
+          const overlayRoot = effectGroupForKey("global_png_overlay", "1");
+          if (overlayRoot) overlayRoot.dataset.overlayImage = dataUrl;
+          if (Array.isArray(state.selected.effects.global_png_overlay)) {
+            state.selected.effects.global_png_overlay[0].image = dataUrl;
+            state.selected.effects.global_png_overlay[0].enabled = true;
+          } else {
+            state.selected.effects.global_png_overlay.image = dataUrl;
+            state.selected.effects.global_png_overlay.enabled = true;
+          }
           
           $("globalOverlayName").textContent = "Overlay loaded";
           $("globalOverlayName").setAttribute("title", file.name);
@@ -2578,7 +2970,13 @@
   $("clearGlobalOverlayBtn").onclick = (e) => {
     e.preventDefault();
     if (state.selected && state.selected.effects && state.selected.effects.global_png_overlay) {
-      state.selected.effects.global_png_overlay.image = "";
+      const overlayRoot = effectGroupForKey("global_png_overlay", "1");
+      if (overlayRoot) overlayRoot.dataset.overlayImage = "";
+      if (Array.isArray(state.selected.effects.global_png_overlay)) {
+        state.selected.effects.global_png_overlay[0].image = "";
+      } else {
+        state.selected.effects.global_png_overlay.image = "";
+      }
       $("globalOverlayName").textContent = "No file";
       $("globalOverlayName").removeAttribute("title");
       updateEffectsState();

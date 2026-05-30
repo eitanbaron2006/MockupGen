@@ -625,6 +625,15 @@ def _apply_global_png_overlay(img: Image.Image, opts: dict) -> Image.Image:
         return img
 
 
+def _effect_instances(effects: dict, key: str) -> list[dict]:
+    value = effects.get(key)
+    if isinstance(value, list):
+        return [item for item in value[:2] if isinstance(item, dict)]
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
 def _apply_effects_by_target(img: Image.Image, effects: dict | None, target_name: str) -> Image.Image:
     if not effects:
         return img
@@ -632,44 +641,51 @@ def _apply_effects_by_target(img: Image.Image, effects: dict | None, target_name
     img = img.convert("RGBA")
     
     # 1. Inner shadow
-    if effects.get("inner_shadow", {}).get("enabled", False):
-        opts = effects["inner_shadow"]
+    for opts in _effect_instances(effects, "inner_shadow"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "artwork") == target_name:
             img = _apply_inner_shadow(img, opts)
             
     # 2. Glass reflection (only if explicitly enabled for this target)
-    if effects.get("glass_reflection", {}).get("enabled", False):
-        opts = effects["glass_reflection"]
+    for opts in _effect_instances(effects, "glass_reflection"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "artwork") == target_name:
             img = _apply_glass_reflection(img, opts)
             
     # 3. Faded Matte Finish
-    if effects.get("matte_finish", {}).get("enabled", False):
-        opts = effects["matte_finish"]
+    for opts in _effect_instances(effects, "matte_finish"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "artwork") == target_name:
             img = _apply_matte_finish(img, opts)
             
     # 4. Ambient light warmth tint
-    if effects.get("color_tint", {}).get("enabled", False):
-        opts = effects["color_tint"]
+    for opts in _effect_instances(effects, "color_tint"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "artwork") == target_name:
             img = _apply_color_tint(img, opts)
             
     # 5. Sunlight blinds shadow (Gobo)
-    if effects.get("gobo_shadow", {}).get("enabled", False):
-        opts = effects["gobo_shadow"]
+    for opts in _effect_instances(effects, "gobo_shadow"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "artwork") == target_name:
             img = _apply_gobo_shadow(img, opts)
             
     # 6. Photoshop Adjustments
-    if effects.get("photoshop_adjustments", {}).get("enabled", False):
-        opts = effects["photoshop_adjustments"]
+    for opts in _effect_instances(effects, "photoshop_adjustments"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "all") == target_name:
             img = _apply_photoshop_adjustments(img, opts)
             
     # 7. Global Reflections & Rays
-    if effects.get("global_reflections", {}).get("enabled", False):
-        opts = effects["global_reflections"]
+    for opts in _effect_instances(effects, "global_reflections"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "all") == target_name:
             window_type = opts.get("window_type", "none")
             window_opacity = float(opts.get("window_opacity", 0.0))
@@ -689,8 +705,9 @@ def _apply_effects_by_target(img: Image.Image, effects: dict | None, target_name
                 img = _apply_sun_rays(img, rays_type, opacity=rays_opacity, angle=rays_angle)
                 
     # 8. Global PNG Overlay
-    if effects.get("global_png_overlay", {}).get("enabled", False):
-        opts = effects["global_png_overlay"]
+    for opts in _effect_instances(effects, "global_png_overlay"):
+        if not opts.get("enabled", False):
+            continue
         if opts.get("target", "all") == target_name:
             img = _apply_global_png_overlay(img, opts)
             
@@ -730,7 +747,8 @@ def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = Non
         img = _apply_effects_by_target(img, effects, "artwork")
 
     # 8. Glass reflection default sheen logic on artwork target (backward-compatible sheen)
-    custom_glass = effects.get("glass_reflection", {}) if effects else {}
+    glass_instances = _effect_instances(effects, "glass_reflection") if effects else []
+    custom_glass = glass_instances[0] if glass_instances else {}
     glass_enabled = custom_glass.get("enabled", False)
     glass_target = custom_glass.get("target", "artwork")
     
