@@ -89,7 +89,9 @@ def validate_proposal(
     normalized_raw = None
     if raw_area:
         try:
-            if "corners" in raw_area:
+            if any(key in raw_area for key in ("layers", "green_pixels", "regions", "original_corners")):
+                normalized_raw = raw_area
+            elif "corners" in raw_area:
                 raw_corners = raw_area["corners"]
                 normalized_raw_corners = []
                 for p in raw_corners:
@@ -163,4 +165,6 @@ def build_provider(settings: dict[str, str], config: dict[str, Any]) -> Detectio
     return ClassicDetectionProvider(
         blur_size=int(settings.get("CLASSIC_BLUR_SIZE", config.get("CLASSIC_BLUR_SIZE", 3))),
         search_radius=int(settings.get("CLASSIC_SEARCH_RADIUS", config.get("CLASSIC_SEARCH_RADIUS", 20))),
+        default_mode=settings.get("CLASSIC_INTERNAL_MODE", config.get("CLASSIC_INTERNAL_MODE", "auto")),
+        green_edge_expand=int(settings.get("CLASSIC_GREEN_EDGE_EXPAND", config.get("CLASSIC_GREEN_EDGE_EXPAND", 1))),
     )

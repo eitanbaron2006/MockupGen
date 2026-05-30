@@ -232,6 +232,392 @@ def test_simple_render_applies_artwork_area_mask(tmp_path):
         assert output.getpixel((7, 4)) == (20, 220, 40, 255)
 
 
+def test_simple_render_uses_catalog_mask_override_for_detected_templates(tmp_path):
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    mask = Image.new("L", (8, 8), 255)
+    for y in range(8):
+        for x in range(4):
+            mask.putpixel((x, y), 0)
+    mask.save(template_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "ENABLE_PSD_MODE": True,
+            "ENABLE_AI_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    app.extensions["catalog_service"].update_template(
+        "template_001",
+        {"mask_name": "mask.png"},
+    )
+    client = app.test_client()
+
+    response = post_render(client)
+
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((2, 4)) == (200, 20, 20, 255)
+        assert output.getpixel((7, 4)) == (20, 220, 40, 255)
+
+
+def test_simple_render_supports_catalog_draft_template_masks(tmp_path):
+    from app import create_app
+
+    draft_root = tmp_path / "draft_templates"
+    draft_folder = draft_root / "draft_001"
+    draft_folder.mkdir(parents=True)
+    save_image(draft_folder / "background.png", (10, 10), (200, 20, 20, 255))
+    save_image(draft_folder / "preview.png", (10, 10), (200, 20, 20, 255))
+    mask = Image.new("L", (8, 8), 255)
+    for y in range(8):
+        for x in range(4):
+            mask.putpixel((x, y), 0)
+    mask.save(draft_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "ENABLE_PSD_MODE": True,
+            "ENABLE_AI_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(tmp_path / "templates_data"),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(draft_root),
+        }
+    )
+    catalog = app.extensions["catalog_service"]
+    category = catalog.create_category("Drafts")
+    catalog.create_template(
+        {
+            "template_id": "draft_001",
+            "name": "Draft green frame",
+            "category_id": category["id"],
+            "status": "draft",
+            "canvas_width": 10,
+            "canvas_height": 10,
+            "artwork_area": {"x": 1, "y": 1, "width": 8, "height": 8},
+            "fit_mode": "cover",
+            "orientation": "square",
+            "background_name": "background.png",
+            "preview_name": "preview.png",
+            "mask_name": "mask.png",
+        }
+    )
+    client = app.test_client()
+
+    response = post_render(client, template_id="draft_001")
+
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((2, 4)) == (200, 20, 20, 255)
+        assert output.getpixel((7, 4)) == (20, 220, 40, 255)
+
+
+def test_green_frame_render_fills_all_detected_mask_regions_by_default(tmp_path):
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    background = Image.new("RGBA", (24, 12), (200, 20, 20, 255))
+    for box in ((2, 2, 9, 9), (14, 2, 21, 9)):
+        for y in range(box[1], box[3] + 1):
+            for x in range(box[0], box[2] + 1):
+                background.putpixel((x, y), (0, 255, 0, 255))
+    background.save(template_folder / "background.png")
+    background.save(template_folder / "preview.png")
+    manifest_path = template_folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["canvas_width"] = 24
+    manifest["canvas_height"] = 12
+    manifest["artwork_area"] = {"x": 2, "y": 2, "width": 20, "height": 8}
+    manifest["foreground"] = None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    mask = Image.new("L", (24, 12), 0)
+    for box in ((2, 2, 9, 9), (14, 2, 21, 9)):
+        for y in range(box[1], box[3] + 1):
+            for x in range(box[0], box[2] + 1):
+                mask.putpixel((x, y), 255)
+    mask.save(template_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    app.extensions["catalog_service"].update_template(
+        "template_001",
+        {
+            "artwork_area": {"x": 2, "y": 2, "width": 20, "height": 8},
+            "mask_name": "mask.png",
+            "raw_artwork_area": {
+                "mode": "green_frames_mockups",
+                "regions": [
+                    {"x": 2, "y": 2, "width": 8, "height": 8, "area": 64},
+                    {"x": 14, "y": 2, "width": 8, "height": 8, "area": 64},
+                ],
+            },
+            "effects": {
+                "green_frame_mockups": {
+                    "fit_mode": "stretch",
+                    "feather_radius": 0,
+                    "edge_aa_radius": 0,
+                    "enable_inner_shadow": False,
+                }
+            },
+        },
+    )
+    client = app.test_client()
+
+    response = post_render(
+        client,
+        artwork=(striped_image_bytes(), "striped.png"),
+    )
+
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((2, 5)) == (250, 230, 10, 255)
+        assert output.getpixel((14, 5)) == (250, 230, 10, 255)
+        assert output.getpixel((11, 5)) == (200, 20, 20, 255)
+
+
+def test_green_frame_stretch_scale_does_not_fill_mask_with_contain_background(tmp_path):
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "background.png")
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "preview.png")
+    manifest_path = template_folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["canvas_width"] = 12
+    manifest["canvas_height"] = 12
+    manifest["artwork_area"] = {"x": 2, "y": 2, "width": 8, "height": 8}
+    manifest["foreground"] = None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    mask = Image.new("L", (12, 12), 0)
+    for y in range(2, 10):
+        for x in range(2, 10):
+            mask.putpixel((x, y), 255)
+    mask.save(template_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    app.extensions["catalog_service"].update_template(
+        "template_001",
+        {
+            "artwork_area": {"x": 2, "y": 2, "width": 8, "height": 8},
+            "mask_name": "mask.png",
+            "raw_artwork_area": {
+                "mode": "green_frames_mockups",
+                "regions": [{"x": 2, "y": 2, "width": 8, "height": 8, "area": 64}],
+            },
+            "effects": {
+                "green_frame_mockups": {
+                    "fit_mode": "stretch",
+                    "artwork_scale": 0.5,
+                    "contain_bg_color": "#ffffff",
+                    "enable_inner_shadow": False,
+                }
+            },
+        },
+    )
+    client = app.test_client()
+
+    response = post_render(
+        client,
+        artwork=(image_bytes((4, 4), (20, 40, 220, 255)), "blue.png"),
+    )
+
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((3, 6)) == (200, 20, 20, 255)
+        assert output.getpixel((6, 6)) == (20, 40, 220, 255)
+
+
+def test_green_frame_contain_scale_can_fill_margin_with_contain_background(tmp_path):
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "background.png")
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "preview.png")
+    manifest_path = template_folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["canvas_width"] = 12
+    manifest["canvas_height"] = 12
+    manifest["artwork_area"] = {"x": 2, "y": 2, "width": 8, "height": 8}
+    manifest["foreground"] = None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    mask = Image.new("L", (12, 12), 0)
+    for y in range(2, 10):
+        for x in range(2, 10):
+            mask.putpixel((x, y), 255)
+    mask.save(template_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    app.extensions["catalog_service"].update_template(
+        "template_001",
+        {
+            "artwork_area": {"x": 2, "y": 2, "width": 8, "height": 8},
+            "mask_name": "mask.png",
+            "raw_artwork_area": {
+                "mode": "green_frames_mockups",
+                "regions": [{"x": 2, "y": 2, "width": 8, "height": 8, "area": 64}],
+            },
+            "effects": {
+                "green_frame_mockups": {
+                    "fit_mode": "contain",
+                    "artwork_scale": 0.5,
+                    "contain_bg_color": "#ffffff",
+                    "enable_inner_shadow": False,
+                }
+            },
+        },
+    )
+    client = app.test_client()
+
+    response = post_render(
+        client,
+        artwork=(image_bytes((4, 4), (20, 40, 220, 255)), "blue.png"),
+    )
+
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((3, 6)) == (255, 255, 255, 255)
+        assert output.getpixel((6, 6)) == (20, 40, 220, 255)
+
+
+def test_green_frame_perspective_uses_wide_envelope_then_clips_to_mask(tmp_path):
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "background.png")
+    Image.new("RGBA", (12, 12), (200, 20, 20, 255)).save(template_folder / "preview.png")
+    manifest_path = template_folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["canvas_width"] = 12
+    manifest["canvas_height"] = 12
+    manifest["artwork_area"] = {"x": 2, "y": 2, "width": 8, "height": 8}
+    manifest["foreground"] = None
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    mask = Image.new("L", (12, 12), 0)
+    for y in range(2, 10):
+        for x in range(2, 10):
+            mask.putpixel((x, y), 255)
+    mask.save(template_folder / "mask.png")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    app.extensions["catalog_service"].update_template(
+        "template_001",
+        {
+            "artwork_area": {"x": 2, "y": 2, "width": 8, "height": 8},
+            "mask_name": "mask.png",
+            "raw_artwork_area": {
+                "mode": "green_frames_mockups",
+                "regions": [
+                    {
+                        "x": 2,
+                        "y": 2,
+                        "width": 8,
+                        "height": 8,
+                        "area": 64,
+                        "inner_corners": [
+                            {"x": 4, "y": 4},
+                            {"x": 8, "y": 4},
+                            {"x": 8, "y": 8},
+                            {"x": 4, "y": 8},
+                        ],
+                        "outer_corners": [
+                            {"x": 2, "y": 2},
+                            {"x": 9, "y": 2},
+                            {"x": 9, "y": 9},
+                            {"x": 2, "y": 9},
+                        ],
+                    }
+                ],
+            },
+            "effects": {
+                "green_frame_mockups": {
+                    "use_perspective": True,
+                    "use_vector_clip": True,
+                    "fit_mode": "stretch",
+                    "edge_expand": 0,
+                    "feather_radius": 0,
+                    "edge_aa_radius": 0,
+                    "enable_inner_shadow": False,
+                }
+            },
+        },
+    )
+    client = app.test_client()
+
+    response = post_render(client, artwork=(striped_image_bytes(), "striped.png"))
+
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((2, 6)) != (200, 20, 20, 255)
+        assert output.getpixel((1, 6)) == (200, 20, 20, 255)
+
+
 def test_render_rejects_missing_template_and_invalid_file_type(tmp_path):
     client, folders = build_client(tmp_path)
     write_template(folders["TEMPLATES_FOLDER"])
@@ -722,6 +1108,3 @@ def test_targeted_realism_effects(tmp_path):
         assert art_pixel[0] == 246
         assert art_pixel[1] == 8
         assert art_pixel[2] == 8
-
-
-

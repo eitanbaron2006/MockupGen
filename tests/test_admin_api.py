@@ -1,9 +1,15 @@
 import io
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from PIL import Image
+
+
+SERVER_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVER_ROOT))
 
 from app import create_app
 from services.detection_service import DetectionProposal
@@ -67,6 +73,8 @@ def test_admin_page_and_authenticated_category_crud(tmp_path: Path):
     assert b"Local model" in admin_page.data
     assert b"dashed" in admin_page.data
     assert b"Classic / No AI" in admin_page.data
+    assert b"Green frames mockups" in admin_page.data
+    assert b"Green edge cleanup expansion" in admin_page.data
     categories = client.get("/api/admin/categories").get_json()["categories"]
     assert categories[0]["name"] == "Wall Art"
 
@@ -92,6 +100,72 @@ def test_detection_settings_expose_relevant_vertex_models_and_classic_has_no_mod
     assert "gemini-3.5-flash" in vertex_ids
     assert "gemini-3.1-pro-preview" in vertex_ids
     assert classic.get_json()["models"] == []
+
+
+def test_detection_settings_save_classic_green_frames_mode(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+
+    response = client.put(
+        "/api/admin/settings/detection",
+        json={
+            "DETECTION_PROVIDER": "classic",
+            "CLASSIC_INTERNAL_MODE": "green_frames_mockups",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["settings"]["CLASSIC_INTERNAL_MODE"] == "green_frames_mockups"
+    settings = client.get("/api/admin/settings/detection").get_json()["settings"]
+    assert settings["CLASSIC_INTERNAL_MODE"] == "green_frames_mockups"
+
+
+def test_green_frame_detection_saves_mask_for_template_rendering(tmp_path: Path):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Posters"}, headers=headers
+    ).get_json()["category"]
+    stream = io.BytesIO()
+    image = Image.new("RGB", (120, 100), (238, 229, 214))
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((35, 25, 85, 75), fill=(0, 255, 0))
+    image.save(stream, format="PNG")
+    stream.seek(0)
+    template = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(stream, "green.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]
+    client.put(
+        "/api/admin/settings/detection",
+        json={
+            "DETECTION_PROVIDER": "classic",
+            "CLASSIC_INTERNAL_MODE": "green_frames_mockups",
+            "CLASSIC_GREEN_EDGE_EXPAND": "2",
+        },
+        headers=headers,
+    )
+
+    response = client.post(
+        f"/api/admin/templates/{template['template_id']}/detect",
+        json={"mode": "green_frames_mockups"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    updated = response.get_json()["template"]
+    assert updated["mask_name"] == "mask.png"
+    mask_path = tmp_path / "draft_templates" / template["template_id"] / "mask.png"
+    assert mask_path.is_file()
+    with Image.open(mask_path) as mask:
+      assert mask.mode == "L"
+      assert mask.getpixel((33, 25)) == 255
 
 
 def test_detection_settings_can_test_provider_without_saving_proposal(
@@ -433,4 +507,3 @@ def test_draft_ai_detection_is_saved_immediately(tmp_path: Path, monkeypatch):
     assert detection.status_code == 200
     assert detection.get_json()["template"]["artwork_area"] == proposed_area
     assert stored["artwork_area"] == proposed_area
-

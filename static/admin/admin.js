@@ -286,6 +286,102 @@
     return cloneObject(DEFAULT_EFFECTS);
   }
 
+  const DEFAULT_GREEN_FRAME_SETTINGS = {
+    use_perspective: true,
+    use_vector_clip: true,
+    fit_mode: "cover",
+    artwork_scale: 1,
+    offset_x: 0,
+    offset_y: 0,
+    edge_expand: 0,
+    mask_build_quality: 2,
+    feather_radius: 2,
+    edge_aa_radius: 0,
+    aa_scale: 1,
+    enable_inner_shadow: false,
+    inner_shadow_strength: 0.35,
+    inner_shadow_size: 10,
+    contain_bg_color: "#ffffff"
+  };
+
+  function isGreenFrameTemplate(template = state.selected) {
+    return Boolean(
+      template
+      && template.raw_artwork_area
+      && template.raw_artwork_area.mode === "green_frames_mockups"
+      && (template.mask_name === "mask.png" || template.mask === "mask.png")
+    );
+  }
+
+  function greenFrameSettings(effects) {
+    return {
+      ...DEFAULT_GREEN_FRAME_SETTINGS,
+      ...((effects && effects.green_frame_mockups) || {})
+    };
+  }
+
+  function setGreenFrameLabel(id, value, suffix = "") {
+    const element = $(id);
+    if (element) element.textContent = `${value}${suffix}`;
+  }
+
+  function updateGreenFrameControlLabels() {
+    if (!$("greenArtworkScale")) return;
+    setGreenFrameLabel("greenArtworkScaleVal", $("greenArtworkScale").value, "%");
+    setGreenFrameLabel("greenOffsetXVal", $("greenOffsetX").value, "%");
+    setGreenFrameLabel("greenOffsetYVal", $("greenOffsetY").value, "%");
+    setGreenFrameLabel("greenEdgeExpandVal", $("greenEdgeExpand").value, "px");
+    setGreenFrameLabel("greenMaskBuildQualityVal", $("greenMaskBuildQuality").value, "x");
+    setGreenFrameLabel("greenFeatherRadiusVal", $("greenFeatherRadius").value, "px");
+    setGreenFrameLabel("greenEdgeAARadiusVal", $("greenEdgeAARadius").value, "px");
+    setGreenFrameLabel("greenAAScaleVal", $("greenAAScale").value, "x");
+    setGreenFrameLabel("greenInnerShadowStrengthVal", $("greenInnerShadowStrength").value, "%");
+    setGreenFrameLabel("greenInnerShadowSizeVal", $("greenInnerShadowSize").value, "px");
+  }
+
+  function populateGreenFrameControls(template, effects) {
+    const panel = $("greenFramePanel");
+    if (!panel) return;
+    panel.classList.toggle("hidden", !isGreenFrameTemplate(template));
+    const settings = greenFrameSettings(effects);
+    $("greenUsePerspective").checked = settings.use_perspective;
+    $("greenUseVectorClip").checked = settings.use_vector_clip;
+    $("greenFitMode").value = settings.fit_mode;
+    $("greenArtworkScale").value = Math.round(Number(settings.artwork_scale || 1) * 100);
+    $("greenOffsetX").value = Math.round(Number(settings.offset_x || 0) * 100);
+    $("greenOffsetY").value = Math.round(Number(settings.offset_y || 0) * 100);
+    $("greenEdgeExpand").value = settings.edge_expand;
+    $("greenMaskBuildQuality").value = settings.mask_build_quality;
+    $("greenFeatherRadius").value = settings.feather_radius;
+    $("greenEdgeAARadius").value = settings.edge_aa_radius;
+    $("greenAAScale").value = settings.aa_scale;
+    $("greenInnerShadowEnabled").checked = settings.enable_inner_shadow;
+    $("greenInnerShadowStrength").value = Math.round(Number(settings.inner_shadow_strength || 0) * 100);
+    $("greenInnerShadowSize").value = settings.inner_shadow_size;
+    $("greenContainBgColor").value = settings.contain_bg_color || "#ffffff";
+    updateGreenFrameControlLabels();
+  }
+
+  function readGreenFrameControls() {
+    return {
+      use_perspective: $("greenUsePerspective").checked,
+      use_vector_clip: $("greenUseVectorClip").checked,
+      fit_mode: $("greenFitMode").value,
+      artwork_scale: Number($("greenArtworkScale").value) / 100,
+      offset_x: Number($("greenOffsetX").value) / 100,
+      offset_y: Number($("greenOffsetY").value) / 100,
+      edge_expand: Number($("greenEdgeExpand").value),
+      mask_build_quality: Number($("greenMaskBuildQuality").value),
+      feather_radius: Number($("greenFeatherRadius").value),
+      edge_aa_radius: Number($("greenEdgeAARadius").value),
+      aa_scale: Number($("greenAAScale").value),
+      enable_inner_shadow: $("greenInnerShadowEnabled").checked,
+      inner_shadow_strength: Number($("greenInnerShadowStrength").value) / 100,
+      inner_shadow_size: Number($("greenInnerShadowSize").value),
+      contain_bg_color: $("greenContainBgColor").value || "#ffffff"
+    };
+  }
+
   function effectInstances(effects, key) {
     const value = effects && effects[key];
     if (Array.isArray(value)) {
@@ -806,6 +902,7 @@
     if (!template.effects) {
       template.effects = effects;
     }
+    populateGreenFrameControls(template, effects);
     const innerShadowEffect = primaryEffect(effects, "inner_shadow");
     const glassReflectionEffect = primaryEffect(effects, "glass_reflection");
     const matteFinishEffect = primaryEffect(effects, "matte_finish");
@@ -1160,7 +1257,9 @@
         saveSelectionStylePreference();
         drawSelection();
         
-        if (state.isPreviewingMockup) {
+        if (isGreenFrameTemplate()) {
+          refreshGreenFrameMockupPreview();
+        } else if (state.isPreviewingMockup) {
           refreshPreviewMockup();
         }
       };
@@ -1176,6 +1275,10 @@
     state.selectionStyle.overlayMode = "polygon";
     applySelectionStyle();
     saveSelectionStylePreference();
+    if ($("selectionRenderedMockup") && isGreenFrameTemplate()) {
+      $("selectionRenderedMockup").classList.add("hidden");
+      $("selectionRenderedMockup").src = "";
+    }
     drawSelection();
   }
 
@@ -1209,6 +1312,25 @@
     if (!template || !template.artwork_area || !image.naturalWidth) {
       selectionSvg.classList.add("hidden");
       return;
+    }
+
+    if (isGreenFrameTemplate(template)) {
+      selectionSvg.classList.add("hidden");
+      $("selectionImageOverlay").classList.add("hidden");
+      if (state.selectionStyle.overlayImage) {
+        if (greenFramePreviewTimeout) clearTimeout(greenFramePreviewTimeout);
+        greenFramePreviewTimeout = setTimeout(() => {
+          refreshGreenFrameMockupPreview();
+        }, 120);
+      } else if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
+      }
+      return;
+    }
+
+    if ($("selectionRenderedMockup")) {
+      $("selectionRenderedMockup").classList.add("hidden");
     }
 
     // Ensure template.artwork_area has corners. If not, generate them on the fly!
@@ -1394,6 +1516,7 @@
 
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
+    if (isGreenFrameTemplate()) return;
     event.preventDefault();
 
     const target = event.target;
@@ -1533,7 +1656,9 @@
         category_id: Number($("categorySelect").value),
         artwork_area: state.selected.artwork_area,
         fit_mode: $("fitMode").value,
-        effects: state.selected.effects || null
+        effects: state.selected.effects || null,
+        raw_artwork_area: state.selected.raw_artwork_area || null,
+        mask_name: state.selected.mask_name || null
       })
     });
     state.selected = payload.template;
@@ -1555,7 +1680,9 @@
           category_id: template.category_id,
           artwork_area: template.artwork_area,
           fit_mode: template.fit_mode,
-          effects: template.effects || null
+          effects: template.effects || null,
+          raw_artwork_area: template.raw_artwork_area || null,
+          mask_name: template.mask_name || null
         })
       });
       const idx = state.templates.findIndex(t => t.template_id === template.template_id);
@@ -1655,8 +1782,12 @@
       return;
     }
 
-    // If classic detection is active, run our guided 4-step premium wizard!
+    // If classic detection is active, run the selected internal classic mode.
     if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
+      if ((state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups") {
+        await runClassicGreenFramesDetection();
+        return;
+      }
       await startDetectionWizard();
       return;
     }
@@ -1690,6 +1821,43 @@
       setStatus("Detection failed", true);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runClassicGreenFramesDetection() {
+    setBusy(true);
+    $("analysisLabel").textContent = "Classic green frames is analyzing the mockup";
+    if ($("analysisSub")) $("analysisSub").textContent = "Building a green-screen mask and perspective corners.";
+    setStatus("Detecting green frame mockup area...");
+    $("proposalState").textContent = "Analyzing green frame mask...";
+    $("detectionResult").className = "rule result-rule";
+    try {
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "green_frames_mockups" })
+      });
+      state.selected = payload.template;
+      if (payload.proposal && payload.proposal.raw_artwork_area) {
+        state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
+      }
+      const confidence = payload.proposal.confidence == null ? "" : ` (${Math.round(payload.proposal.confidence * 100)}%)`;
+      $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
+      $("detectionResult").classList.add("success");
+      $("detectionResult").textContent = `${payload.proposal.provider}: ${payload.proposal.reason || "Green frame area proposed."}${confidence}`;
+      $("proposalState").textContent = "Green frame detection proposal displayed. Drag handles to refine it, then approve.";
+      updateTemplateInQueue(state.selected);
+      renderEditor();
+      toast("Green frame detection proposal ready");
+      setStatus("Green frame proposal ready. Review before approving.");
+    } catch (error) {
+      $("detectionResult").classList.add("error");
+      $("detectionResult").textContent = error.message;
+      $("proposalState").textContent = "Green frame detection failed. Try the standard classic mode or review manually.";
+      toast(error.message);
+      setStatus("Green frame detection failed", true);
+    } finally {
+      setBusy(false);
+      if ($("analysisSub")) $("analysisSub").textContent = "This can take several seconds.";
     }
   }
 
@@ -2042,7 +2210,11 @@
     $("engineProvider").textContent = providerTitle(provider);
     $("engineModel").textContent = provider === "vertex"
       ? `${$("vertexModel").value || "gemini-2.5-flash"} / ${$("vertexLocation").value || "global"}`
-      : provider === "local" ? ($("localModel").value || "Choose an installed model") : "No AI model";
+      : provider === "local" ? ($("localModel").value || "Choose an installed model")
+      : ($("classicGreenFramesMode") && $("classicGreenFramesMode").checked ? "Green frames mockups" : "Standard geometric wizard");
+    if ($("classicGreenOptions")) {
+      $("classicGreenOptions").classList.toggle("hidden", provider !== "classic" || !$("classicGreenFramesMode") || !$("classicGreenFramesMode").checked);
+    }
   }
 
   async function switchDetectionProvider(provider) {
@@ -2128,6 +2300,8 @@
     $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
     if ($("classicBlurSize")) $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
     if ($("classicSearchRadius")) $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
+    if ($("classicGreenFramesMode")) $("classicGreenFramesMode").checked = (state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups";
+    if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").value = state.settings.CLASSIC_GREEN_EDGE_EXPAND || "1";
     $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
     await loadLocalModels(false);
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
@@ -2148,6 +2322,8 @@
           DETECTION_REFINEMENT: $("refinementMode").value,
           CLASSIC_BLUR_SIZE: $("classicBlurSize") ? $("classicBlurSize").value : "3",
           CLASSIC_SEARCH_RADIUS: $("classicSearchRadius") ? $("classicSearchRadius").value : "20",
+          CLASSIC_INTERNAL_MODE: $("classicGreenFramesMode") && $("classicGreenFramesMode").checked ? "green_frames_mockups" : "auto",
+          CLASSIC_GREEN_EDGE_EXPAND: $("classicGreenEdgeExpand") ? $("classicGreenEdgeExpand").value : "1",
           LOCAL_DETECTION_URL: $("localUrl").value,
           LOCAL_DETECTION_MODEL: $("localModel").value
         })
@@ -2500,11 +2676,50 @@
     };
   }
 
+  let greenFrameSettingsSaveTimeout = null;
+  function updateGreenFrameSettingsFromControls() {
+    if (!state.selected || !$("greenFramePanel")) return;
+    if (!state.selected.effects) state.selected.effects = defaultEffects();
+    state.selected.effects.green_frame_mockups = readGreenFrameControls();
+    updateGreenFrameControlLabels();
+    if (greenFrameSettingsSaveTimeout) clearTimeout(greenFrameSettingsSaveTimeout);
+    greenFrameSettingsSaveTimeout = setTimeout(async () => {
+      await persistTemplateState(state.selected);
+      if (isGreenFrameTemplate() && state.selectionStyle.overlayImage) {
+        refreshGreenFrameMockupPreview();
+      }
+    }, 250);
+  }
+
+  [
+    "greenUsePerspective",
+    "greenUseVectorClip",
+    "greenFitMode",
+    "greenArtworkScale",
+    "greenOffsetX",
+    "greenOffsetY",
+    "greenEdgeExpand",
+    "greenMaskBuildQuality",
+    "greenFeatherRadius",
+    "greenEdgeAARadius",
+    "greenAAScale",
+    "greenInnerShadowEnabled",
+    "greenInnerShadowStrength",
+    "greenInnerShadowSize",
+    "greenContainBgColor"
+  ].forEach((id) => {
+    const element = $(id);
+    if (!element) return;
+    element.addEventListener("input", updateGreenFrameSettingsFromControls);
+    element.addEventListener("change", updateGreenFrameSettingsFromControls);
+  });
+
   // Realism Effects Event Listeners & Live Preview Updates
   let refreshPreviewTimeout = null;
+  let greenFramePreviewTimeout = null;
 
-  async function refreshPreviewMockup() {
-    if (!state.selected || !state.isPreviewingMockup) return;
+  async function renderMockupPreviewImage() {
+    if (!state.selected) return null;
     
     // Disable download interactions temporarily to show rendering state
     if ($("downloadMockupButton")) {
@@ -2549,27 +2764,46 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Rendering failed");
 
-      if (state.isPreviewingMockup) {
-        if ($("selectionRenderedMockup")) {
-          $("selectionRenderedMockup").src = data.output_url;
-          $("selectionRenderedMockup").classList.remove("hidden");
-        }
-        $("selectionImageOverlay").classList.add("hidden");
-
-        if ($("downloadMockupButton")) {
-          $("downloadMockupButton").href = data.output_url;
-          $("downloadMockupButton").style.pointerEvents = "auto";
-          $("downloadMockupButton").style.opacity = "1";
-        }
-        if ($("toolbarDownloadButton")) {
-          $("toolbarDownloadButton").href = data.output_url;
-          $("toolbarDownloadButton").style.pointerEvents = "auto";
-          $("toolbarDownloadButton").style.opacity = "1";
-          $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
-        }
+      if ($("downloadMockupButton")) {
+        $("downloadMockupButton").href = data.output_url;
+        $("downloadMockupButton").style.pointerEvents = "auto";
+        $("downloadMockupButton").style.opacity = "1";
       }
+      if ($("toolbarDownloadButton")) {
+        $("toolbarDownloadButton").href = data.output_url;
+        $("toolbarDownloadButton").style.pointerEvents = "auto";
+        $("toolbarDownloadButton").style.opacity = "1";
+        $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
+      }
+      return data.output_url;
     } catch (err) {
       console.error("Live-preview refresh render failed:", err);
+      return null;
+    }
+  }
+
+  async function refreshPreviewMockup() {
+    if (!state.selected || !state.isPreviewingMockup) return;
+    const outputUrl = await renderMockupPreviewImage();
+    if (outputUrl && state.isPreviewingMockup) {
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").src = outputUrl;
+        $("selectionRenderedMockup").classList.remove("hidden");
+      }
+      $("selectionImageOverlay").classList.add("hidden");
+    }
+  }
+
+  async function refreshGreenFrameMockupPreview() {
+    if (!isGreenFrameTemplate() || state.isPreviewingMockup || !state.selectionStyle.overlayImage) return;
+    await saveTemplate(false, true);
+    const outputUrl = await renderMockupPreviewImage();
+    if (outputUrl && isGreenFrameTemplate() && !state.isPreviewingMockup) {
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").src = outputUrl;
+        $("selectionRenderedMockup").classList.remove("hidden");
+      }
+      $("selectionImageOverlay").classList.add("hidden");
     }
   }
 
@@ -4140,6 +4374,8 @@
     showProvider(state.settings.DETECTION_PROVIDER);
   };
   $("vertexLocation").onchange = () => showProvider(state.settings.DETECTION_PROVIDER);
+  if ($("classicGreenFramesMode")) $("classicGreenFramesMode").onchange = () => showProvider(state.settings.DETECTION_PROVIDER);
+  if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").oninput = () => showProvider(state.settings.DETECTION_PROVIDER);
   $("localUrl").oninput = () => showProvider(state.settings.DETECTION_PROVIDER);
   $("localModel").onchange = () => showProvider(state.settings.DETECTION_PROVIDER);
   $("refreshLocalModels").onclick = () => loadLocalModels(true);

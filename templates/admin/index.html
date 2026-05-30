@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=8">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=14">
 </head>
 
 <body class="admin-page">
@@ -319,6 +319,107 @@
                   <option value="stretch">Stretch</option>
                   <option value="auto">Auto</option>
                 </select>
+              </div>
+              <div class="green-frame-panel hidden" id="greenFramePanel">
+                <div class="label-row">
+                  <label>Green frames controls</label>
+                  <span class="tip-icon" tabindex="0" aria-label="Green frames controls"
+                    data-tooltip="Applies only to Classic green frames mockups. The same artwork is rendered into every detected green frame by default.">i</span>
+                </div>
+                <label class="compact-check">
+                  <input id="greenUsePerspective" type="checkbox">
+                  Perspective warp
+                </label>
+                <label class="compact-check">
+                  <input id="greenUseVectorClip" type="checkbox">
+                  Wide coverage envelope
+                </label>
+                <div class="select-row">
+                  <label for="greenFitMode">Artwork fit</label>
+                  <select id="greenFitMode">
+                    <option value="cover">Cover</option>
+                    <option value="contain">Contain</option>
+                    <option value="stretch">Stretch</option>
+                  </select>
+                </div>
+                <div class="slider-row">
+                  <label for="greenArtworkScale">Artwork scale</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenArtworkScale" min="10" max="300" step="1" value="100">
+                    <span id="greenArtworkScaleVal">100%</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenOffsetX">Offset X</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenOffsetX" min="-100" max="100" step="1" value="0">
+                    <span id="greenOffsetXVal">0%</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenOffsetY">Offset Y</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenOffsetY" min="-100" max="100" step="1" value="0">
+                    <span id="greenOffsetYVal">0%</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenEdgeExpand">Green edge cleanup</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenEdgeExpand" min="0" max="24" step="1" value="0">
+                    <span id="greenEdgeExpandVal">0px</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenMaskBuildQuality">Mask quality</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenMaskBuildQuality" min="1" max="3" step="1" value="2">
+                    <span id="greenMaskBuildQualityVal">2x</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenFeatherRadius">Mask feather</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenFeatherRadius" min="0" max="12" step="1" value="2">
+                    <span id="greenFeatherRadiusVal">2px</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenEdgeAARadius">Edge AA</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenEdgeAARadius" min="0" max="6" step="1" value="0">
+                    <span id="greenEdgeAARadiusVal">0px</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenAAScale">Supersampling</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenAAScale" min="1" max="8" step="1" value="1">
+                    <span id="greenAAScaleVal">1x</span>
+                  </div>
+                </div>
+                <label class="compact-check">
+                  <input id="greenInnerShadowEnabled" type="checkbox">
+                  Inner shadow
+                </label>
+                <div class="slider-row">
+                  <label for="greenInnerShadowStrength">Shadow strength</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenInnerShadowStrength" min="0" max="100" step="1" value="35">
+                    <span id="greenInnerShadowStrengthVal">35%</span>
+                  </div>
+                </div>
+                <div class="slider-row">
+                  <label for="greenInnerShadowSize">Shadow size</label>
+                  <div class="slider-container-row">
+                    <input type="range" id="greenInnerShadowSize" min="1" max="30" step="1" value="10">
+                    <span id="greenInnerShadowSizeVal">10px</span>
+                  </div>
+                </div>
+                <div class="select-row">
+                  <label for="greenContainBgColor">Contain background</label>
+                  <input type="color" id="greenContainBgColor" value="#ffffff">
+                </div>
               </div>
               <div class="effects-section">
                 <div class="label-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
@@ -867,6 +968,19 @@
           multi-layered geometric quadrilateral solver. It automatically detects the innermost mockup border with
           absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
         </div>
+        <label class="classic-mode-toggle" for="classicGreenFramesMode">
+          <input type="checkbox" id="classicGreenFramesMode">
+          <span>
+            <strong>Green frames mockups</strong>
+            <small>Detect bright green placeholder areas using a mask and perspective corners.</small>
+          </span>
+        </label>
+        <div class="config-row classic-green-options" id="classicGreenOptions">
+          <div>
+            <label for="classicGreenEdgeExpand">Green edge cleanup expansion</label>
+            <input class="text-input" id="classicGreenEdgeExpand" type="number" min="0" max="24" step="1" value="1">
+          </div>
+        </div>
       </section>
       <div class="engine-actions">
         <button class="btn" id="testEngine">Test connection</button>
@@ -985,7 +1099,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=8"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=14"></script>
 </body>
 
 </html>

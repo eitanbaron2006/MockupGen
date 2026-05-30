@@ -1,0 +1,221 @@
+{
+  "template_id": "template_fa83e6c793fe",
+  "name": "ChatGPT Image May 29 2026 09 46 48 PM 4",
+  "product_type": "vertival-wall-art-frame",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 293,
+    "y": 322,
+    "width": 431,
+    "height": 588,
+    "corners": [
+      {
+        "x": 295,
+        "y": 323
+      },
+      {
+        "x": 721,
+        "y": 322
+      },
+      {
+        "x": 724,
+        "y": 910
+      },
+      {
+        "x": 293,
+        "y": 910
+      }
+    ]
+  },
+  "fit_mode": "cover",
+  "orientation": "portrait",
+  "background": "background.png",
+  "foreground": null,
+  "mask": "mask.png",
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png",
+  "effects": {
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "type": "diagonal"
+    },
+    "green_frame_mockups": {
+      "aa_scale": 1,
+      "artwork_scale": 1,
+      "contain_bg_color": "#ffffff",
+      "edge_aa_radius": 0,
+      "edge_expand": 0,
+      "enable_inner_shadow": false,
+      "feather_radius": 0,
+      "fit_mode": "stretch",
+      "inner_shadow_size": 10,
+      "inner_shadow_strength": 0.35,
+      "mask_build_quality": 1,
+      "offset_x": 0,
+      "offset_y": 0,
+      "use_perspective": false,
+      "use_vector_clip": false
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": true,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "top": 10
+    }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 23,
+    "green_pixels": 329090,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 293,
+        "y": 321
+      },
+      {
+        "x": 723,
+        "y": 320
+      },
+      {
+        "x": 726,
+        "y": 912
+      },
+      {
+        "x": 291,
+        "y": 912
+      }
+    ],
+    "regions": [
+      {
+        "area": 312819,
+        "corners": [
+          {
+            "x": 293,
+            "y": 321
+          },
+          {
+            "x": 723,
+            "y": 320
+          },
+          {
+            "x": 726,
+            "y": 912
+          },
+          {
+            "x": 291,
+            "y": 912
+          }
+        ],
+        "height": 644,
+        "inner_corners": [
+          {
+            "x": 293,
+            "y": 321
+          },
+          {
+            "x": 723,
+            "y": 320
+          },
+          {
+            "x": 726,
+            "y": 912
+          },
+          {
+            "x": 291,
+            "y": 912
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 270,
+            "y": 298
+          },
+          {
+            "x": 746,
+            "y": 297
+          },
+          {
+            "x": 749,
+            "y": 935
+          },
+          {
+            "x": 268,
+            "y": 935
+          }
+        ],
+        "width": 486,
+        "x": 266,
+        "y": 296
+      },
+      {
+        "area": 95207,
+        "corners": [
+          {
+            "x": 790,
+            "y": 526
+          },
+          {
+            "x": 945,
+            "y": 527
+          },
+          {
+            "x": 947,
+            "y": 912
+          },
+          {
+            "x": 786,
+            "y": 914
+          }
+        ],
+        "height": 444,
+        "inner_corners": [
+          {
+            "x": 790,
+            "y": 526
+          },
+          {
+            "x": 945,
+            "y": 527
+          },
+          {
+            "x": 947,
+            "y": 912
+          },
+          {
+            "x": 786,
+            "y": 914
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 767,
+            "y": 503
+          },
+          {
+            "x": 968,
+            "y": 504
+          },
+          {
+            "x": 970,
+            "y": 935
+          },
+          {
+            "x": 763,
+            "y": 937
+          }
+        ],
+        "width": 217,
+        "x": 758,
+        "y": 500
+      }
+    ]
+  }
+}

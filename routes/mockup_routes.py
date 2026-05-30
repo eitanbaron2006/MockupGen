@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
@@ -21,6 +22,37 @@ mockup_routes = Blueprint("mockup_routes", __name__)
 
 def error_response(message: str, status_code: int):
     return jsonify({"success": False, "error": message}), status_code
+
+
+def prepare_draft_render_manifest(drafts_folder: Path, template: dict) -> Path | None:
+    template_id = str(template.get("template_id", ""))
+    if not template_id or Path(template_id).name != template_id:
+        return None
+    template_folder = drafts_folder / template_id
+    if not template_folder.is_dir() or not template.get("artwork_area"):
+        return None
+    manifest = {
+        "template_id": template_id,
+        "name": template.get("name") or template_id,
+        "product_type": template.get("product_type"),
+        "canvas_width": template["canvas_width"],
+        "canvas_height": template["canvas_height"],
+        "artwork_area": template["artwork_area"],
+        "fit_mode": template.get("fit_mode") or "cover",
+        "orientation": template.get("orientation"),
+        "background": template.get("background_name") or "background.png",
+        "foreground": template.get("foreground_name"),
+        "mask": template.get("mask_name"),
+        "preview": template.get("preview_name") or "preview.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+        "effects": template.get("effects"),
+    }
+    (template_folder / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return drafts_folder
 
 
 @mockup_routes.get("/api/health")
@@ -92,25 +124,39 @@ def render_mockup():
             catalog = current_app.extensions.get("catalog_service")
             db_effects = None
             db_artwork_area = None
+            db_raw_artwork_area = None
+            db_mask_name = None
             db_fit_mode = fit_mode
+            render_templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
             if catalog and template_id:
                 db_template = catalog.get_template(template_id)
                 if db_template:
                     db_effects = db_template.get("effects")
                     db_artwork_area = db_template.get("artwork_area")
+                    db_raw_artwork_area = db_template.get("raw_artwork_area")
+                    db_mask_name = db_template.get("mask_name")
                     if not db_fit_mode:
                         db_fit_mode = db_template.get("fit_mode")
+                    if db_template.get("status") == "draft":
+                        draft_folder = prepare_draft_render_manifest(
+                            Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
+                            db_template,
+                        )
+                        if draft_folder:
+                            render_templates_folder = draft_folder
 
             result = render_simple_mockup(
                 template_id=template_id,
                 artwork_path=artwork_path,
                 output_format=output_format,
-                templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+                templates_folder=render_templates_folder,
                 output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
                 fit_mode=db_fit_mode,
                 realism=realism,
                 effects=db_effects,
                 artwork_area=db_artwork_area,
+                raw_artwork_area=db_raw_artwork_area,
+                mask_name=db_mask_name,
             )
             return jsonify(result.as_response())
         elif mode == "ai":

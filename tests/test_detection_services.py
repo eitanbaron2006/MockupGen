@@ -1,10 +1,17 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
 from PIL import Image, ImageDraw
 
+
+SERVER_ROOT = Path(__file__).resolve().parents[1]
+if str(SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVER_ROOT))
+
 from services.detection_service import DetectionError, validate_proposal
+from services.detection_service import build_provider
 from services.frame_refinement_service import refine_artwork_area
 from services.classic_detection_service import ClassicDetectionProvider
 from services.local_detection_service import discover_local_models
@@ -170,6 +177,79 @@ def test_classic_detection_uses_visible_inner_boundary_without_ai(tmp_path: Path
     assert abs(proposal.artwork_area["x"] - 195) <= 3
     assert abs(proposal.artwork_area["y"] - 185) <= 3
     assert proposal.provider == "classic"
+
+
+def test_classic_green_frames_mode_detects_skewed_green_mockup_region(tmp_path: Path):
+    image_path = tmp_path / "green-frame.png"
+    image = Image.new("RGB", (500, 400), (238, 229, 214))
+    draw = ImageDraw.Draw(image)
+    expected = [(120, 80), (390, 105), (360, 310), (95, 280)]
+    draw.polygon(expected, fill=(0, 255, 0))
+    image.save(image_path)
+
+    proposal = ClassicDetectionProvider().detect(image_path, mode="green_frames_mockups")
+
+    assert proposal.provider == "classic"
+    assert "green frame" in proposal.reason.lower()
+    assert proposal.raw_artwork_area["mode"] == "green_frames_mockups"
+    corners = proposal.artwork_area["corners"]
+    assert len(corners) == 4
+    for actual, (exp_x, exp_y) in zip(corners, expected):
+        assert abs(actual["x"] - exp_x) <= 4
+        assert abs(actual["y"] - exp_y) <= 4
+    assert proposal.raw_artwork_area["green_pixels"] > 1000
+
+
+def test_classic_green_frames_mode_rejects_images_without_green_region(tmp_path: Path):
+    image_path = tmp_path / "no-green.png"
+    Image.new("RGB", (300, 300), (238, 229, 214)).save(image_path)
+
+    with pytest.raises(DetectionError):
+        ClassicDetectionProvider().detect(image_path, mode="green_frames_mockups")
+
+
+def test_build_provider_passes_green_frames_default_to_classic_provider():
+    provider = build_provider(
+        {
+            "DETECTION_PROVIDER": "classic",
+            "CLASSIC_INTERNAL_MODE": "green_frames_mockups",
+            "CLASSIC_GREEN_EDGE_EXPAND": "4",
+        },
+        {},
+    )
+
+    assert isinstance(provider, ClassicDetectionProvider)
+    assert provider.default_mode == "green_frames_mockups"
+    assert provider.green_edge_expand == 4
+
+
+def test_classic_green_frame_mask_expansion_fills_beyond_raw_green_edges(tmp_path: Path):
+    image_path = tmp_path / "green-mask.png"
+    image = Image.new("RGB", (80, 80), (238, 229, 214))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((25, 25, 54, 54), fill=(0, 255, 0))
+    image.save(image_path)
+
+    mask = ClassicDetectionProvider(default_mode="green_frames_mockups", green_edge_expand=3).build_green_frame_mask(image_path)
+
+    assert mask.getpixel((25, 25)) == 255
+    assert mask.getpixel((22, 25)) == 255
+    assert mask.getpixel((21, 25)) == 0
+
+
+def test_classic_green_frames_mode_reports_all_detected_regions(tmp_path: Path):
+    image_path = tmp_path / "multi-green-frame.png"
+    image = Image.new("RGB", (220, 120), (238, 229, 214))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((20, 20, 80, 90), fill=(0, 255, 0))
+    draw.rectangle((130, 25, 190, 95), fill=(0, 255, 0))
+    image.save(image_path)
+
+    proposal = ClassicDetectionProvider().detect(image_path, mode="green_frames_mockups")
+
+    regions = proposal.raw_artwork_area["regions"]
+    assert len(regions) == 2
+    assert all(len(region["corners"]) == 4 for region in regions)
 
 
 def test_local_model_discovery_uses_reported_models_instead_of_fixed_options(monkeypatch):

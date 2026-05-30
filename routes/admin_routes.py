@@ -48,7 +48,18 @@ SETTINGS_KEYS = {
     "LOCAL_DETECTION_MODEL",
     "CLASSIC_BLUR_SIZE",
     "CLASSIC_SEARCH_RADIUS",
+    "CLASSIC_INTERNAL_MODE",
+    "CLASSIC_GREEN_EDGE_EXPAND",
 }
+
+
+def save_green_frame_mask_if_needed(provider: Any, background: Path, mode: str) -> str | None:
+    if mode != "green_frames_mockups" or not hasattr(provider, "build_green_frame_mask"):
+        return None
+    mask = provider.build_green_frame_mask(background)
+    mask_path = background.parent / "mask.png"
+    mask.save(mask_path)
+    return "mask.png"
 def catalog() -> CatalogService:
     return current_app.extensions["catalog_service"]
 
@@ -241,6 +252,14 @@ def update_admin_template(template_id: str):
                 changes["effects"] = effects
             else:
                 return json_error("Effects must be a dictionary or null", 400)
+        if "raw_artwork_area" in payload:
+            raw_artwork_area = payload["raw_artwork_area"]
+            if raw_artwork_area is None or isinstance(raw_artwork_area, dict):
+                changes["raw_artwork_area"] = raw_artwork_area
+            else:
+                return json_error("Raw artwork area must be a dictionary or null", 400)
+        if "mask_name" in payload and payload.get("mask_name") in {"mask.png", None, ""}:
+            changes["mask_name"] = payload.get("mask_name") or None
         updated = catalog().update_template(template_id, changes)
         
         # If the template is published (active), keep the manifest.json on disk synchronized!
@@ -253,6 +272,8 @@ def update_admin_template(template_id: str):
                 manifest["artwork_area"] = updated["artwork_area"]
                 manifest["fit_mode"] = updated["fit_mode"]
                 manifest["orientation"] = updated["orientation"]
+                manifest["mask"] = updated.get("mask_name")
+                manifest["raw_artwork_area"] = updated.get("raw_artwork_area")
                 manifest["effects"] = updated.get("effects")
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -304,19 +325,23 @@ def detect_admin_template(template_id: str):
             proposal = getattr(provider, "detect")(background, mode=mode, point=point)
         else:
             proposal = provider.detect(background)
+        mask_name = save_green_frame_mask_if_needed(provider, background, mode)
 
         if template.get("status") == "draft":
+            changes = {
+                "artwork_area": proposal.artwork_area,
+                "orientation": orientation_for_size(
+                    proposal.artwork_area["width"], proposal.artwork_area["height"]
+                ),
+                "detection_provider": proposal.provider,
+                "detection_confidence": proposal.confidence,
+                "raw_artwork_area": proposal.raw_artwork_area,
+            }
+            if mask_name:
+                changes["mask_name"] = mask_name
             preview = catalog().update_template(
                 template_id,
-                {
-                    "artwork_area": proposal.artwork_area,
-                    "orientation": orientation_for_size(
-                        proposal.artwork_area["width"], proposal.artwork_area["height"]
-                    ),
-                    "detection_provider": proposal.provider,
-                    "detection_confidence": proposal.confidence,
-                    "raw_artwork_area": proposal.raw_artwork_area,
-                }
+                changes
             )
         else:
             preview = {
@@ -329,6 +354,8 @@ def detect_admin_template(template_id: str):
                 "detection_confidence": proposal.confidence,
                 "raw_artwork_area": proposal.raw_artwork_area,
             }
+            if mask_name:
+                preview["mask_name"] = mask_name
     except DetectionError as error:
         return json_error(str(error), 422)
     return jsonify(
@@ -489,6 +516,15 @@ def update_detection_settings():
         return json_error("Unsupported media resolution", 400)
     if settings.get("DETECTION_REFINEMENT") not in {None, "hybrid", "ai_only"}:
         return json_error("Unsupported refinement mode", 400)
+    if settings.get("CLASSIC_INTERNAL_MODE") not in {None, "auto", "green_frames_mockups"}:
+        return json_error("Unsupported classic internal mode", 400)
+    if "CLASSIC_GREEN_EDGE_EXPAND" in settings:
+        try:
+            edge_expand = int(settings["CLASSIC_GREEN_EDGE_EXPAND"])
+        except ValueError:
+            return json_error("Green frame edge expansion must be a number", 400)
+        if edge_expand < 0 or edge_expand > 24:
+            return json_error("Green frame edge expansion must be between 0 and 24", 400)
     catalog().set_settings(settings)
     return jsonify({"success": True, "settings": settings})
 

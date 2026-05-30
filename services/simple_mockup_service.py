@@ -2,6 +2,7 @@ import json
 import math
 import random
 import base64
+import re
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,13 @@ from uuid import uuid4
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance
 
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
+from services.image_utils import get_perspective_coefficients
+from services.green_frame_mockup_service import (
+    detection_from_mask,
+    detect_green_frames,
+    parse_green_frame_settings,
+    render_green_frame_mockup,
+)
 
 
 class TemplateNotFoundError(FileNotFoundError):
@@ -228,6 +236,325 @@ def _mask_for_artwork(
     if mask_image.size == area_size:
         return mask_image
     raise InvalidTemplateError("Mask size must match the canvas or artwork area")
+
+
+def _full_canvas_mask(
+    template_folder: Path,
+    mask_name: str,
+    canvas_size: tuple[int, int],
+    area: dict[str, Any],
+) -> Image.Image:
+    mask_image = load_mask(_safe_asset_path(template_folder, mask_name))
+    if mask_image.size == canvas_size:
+        return mask_image
+    if mask_image.size == (area["width"], area["height"]):
+        full_mask = Image.new("L", canvas_size, 0)
+        full_mask.paste(mask_image, (area["x"], area["y"]))
+        return full_mask
+    raise InvalidTemplateError("Mask size must match the canvas or artwork area")
+
+
+def _parse_hex_color(value: Any, fallback: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        return fallback
+    return (
+        int(value[1:3], 16),
+        int(value[3:5], 16),
+        int(value[5:7], 16),
+        255,
+    )
+
+
+def _green_frame_options(effects: dict | None, fallback_fit_mode: str) -> dict[str, Any]:
+    options = {}
+    if effects and isinstance(effects.get("green_frame_mockups"), dict):
+        options = effects["green_frame_mockups"]
+    fit_mode = str(options.get("fit_mode") or fallback_fit_mode or "cover").lower()
+    if fit_mode not in {"cover", "contain", "stretch"}:
+        fit_mode = "cover"
+    return {
+        "use_perspective": bool(options.get("use_perspective", True)),
+        "use_vector_clip": bool(options.get("use_vector_clip", True)),
+        "fit_mode": fit_mode,
+        "artwork_scale": min(3.0, max(0.1, float(options.get("artwork_scale", 1.0)))),
+        "offset_x": min(1.0, max(-1.0, float(options.get("offset_x", 0.0)))),
+        "offset_y": min(1.0, max(-1.0, float(options.get("offset_y", 0.0)))),
+        "edge_expand": min(24, max(0, int(options.get("edge_expand", 1)))),
+        "mask_build_quality": min(3, max(1, int(options.get("mask_build_quality", 2)))),
+        "feather_radius": min(12.0, max(0.0, float(options.get("feather_radius", 2.0)))),
+        "edge_aa_radius": min(6.0, max(0.0, float(options.get("edge_aa_radius", 2.0)))),
+        "aa_scale": min(8, max(1, int(options.get("aa_scale", 4)))),
+        "enable_inner_shadow": bool(options.get("enable_inner_shadow", True)),
+        "inner_shadow_strength": min(1.0, max(0.0, float(options.get("inner_shadow_strength", 0.35)))),
+        "inner_shadow_size": min(30.0, max(1.0, float(options.get("inner_shadow_size", 10.0)))),
+        "contain_bg_color": _parse_hex_color(options.get("contain_bg_color"), (255, 255, 255, 255)),
+    }
+
+
+def _is_green_frame_raw(raw_artwork_area: dict | None) -> bool:
+    return isinstance(raw_artwork_area, dict) and raw_artwork_area.get("mode") == "green_frames_mockups"
+
+
+def _mask_regions(mask: Image.Image, min_pixels: int = 8) -> list[dict[str, int]]:
+    binary = mask.point(lambda p: 255 if p > 0 else 0)
+    width, height = binary.size
+    pixels = binary.load()
+    visited = bytearray(width * height)
+    regions: list[dict[str, int]] = []
+    for y in range(height):
+        for x in range(width):
+            idx = y * width + x
+            if visited[idx] or not pixels[x, y]:
+                continue
+            stack = [(x, y)]
+            visited[idx] = 1
+            min_x = max_x = x
+            min_y = max_y = y
+            count = 0
+            while stack:
+                cx, cy = stack.pop()
+                count += 1
+                min_x = min(min_x, cx)
+                max_x = max(max_x, cx)
+                min_y = min(min_y, cy)
+                max_y = max(max_y, cy)
+                for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    if nx < 0 or ny < 0 or nx >= width or ny >= height:
+                        continue
+                    nidx = ny * width + nx
+                    if visited[nidx] or not pixels[nx, ny]:
+                        continue
+                    visited[nidx] = 1
+                    stack.append((nx, ny))
+            if count >= min_pixels:
+                regions.append(
+                    {
+                        "x": min_x,
+                        "y": min_y,
+                        "width": max_x - min_x + 1,
+                        "height": max_y - min_y + 1,
+                        "area": count,
+                    }
+                )
+    return sorted(regions, key=lambda r: (r["y"], r["x"]))
+
+
+def _normalize_green_regions(raw_artwork_area: dict | None, mask: Image.Image) -> list[dict[str, Any]]:
+    raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+    regions = [region for region in raw_regions or [] if isinstance(region, dict)]
+    if not regions:
+        regions = _mask_regions(mask)
+    normalized = []
+    for region in regions:
+        try:
+            x = int(region["x"])
+            y = int(region["y"])
+            width = int(region.get("width", region.get("w")))
+            height = int(region.get("height", region.get("h")))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if width <= 0 or height <= 0:
+            continue
+        item: dict[str, Any] = {"x": x, "y": y, "width": width, "height": height}
+        corners = region.get("corners") or region.get("inner_corners")
+        if isinstance(corners, list) and len(corners) == 4:
+            item["corners"] = [{"x": float(p["x"]), "y": float(p["y"])} for p in corners]
+        inner_corners = region.get("inner_corners")
+        if isinstance(inner_corners, list) and len(inner_corners) == 4:
+            item["inner_corners"] = [{"x": float(p["x"]), "y": float(p["y"])} for p in inner_corners]
+        outer_corners = region.get("outer_corners")
+        if isinstance(outer_corners, list) and len(outer_corners) == 4:
+            item["outer_corners"] = [{"x": float(p["x"]), "y": float(p["y"])} for p in outer_corners]
+        normalized.append(item)
+    return normalized
+
+
+def _prepare_green_source(artwork: Image.Image, size: tuple[int, int], options: dict[str, Any]) -> Image.Image:
+    background = options["contain_bg_color"] if options["fit_mode"] == "contain" else (0, 0, 0, 0)
+    base = Image.new("RGBA", size, background)
+    scaled_size = (
+        max(1, int(round(size[0] * options["artwork_scale"]))),
+        max(1, int(round(size[1] * options["artwork_scale"]))),
+    )
+    fitted = fit_artwork(artwork, scaled_size, options["fit_mode"])
+    x = int(round((size[0] - fitted.width) / 2 + options["offset_x"] * size[0] / 2))
+    y = int(round((size[1] - fitted.height) / 2 + options["offset_y"] * size[1] / 2))
+    base.alpha_composite(fitted, dest=(x, y))
+    return base
+
+
+def _region_corners(region: dict[str, Any]) -> list[dict[str, float]]:
+    if "corners" in region:
+        return region["corners"]
+    return _region_box_corners(region)
+
+
+def _region_box_corners(region: dict[str, Any]) -> list[dict[str, float]]:
+    x = float(region["x"])
+    y = float(region["y"])
+    width = float(region["width"])
+    height = float(region["height"])
+    return [
+        {"x": x, "y": y},
+        {"x": x + width, "y": y},
+        {"x": x + width, "y": y + height},
+        {"x": x, "y": y + height},
+    ]
+
+
+def _distance(a: dict[str, float], b: dict[str, float]) -> float:
+    return math.hypot(float(a["x"]) - float(b["x"]), float(a["y"]) - float(b["y"]))
+
+
+def _expanded_quad(corners: list[dict[str, float]], amount: float) -> list[dict[str, float]]:
+    center_x = sum(float(p["x"]) for p in corners) / 4
+    center_y = sum(float(p["y"]) for p in corners) / 4
+    expanded = []
+    for point in corners:
+        dx = float(point["x"]) - center_x
+        dy = float(point["y"]) - center_y
+        length = math.hypot(dx, dy) or 1.0
+        expanded.append(
+            {
+                "x": float(point["x"]) + dx / length * amount,
+                "y": float(point["y"]) + dy / length * amount,
+            }
+        )
+    return expanded
+
+
+def _green_region_mask_box(full_mask: Image.Image, region: dict[str, Any]) -> tuple[int, int, int, int]:
+    x0 = max(0, int(region["x"]))
+    y0 = max(0, int(region["y"]))
+    x1 = min(full_mask.width, int(region["x"] + region["width"]))
+    y1 = min(full_mask.height, int(region["y"] + region["height"]))
+    if x1 <= x0 or y1 <= y0:
+        return (x0, y0, x1, y1)
+    mask_pixels = full_mask.load()
+    found = False
+    min_x, min_y, max_x, max_y = x1, y1, x0, y0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            if mask_pixels[x, y] <= 0:
+                continue
+            found = True
+            min_x = min(min_x, x)
+            min_y = min(min_y, y)
+            max_x = max(max_x, x)
+            max_y = max(max_y, y)
+    if not found:
+        return (x0, y0, x1, y1)
+    return (min_x, min_y, max_x + 1, max_y + 1)
+
+
+def _apply_region_inner_shadow(layer: Image.Image, alpha: Image.Image, options: dict[str, Any]) -> Image.Image:
+    if not options["enable_inner_shadow"] or options["inner_shadow_strength"] <= 0:
+        return layer
+    edge = ImageChops.subtract(alpha, alpha.filter(ImageFilter.MinFilter(3)))
+    shadow = edge.filter(ImageFilter.GaussianBlur(radius=options["inner_shadow_size"]))
+    shadow = shadow.point(lambda p: min(220, int(p * options["inner_shadow_strength"] * 3)))
+    shadow_layer = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    shadow_layer.putalpha(shadow)
+    return Image.alpha_composite(layer, shadow_layer)
+
+
+def _render_green_frame_mockup(
+    *,
+    background: Image.Image,
+    artwork: Image.Image,
+    template_folder: Path,
+    mask_name: str,
+    canvas_size: tuple[int, int],
+    area: dict[str, Any],
+    raw_artwork_area: dict | None,
+    fit_mode: str,
+    realism: bool,
+    effects: dict | None,
+) -> Image.Image:
+    settings = parse_green_frame_settings(effects, fit_mode)
+    detection = detect_green_frames(background, settings)
+    raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+    raw_has_perspective = any(
+        isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
+        for region in (raw_regions or [])
+    )
+    if not detection.regions or (raw_regions and not raw_has_perspective):
+        full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
+        detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+    if not detection.regions:
+        raise InvalidTemplateError("Green frame mask has no usable regions")
+    composed = render_green_frame_mockup(background, artwork, settings, detection)
+    return composed
+
+    options = _green_frame_options(effects, fit_mode)
+    full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
+    if options["edge_expand"] > 0:
+        full_mask = full_mask.filter(ImageFilter.MaxFilter(options["edge_expand"] * 2 + 1))
+    regions = _normalize_green_regions(raw_artwork_area, full_mask)
+    if not regions:
+        raise InvalidTemplateError("Green frame mask has no usable regions")
+
+    composed = background.copy()
+    for region in regions:
+        box = _green_region_mask_box(full_mask, region)
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        width = box[2] - box[0]
+        height = box[3] - box[1]
+
+        region_mask = full_mask.crop(box)
+        blur_radius = max(options["feather_radius"], options["edge_aa_radius"])
+        if blur_radius > 0:
+            region_mask = region_mask.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        if options["use_perspective"] and "corners" in region:
+            inner_corners = region.get("inner_corners") or _region_corners(region)
+            outer_corners = region.get("outer_corners") or _region_box_corners(region)
+            if options["use_vector_clip"]:
+                corners = _expanded_quad(
+                    outer_corners,
+                    max(2.0, float(options["edge_expand"]) + 2.0),
+                )
+            else:
+                corners = inner_corners
+            target_width = max(
+                2,
+                int(round(max(_distance(corners[0], corners[1]), _distance(corners[3], corners[2])))),
+            )
+            target_height = max(
+                2,
+                int(round(max(_distance(corners[0], corners[3]), _distance(corners[1], corners[2])))),
+            )
+            source = _prepare_green_source(artwork, (target_width, target_height), options)
+            if realism:
+                source = _apply_realism_filter(source, effects)
+            src_coords = [
+                (0.0, 0.0),
+                (float(source.width - 1), 0.0),
+                (float(source.width - 1), float(source.height - 1)),
+                (0.0, float(source.height - 1)),
+            ]
+            dst_coords = [(float(p["x"]), float(p["y"])) for p in corners]
+            coefficients = get_perspective_coefficients(src_coords, dst_coords)
+            layer = source.transform(
+                canvas_size,
+                Image.Transform.PERSPECTIVE,
+                coefficients,
+                Image.Resampling.BICUBIC,
+            )
+            alpha = Image.new("L", canvas_size, 0)
+            alpha.paste(region_mask, box)
+            layer.putalpha(ImageChops.multiply(layer.getchannel("A"), alpha))
+            layer = _apply_region_inner_shadow(layer, alpha, options)
+            composed = Image.alpha_composite(composed, layer)
+        else:
+            source = _prepare_green_source(artwork, (width, height), options)
+            if realism:
+                source = _apply_realism_filter(source, effects)
+            source.putalpha(ImageChops.multiply(source.getchannel("A"), region_mask))
+            source = _apply_region_inner_shadow(source, region_mask, options)
+            composed.alpha_composite(source, dest=(box[0], box[1]))
+    return composed
 
 
 def _apply_inner_shadow(artwork_layer: Image.Image, config: dict) -> Image.Image:
@@ -855,6 +1182,8 @@ def render_simple_mockup(
     realism: bool = True,
     effects: dict | None = None,
     artwork_area: dict | None = None,
+    raw_artwork_area: dict | None = None,
+    mask_name: str | None = None,
 ) -> RenderResult:
     if output_format.lower() != "png":
         raise RenderValidationError("Only png output format is currently supported")
@@ -866,6 +1195,9 @@ def render_simple_mockup(
     if artwork_area:
         manifest = manifest.copy()
         manifest["artwork_area"] = artwork_area
+    if mask_name:
+        manifest = manifest.copy()
+        manifest["mask"] = mask_name
 
     canvas_size, area = _validated_canvas_and_area(manifest)
     background = load_rgba(_safe_asset_path(template_folder, manifest["background"]))
@@ -903,12 +1235,44 @@ def render_simple_mockup(
             else:
                 final_fit_mode = "stretch"
 
+    mask_name = manifest.get("mask")
+    if mask_name and _is_green_frame_raw(raw_artwork_area):
+        composed = _render_green_frame_mockup(
+            background=background,
+            artwork=artwork,
+            template_folder=template_folder,
+            mask_name=mask_name,
+            canvas_size=canvas_size,
+            area=area,
+            raw_artwork_area=raw_artwork_area,
+            fit_mode=final_fit_mode,
+            realism=realism,
+            effects=active_effects if realism else effects,
+        )
+        if foreground_path:
+            foreground = load_rgba(foreground_path)
+            if foreground.size != canvas_size:
+                raise InvalidTemplateError("Foreground must match canvas size")
+            composed = Image.alpha_composite(composed, foreground)
+        if realism:
+            composed = _apply_effects_by_target(composed, active_effects, "all")
+        output_folder.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
+        composed.save(output_folder / output_name, format="PNG")
+        return RenderResult(
+            mode="simple",
+            template_id=template_id,
+            output_url=f"/outputs/{output_name}",
+            width=canvas_size[0],
+            height=canvas_size[1],
+        )
+
     artwork_layer = fit_artwork(
         artwork,
         (area["width"], area["height"]),
         final_fit_mode,
     )
-    mask_name = manifest.get("mask")
     if mask_name:
         mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
         artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))

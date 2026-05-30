@@ -1,20 +1,67 @@
 from pathlib import Path
 import cv2
 import numpy as np
+from PIL import Image
 
 from services.catalog_service import orientation_for_size
 from services.detection_service import DetectionError, DetectionProposal, validate_proposal
 from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
+from services.green_frame_mockup_service import (
+    GreenFrameSettings,
+    detect_green_frames,
+    green_detection_raw,
+    green_mask_image,
+)
 
 
 class ClassicDetectionProvider:
     """Conservative offline fallback using high-fidelity multi-layer geometric and SAM 2.1 boundary detection."""
 
-    def __init__(self, blur_size: int = 3, search_radius: int = 20):
+    def __init__(
+        self,
+        blur_size: int = 3,
+        search_radius: int = 20,
+        default_mode: str = "auto",
+        green_edge_expand: int = 1,
+    ):
         self.blur_size = blur_size
         self.search_radius = search_radius
+        self.default_mode = default_mode or "auto"
+        self.green_edge_expand = max(0, int(green_edge_expand))
 
-    def detect(self, background_path: Path, mode: str = "auto", point: dict = None) -> DetectionProposal:
+    def _green_raw_mask(self, img: np.ndarray) -> np.ndarray:
+        state = detect_green_frames(Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)), self._green_settings())
+        return state.raw_mask.astype(np.uint8)
+
+    def _expanded_green_mask(self, raw_mask: np.ndarray) -> np.ndarray:
+        if self.green_edge_expand <= 0:
+            return raw_mask
+        kernel_size = self.green_edge_expand * 2 + 1
+        kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
+        return cv2.dilate(raw_mask, kernel, iterations=1)
+
+    def build_green_frame_mask(self, background_path: Path) -> Image.Image:
+        image = Image.open(background_path).convert("RGBA")
+        state = detect_green_frames(image, self._green_settings())
+        if not state.regions:
+            raise DetectionError("No green frame mockup region could be detected.")
+        return green_mask_image(state)
+
+    def _green_settings(self) -> GreenFrameSettings:
+        return GreenFrameSettings(edge_expand=self.green_edge_expand, min_area=80)
+
+    def _detect_green_frame(self, img: np.ndarray) -> tuple[np.ndarray | None, dict | None]:
+        image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).convert("RGBA")
+        state = detect_green_frames(image, self._green_settings())
+        if not state.regions:
+            return None, {"green_pixels": 0, "regions": []}
+        raw = green_detection_raw(state, self.green_edge_expand)
+        first = raw["regions"][0]["corners"]
+        chosen_pts = np.array([[point["x"], point["y"]] for point in first], dtype="int32")
+        return chosen_pts, raw
+
+    def detect(self, background_path: Path, mode: str | None = None, point: dict = None) -> DetectionProposal:
+        mode = mode or self.default_mode
         # Load background image via OpenCV
         img = cv2.imread(str(background_path))
         if img is None:
@@ -26,10 +73,17 @@ class ClassicDetectionProvider:
         chosen_pts = None
         is_geometric = False
         is_sam = False
+        is_green_frame = False
         all_layers = []
 
+        if mode == "green_frames_mockups":
+            chosen_pts, raw_artwork_area = self._detect_green_frame(img)
+            if chosen_pts is None:
+                raise DetectionError("No green frame mockup region could be detected.")
+            is_green_frame = True
+
         # 1. Step 1 (geometry): Canny & contours (Run if mode is "auto" or "geometry")
-        if mode in ("auto", "geometry"):
+        if chosen_pts is None and mode in ("auto", "geometry"):
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
             edged = cv2.Canny(blurred, 50, 150)
@@ -129,39 +183,52 @@ class ClassicDetectionProvider:
                 logging.getLogger("classic_detection").warning(f"Local SAM 2.1 model prediction failed: {e}")
 
         # If explicitly requesting geometry/sam modes and it failed to find corners, raise DetectionError
-        if mode in ("geometry", "sam_center", "sam_point") and chosen_pts is None:
+        if mode in ("geometry", "sam_center", "sam_point", "green_frames_mockups") and chosen_pts is None:
             raise DetectionError(f"No boundary corners could be resolved using {mode} mode.")
 
         # If we successfully found corners (either from Canny or SAM), apply 3px Inset
         if chosen_pts is not None:
+            if is_green_frame:
+                final_corners = [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts]
+                xs = [c["x"] for c in final_corners]
+                ys = [c["y"] for c in final_corners]
+                artwork_area = {
+                    "x": min(xs),
+                    "y": min(ys),
+                    "width": max(xs) - min(xs),
+                    "height": max(ys) - min(ys),
+                    "corners": final_corners,
+                }
+                refined = True
+            else:
             # Apply a 3-pixel inset towards the centroid to guarantee exact placement inside the frame borders
-            centroid = np.mean(chosen_pts, axis=0)
-            final_corners = []
-            for pt in chosen_pts:
-                vec = centroid - pt
-                norm = np.linalg.norm(vec)
-                if norm > 0:
-                    inset_pt = pt + (vec / norm) * 3
-                else:
-                    inset_pt = pt
-                final_corners.append({"x": int(round(inset_pt[0])), "y": int(round(inset_pt[1]))})
+                centroid = np.mean(chosen_pts, axis=0)
+                final_corners = []
+                for pt in chosen_pts:
+                    vec = centroid - pt
+                    norm = np.linalg.norm(vec)
+                    if norm > 0:
+                        inset_pt = pt + (vec / norm) * 3
+                    else:
+                        inset_pt = pt
+                    final_corners.append({"x": int(round(inset_pt[0])), "y": int(round(inset_pt[1]))})
 
-            xs = [c["x"] for c in final_corners]
-            ys = [c["y"] for c in final_corners]
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            artwork_area = {
-                "x": min_x,
-                "y": min_y,
-                "width": max_x - min_x,
-                "height": max_y - min_y,
-                "corners": final_corners
-            }
-            refined = True
-            raw_artwork_area = {
-                "layers": all_layers,
-                "original_corners": [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts]
-            }
+                xs = [c["x"] for c in final_corners]
+                ys = [c["y"] for c in final_corners]
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+                artwork_area = {
+                    "x": min_x,
+                    "y": min_y,
+                    "width": max_x - min_x,
+                    "height": max_y - min_y,
+                    "corners": final_corners
+                }
+                refined = True
+                raw_artwork_area = {
+                    "layers": all_layers,
+                    "original_corners": [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts]
+                }
         else:
             # 3. Fallback to legacy centered offline estimation if both failed
             refined = False
@@ -203,9 +270,11 @@ class ClassicDetectionProvider:
         return validate_proposal(
             {
                 "artwork_area": artwork_area,
-                "confidence": 0.90 if is_sam else (0.85 if is_geometric else (0.70 if refined else 0.25)),
+                "confidence": 0.92 if is_green_frame else (0.90 if is_sam else (0.85 if is_geometric else (0.70 if refined else 0.25))),
                 "reason": (
-                    "Innermost geometric mockup frame layer detected with 3px edge inset."
+                    "Green frame mockup region detected from color mask with perspective corners."
+                    if is_green_frame
+                    else "Innermost geometric mockup frame layer detected with 3px edge inset."
                     if is_geometric
                     else "Innermost local SAM 2.1 prediction frame isolated with 3px edge inset."
                     if is_sam
@@ -219,4 +288,3 @@ class ClassicDetectionProvider:
             image_height=h,
             provider="classic",
         )
-
