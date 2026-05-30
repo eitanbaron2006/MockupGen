@@ -39,19 +39,34 @@
   ],
   "output_format": "png",
   "effects": {
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.95,
+      "temperature": 0
+    },
     "glass_reflection": {
       "enabled": false,
       "opacity": 0.15,
       "type": "diagonal"
     },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 0.5
+    },
     "inner_shadow": {
-      "blur": 15,
+      "blur": 7,
       "bottom": 10,
       "enabled": true,
       "left": 10,
-      "opacity": 0.4,
+      "opacity": 0.8,
       "right": 10,
       "top": 10
+    },
+    "matte_finish": {
+      "contrast": 0.1,
+      "enabled": true,
+      "shadow_lift": 0
     }
   }
 }

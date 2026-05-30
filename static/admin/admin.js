@@ -502,7 +502,10 @@
     // Populate Realism Effects values
     const effects = template.effects || {
       inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
-      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+      glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
+      matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
+      color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
+      gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 }
     };
     if (!template.effects) {
       template.effects = effects;
@@ -539,6 +542,43 @@
     $("reflectionType").value = effects.glass_reflection.type || "diagonal";
     $("reflectionOpacity").value = effects.glass_reflection.opacity ?? 0.15;
     $("reflectionOpacityVal").textContent = Math.round((effects.glass_reflection.opacity ?? 0.15) * 100) + "%";
+
+    // Set faded matte paper fields
+    if (!effects.matte_finish) {
+      effects.matte_finish = { enabled: false, shadow_lift: 0.08, contrast: -0.15 };
+    }
+    const matteEnabled = effects.matte_finish.enabled || false;
+    $("matteFinishEnabled").checked = matteEnabled;
+    $("matteFinishControls").classList.toggle("hidden", !matteEnabled);
+    $("matteShadowLift").value = effects.matte_finish.shadow_lift ?? 0.08;
+    $("matteShadowLiftVal").textContent = Math.round((effects.matte_finish.shadow_lift ?? 0.08) * 100) + "%";
+    $("matteContrast").value = effects.matte_finish.contrast ?? -0.15;
+    $("matteContrastVal").textContent = Math.round((effects.matte_finish.contrast ?? -0.15) * 100) + "%";
+
+    // Set ambient warmth fields
+    if (!effects.color_tint) {
+      effects.color_tint = { enabled: false, temperature: 25, intensity: 0.2 };
+    }
+    const tintEnabled = effects.color_tint.enabled || false;
+    $("colorTintEnabled").checked = tintEnabled;
+    $("colorTintControls").classList.toggle("hidden", !tintEnabled);
+    $("tintTemperature").value = effects.color_tint.temperature ?? 25;
+    const tempSign = (effects.color_tint.temperature ?? 25) > 0 ? "+" : "";
+    $("tintTemperatureVal").textContent = tempSign + (effects.color_tint.temperature ?? 25);
+    $("tintIntensity").value = effects.color_tint.intensity ?? 0.2;
+    $("tintIntensityVal").textContent = Math.round((effects.color_tint.intensity ?? 0.2) * 100) + "%";
+
+    // Set sunlight blinds fields
+    if (!effects.gobo_shadow) {
+      effects.gobo_shadow = { enabled: false, opacity: 0.3, scale: 1.0 };
+    }
+    const goboEnabled = effects.gobo_shadow.enabled || false;
+    $("goboShadowEnabled").checked = goboEnabled;
+    $("goboShadowControls").classList.toggle("hidden", !goboEnabled);
+    $("goboOpacity").value = effects.gobo_shadow.opacity ?? 0.3;
+    $("goboOpacityVal").textContent = Math.round((effects.gobo_shadow.opacity ?? 0.3) * 100) + "%";
+    $("goboScale").value = effects.gobo_shadow.scale ?? 1.0;
+    $("goboScaleVal").textContent = (effects.gobo_shadow.scale ?? 1.0) + "x";
     if (template.detection_provider) {
       $("confidence").textContent = confidenceLabel(template.detection_confidence);
     } else {
@@ -2146,7 +2186,10 @@
     if (!state.selected.effects) {
       state.selected.effects = {
         inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
-        glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+        glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 },
+        matte_finish: { enabled: false, shadow_lift: 0.08, contrast: -0.15 },
+        color_tint: { enabled: false, temperature: 25, intensity: 0.2 },
+        gobo_shadow: { enabled: false, opacity: 0.3, scale: 1.0 }
       };
     }
     const effects = state.selected.effects;
@@ -2162,6 +2205,27 @@
     effects.glass_reflection.enabled = $("glassReflectionEnabled").checked;
     effects.glass_reflection.type = $("reflectionType").value;
     effects.glass_reflection.opacity = Number($("reflectionOpacity").value);
+
+    if (!effects.matte_finish) {
+      effects.matte_finish = { enabled: false, shadow_lift: 0.08, contrast: -0.15 };
+    }
+    effects.matte_finish.enabled = $("matteFinishEnabled").checked;
+    effects.matte_finish.shadow_lift = Number($("matteShadowLift").value);
+    effects.matte_finish.contrast = Number($("matteContrast").value);
+
+    if (!effects.color_tint) {
+      effects.color_tint = { enabled: false, temperature: 25, intensity: 0.2 };
+    }
+    effects.color_tint.enabled = $("colorTintEnabled").checked;
+    effects.color_tint.temperature = Number($("tintTemperature").value);
+    effects.color_tint.intensity = Number($("tintIntensity").value);
+
+    if (!effects.gobo_shadow) {
+      effects.gobo_shadow = { enabled: false, opacity: 0.3, scale: 1.0 };
+    }
+    effects.gobo_shadow.enabled = $("goboShadowEnabled").checked;
+    effects.gobo_shadow.opacity = Number($("goboOpacity").value);
+    effects.gobo_shadow.scale = Number($("goboScale").value);
     
     persistTemplateState(state.selected);
 
@@ -2233,6 +2297,179 @@
     $("reflectionOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
     updateEffectsState();
   };
+
+  // Matte finish enabled checkbox
+  $("matteFinishEnabled").onchange = (e) => {
+    $("matteFinishControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Matte Shadow Lift slider
+  $("matteShadowLift").oninput = (e) => {
+    $("matteShadowLiftVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+  // Matte Contrast slider
+  $("matteContrast").oninput = (e) => {
+    $("matteContrastVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+
+  // Color tint enabled checkbox
+  $("colorTintEnabled").onchange = (e) => {
+    $("colorTintControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Color Temperature slider
+  $("tintTemperature").oninput = (e) => {
+    const val = Number(e.target.value);
+    const sign = val > 0 ? "+" : "";
+    $("tintTemperatureVal").textContent = sign + val;
+    updateEffectsState();
+  };
+  // Color tint intensity slider
+  $("tintIntensity").oninput = (e) => {
+    $("tintIntensityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+
+  // Gobo shadow enabled checkbox
+  $("goboShadowEnabled").onchange = (e) => {
+    $("goboShadowControls").classList.toggle("hidden", !e.target.checked);
+    updateEffectsState();
+  };
+  // Gobo shadow Opacity slider
+  $("goboOpacity").oninput = (e) => {
+    $("goboOpacityVal").textContent = Math.round(Number(e.target.value) * 100) + "%";
+    updateEffectsState();
+  };
+  // Gobo shadow Scale slider
+  $("goboScale").oninput = (e) => {
+    $("goboScaleVal").textContent = Number(e.target.value).toFixed(1) + "x";
+    updateEffectsState();
+  };
+
+  // Apply Matte to all button event listener
+  if ($("applyMatteToAllBtn")) {
+    $("applyMatteToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.matte_finish) {
+        toast("No matte finish settings to apply.");
+        return;
+      }
+      
+      const activeMatte = JSON.parse(JSON.stringify(state.selected.effects.matte_finish));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Faded Matte settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.matte_finish = JSON.parse(JSON.stringify(activeMatte));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Faded Matte settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Faded Matte settings.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Tint to all button event listener
+  if ($("applyTintToAllBtn")) {
+    $("applyTintToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.color_tint) {
+        toast("No color warmth settings to apply.");
+        return;
+      }
+      
+      const activeTint = JSON.parse(JSON.stringify(state.selected.effects.color_tint));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Ambient Warmth settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.color_tint = JSON.parse(JSON.stringify(activeTint));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Ambient Warmth settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Ambient Warmth settings.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Gobo Shadow to all button event listener
+  if ($("applyGoboToAllBtn")) {
+    $("applyGoboToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.gobo_shadow) {
+        toast("No sunlight shadow settings to apply.");
+        return;
+      }
+      
+      const activeGobo = JSON.parse(JSON.stringify(state.selected.effects.gobo_shadow));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying Sunlight Blinds settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) t.effects = {};
+          t.effects.gobo_shadow = JSON.parse(JSON.stringify(activeGobo));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Sunlight Blinds settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error(err);
+        toast("Failed to apply Sunlight Blinds settings.");
+        setStatus("Ready");
+      }
+    };
+  }
 
   // Apply to all button event listener
   if ($("applyEffectsToAllBtn")) {

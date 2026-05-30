@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 
@@ -352,6 +352,106 @@ def _apply_glass_reflection(artwork_layer: Image.Image, config: dict) -> Image.I
     return artwork_layer
 
 
+def _apply_matte_finish(artwork_layer: Image.Image, opts: dict) -> Image.Image:
+    # Extract settings
+    shadow_lift = float(opts.get("shadow_lift", 0.08))  # default 8% shadow lift
+    contrast = float(opts.get("contrast", -0.15))       # default -15% contrast
+
+    # Convert to RGBA
+    img = artwork_layer.convert("RGBA")
+    r, g, b, a = img.split()
+
+    # Build LUT for point mapping
+    # shadow lift elevates the lower bounds from 0 to lift_val
+    lift_val = shadow_lift * 255.0
+    contrast_val = int(contrast * 255.0)
+    factor = (259.0 * (contrast_val + 255.0)) / (255.0 * (259.0 - contrast_val))
+
+    lut = []
+    for i in range(256):
+        # 1. Apply contrast around mid-tone 128
+        val = factor * (i - 128.0) + 128.0
+        # 2. Lift shadows (compressing lower end)
+        val = val * (255.0 - lift_val) / 255.0 + lift_val
+        # 3. Clamp between 0 and 255
+        lut.append(max(0, min(255, int(val))))
+
+    r = r.point(lut)
+    g = g.point(lut)
+    b = b.point(lut)
+
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+def _apply_color_tint(artwork_layer: Image.Image, opts: dict) -> Image.Image:
+    temperature = float(opts.get("temperature", 25.0))  # positive for warm, negative for cool
+    intensity = float(opts.get("intensity", 0.2))        # opacity/influence
+
+    # Convert to RGBA
+    img = artwork_layer.convert("RGBA")
+    r, g, b, a = img.split()
+
+    # Temperature tint adjustment
+    # Warmness: increase R and G, decrease B
+    # Coolness: increase B, decrease R and G
+    r_shift = int(temperature * intensity * 0.5)
+    g_shift = int(temperature * intensity * 0.25)
+    b_shift = int(-temperature * intensity * 0.5)
+
+    r_lut = [max(0, min(255, i + r_shift)) for i in range(256)]
+    g_lut = [max(0, min(255, i + g_shift)) for i in range(256)]
+    b_lut = [max(0, min(255, i + b_shift)) for i in range(256)]
+
+    r = r.point(r_lut)
+    g = g.point(g_lut)
+    b = b.point(b_lut)
+
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+def _apply_gobo_shadow(artwork_layer: Image.Image, opts: dict) -> Image.Image:
+    opacity = float(opts.get("opacity", 0.3))
+    scale = float(opts.get("scale", 1.0))
+    if opacity <= 0.001:
+        return artwork_layer
+
+    width, height = artwork_layer.size
+
+    # Create a small 128x128 canvas to draw the blinds pattern
+    gobo = Image.new("L", (128, 128), 255)
+    draw = ImageDraw.Draw(gobo)
+
+    # Draw vertical stripes
+    band_width = int(24 * scale)
+    step = int(42 * scale)
+    if step <= 0:
+        step = 42
+    if band_width <= 0:
+        band_width = 24
+
+    for i in range(0, 128, step):
+        # Draw soft shadow band by coloring it dark
+        draw.rectangle([i, 0, i + band_width, 128], fill=int(255 - 120 * opacity))
+
+    # Rotate the pattern diagonal by 35 degrees (standard photoreal angle)
+    gobo = gobo.rotate(35, resample=Image.Resampling.BILINEAR, expand=False, fillcolor=255)
+    # Resize to full artwork size with bilinear scaling (naturally softens/blurs details)
+    gobo_full = gobo.resize((width, height), Image.Resampling.BILINEAR)
+
+    # Apply a nice Gaussian blur to make the shadow extremely soft and sunny
+    blur_radius = max(8, int(width / 35))
+    gobo_full = gobo_full.filter(ImageFilter.GaussianBlur(blur_radius))
+
+    # Multiply L channel with artwork colors
+    # Multi-channel multiply with a single L channel shadow mask
+    r, g, b, a = artwork_layer.convert("RGBA").split()
+    r = ImageChops.multiply(r, gobo_full)
+    g = ImageChops.multiply(g, gobo_full)
+    b = ImageChops.multiply(b, gobo_full)
+
+    return Image.merge("RGBA", (r, g, b, a))
+
+
 def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = None) -> Image.Image:
     # 1. Convert to RGBA
     img = artwork_layer.convert("RGBA")
@@ -380,16 +480,30 @@ def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = Non
     noise_rgba = Image.merge("RGBA", (noise_tile, noise_tile, noise_tile, Image.new("L", (width, height), 255)))
     img = ImageChops.multiply(img, noise_rgba)
 
-    # Apply custom inner shadow if configured and enabled
+    # Apply premium realism filters if configured
+    if effects:
+        # 4. Faded Matte Finish (Lift shadows, soften highlights/contrast)
+        if effects.get("matte_finish", {}).get("enabled", False):
+            img = _apply_matte_finish(img, effects["matte_finish"])
+
+        # 5. Ambient Light Warmth / Temperature Tinting
+        if effects.get("color_tint", {}).get("enabled", False):
+            img = _apply_color_tint(img, effects["color_tint"])
+
+        # 6. Sunlight Window Blinds (Gobo Shadow Play)
+        if effects.get("gobo_shadow", {}).get("enabled", False):
+            img = _apply_gobo_shadow(img, effects["gobo_shadow"])
+
+    # 7. Apply custom inner shadow if configured and enabled
     if effects and effects.get("inner_shadow", {}).get("enabled", False):
         img = _apply_inner_shadow(img, effects["inner_shadow"])
 
-    # Apply custom glass reflection if configured and enabled, otherwise apply default sheen
+    # 8. Apply custom glass reflection if configured and enabled, otherwise apply default sheen
     custom_glass = effects.get("glass_reflection", {}) if effects else None
     if custom_glass and custom_glass.get("enabled", False):
         img = _apply_glass_reflection(img, custom_glass)
     else:
-        # 4. Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
+        # Diagonal Ambient Sheen (Glass reflection highlight, Top-Left to Bottom-Right)
         # Generate diagonal gradient starting at 3/255 opacity (1.1%) and ending at 13/255 opacity (5.1%)
         grad_data = []
         for row in range(8):
