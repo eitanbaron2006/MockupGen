@@ -2272,6 +2272,98 @@
     };
   }
 
+  // Apply Inner Frame Shadow to all button event listener
+  if ($("applyShadowToAllBtn")) {
+    $("applyShadowToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.inner_shadow) {
+        toast("No shadow settings to apply.");
+        return;
+      }
+      
+      const activeShadow = JSON.parse(JSON.stringify(state.selected.effects.inner_shadow));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying shadow settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) {
+            t.effects = {
+              inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
+              glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+            };
+          }
+          t.effects.inner_shadow = JSON.parse(JSON.stringify(activeShadow));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Inner Shadow settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error("Apply shadow to all failed:", err);
+        toast("Failed to apply shadow settings to all mockups.");
+        setStatus("Ready");
+      }
+    };
+  }
+
+  // Apply Glass Reflection to all button event listener
+  if ($("applyReflectionToAllBtn")) {
+    $("applyReflectionToAllBtn").onclick = async (e) => {
+      e.preventDefault();
+      if (!state.selected || !state.selected.effects || !state.selected.effects.glass_reflection) {
+        toast("No reflection settings to apply.");
+        return;
+      }
+      
+      const activeReflection = JSON.parse(JSON.stringify(state.selected.effects.glass_reflection));
+      const otherTemplates = state.templates.filter(t => t.template_id !== state.selected.template_id);
+      
+      if (otherTemplates.length === 0) {
+        toast("No other mockups in this category.");
+        return;
+      }
+      
+      setStatus("Applying reflection settings to all mockups...");
+      try {
+        await Promise.all(otherTemplates.map(async (t) => {
+          if (!t.effects) {
+            t.effects = {
+              inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15 },
+              glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15 }
+            };
+          }
+          t.effects.glass_reflection = JSON.parse(JSON.stringify(activeReflection));
+          
+          const payload = await api(`/api/admin/templates/${t.template_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              effects: t.effects
+            })
+          });
+          t.effects = payload.template.effects;
+        }));
+        toast(`Glass Reflection settings applied to ${otherTemplates.length} other mockup(s).`);
+        setStatus("Ready");
+      } catch (err) {
+        console.error("Apply reflection to all failed:", err);
+        toast("Failed to apply reflection settings to all mockups.");
+        setStatus("Ready");
+      }
+    };
+  }
+
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;
   $("saveButton").onclick = async () => {

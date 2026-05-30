@@ -40,16 +40,16 @@
   "output_format": "png",
   "effects": {
     "glass_reflection": {
-      "enabled": false,
-      "opacity": 0.15,
-      "type": "diagonal"
+      "enabled": true,
+      "opacity": 0.6,
+      "type": "double_glare"
     },
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
       "enabled": true,
       "left": 10,
-      "opacity": 0.4,
+      "opacity": 1,
       "right": 10,
       "top": 10
     }
