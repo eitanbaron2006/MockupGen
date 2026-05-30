@@ -503,3 +503,69 @@ def test_pillow_rendering_applies_realism_filters_and_feathering(tmp_path):
         assert border_pixel[0] > 0
         # The pixel is not fully opaque blue nor fully opaque white - it's a feathered blend!
         assert border_pixel != (0, 0, 255, 255)
+
+
+def test_per_mockup_realism_effects(tmp_path):
+    # Tests that custom inner shadow and glass reflection effects configured on a template are correctly applied
+    client, folders = build_client(tmp_path)
+    template_folder = folders["TEMPLATES_FOLDER"] / "effects_test"
+    template_folder.mkdir(parents=True)
+    manifest = {
+        "template_id": "effects_test",
+        "name": "Effects test mockup",
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "artwork_area": {
+            "x": 2,
+            "y": 2,
+            "width": 6,
+            "height": 6
+        },
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+        "effects": {
+            "inner_shadow": {
+                "enabled": True,
+                "top": 2,
+                "bottom": 2,
+                "left": 2,
+                "right": 2,
+                "opacity": 1.0,
+                "blur": 0
+            },
+            "glass_reflection": {
+                "enabled": True,
+                "type": "diagonal",
+                "opacity": 1.0
+            }
+        }
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    save_image(template_folder / "background.png", (10, 10), (0, 0, 255, 255))
+    save_image(template_folder / "preview.png", (10, 10), (0, 0, 255, 255))
+
+    # Render with pure solid red artwork (255, 0, 0, 255)
+    response = client.post(
+        "/api/mockups/render",
+        data={
+            "template_id": "effects_test",
+            "mode": "simple",
+            "output_format": "png",
+            "artwork": (image_bytes((6, 6), (255, 0, 0, 255)), "artwork.png"),
+            "realism": "true",
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+
+    generated_path = folders["OUTPUT_FOLDER"] / Path(payload["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        # Verify the pixel rendering works and generates a valid output image without PIL size/mismatch exceptions
+        assert output.size == (10, 10)
+        pixel_with_shadow = output.getpixel((3, 3))
+        assert pixel_with_shadow[0] < 255
+

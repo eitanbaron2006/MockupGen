@@ -28,7 +28,7 @@
       }
     ]
   },
-  "fit_mode": "cover",
+  "fit_mode": "stretch",
   "orientation": "portrait",
   "background": "background.png",
   "foreground": null,
@@ -41,17 +41,17 @@
   "effects": {
     "glass_reflection": {
       "enabled": false,
-      "opacity": 0.15,
-      "type": "diagonal"
+      "opacity": 0.3,
+      "type": "double_glare"
     },
     "inner_shadow": {
-      "blur": 39,
-      "bottom": 84,
+      "blur": 3,
+      "bottom": 6,
       "enabled": true,
-      "left": 84,
-      "opacity": 0.65,
-      "right": 84,
-      "top": 84
+      "left": 6,
+      "opacity": 0.25,
+      "right": 6,
+      "top": 6
     }
   }
 }

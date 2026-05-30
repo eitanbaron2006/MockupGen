@@ -295,7 +295,7 @@ def _apply_inner_shadow(artwork_layer: Image.Image, config: dict) -> Image.Image
         mask = mask.point(lambda p: int(p * opacity))
 
     shadow_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    shadow_layer.paste((0, 0, 0, 255), (0, 0, 0, 0), mask=mask)
+    shadow_layer.paste((0, 0, 0, 255), (0, 0), mask=mask)
 
     orig_alpha = artwork_layer.getchannel("A")
     artwork_layer = Image.alpha_composite(artwork_layer, shadow_layer)
@@ -343,7 +343,7 @@ def _apply_glass_reflection(artwork_layer: Image.Image, config: dict) -> Image.I
         grad_large = grad_large.point(lambda p: int(p * opacity))
 
     reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 0))
-    reflection_layer.paste((255, 255, 255, 255), (0, 0, 0, 0), mask=grad_large)
+    reflection_layer.paste((255, 255, 255, 255), (0, 0), mask=grad_large)
 
     orig_alpha = artwork_layer.getchannel("A")
     artwork_layer = Image.alpha_composite(artwork_layer, reflection_layer)
