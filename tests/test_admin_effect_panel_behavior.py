@@ -31,8 +31,11 @@ def test_effect_groups_do_not_change_style_on_hover():
 def test_effect_checkboxes_override_global_hover_style():
     source = ADMIN_CSS.read_text(encoding="utf-8")
 
+    assert 'input[type="checkbox"]:checked:hover:not(:disabled)::after' in source
     assert '.effect-header input[type="checkbox"]:hover:not(:disabled)' in source
     assert '.effect-header input[type="checkbox"]:checked:hover:not(:disabled)' in source
+    assert '.effect-header input[type="checkbox"]:checked::after' in source
+    assert '.effect-header input[type="checkbox"]:checked:hover:not(:disabled)::after' in source
 
 
 def test_effect_checkbox_changes_show_loading_overlay():

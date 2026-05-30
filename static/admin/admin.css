@@ -2842,6 +2842,10 @@ input[type="checkbox"]:checked::after {
   left: 50%;
 }
 
+input[type="checkbox"]:checked:hover:not(:disabled)::after {
+  border-color: var(--accent);
+}
+
 input[type="checkbox"]:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -3164,9 +3168,17 @@ input[type="checkbox"]:disabled {
   box-shadow: none;
 }
 
+.effect-header input[type="checkbox"]:checked::after {
+  border-color: #fff;
+}
+
 .effect-header input[type="checkbox"]:checked:hover:not(:disabled) {
   background-color: var(--accent);
   border-color: var(--accent);
+}
+
+.effect-header input[type="checkbox"]:checked:hover:not(:disabled)::after {
+  border-color: #fff;
 }
 
 .effect-controls {
