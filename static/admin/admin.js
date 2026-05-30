@@ -328,7 +328,10 @@
     const enabled = getFieldElement(root, def.enabledId);
     const controls = getFieldElement(root, def.controlsId);
     if (enabled) enabled.checked = Boolean(config.enabled);
-    if (controls) controls.classList.toggle("hidden", !Boolean(config.enabled));
+    if (root.dataset.effectInstance === "2" || !root.dataset.effectCollapsed) {
+      root.dataset.effectCollapsed = Boolean(!config.enabled).toString();
+    }
+    updateEffectPanelCollapsed(root);
     def.fields.forEach((field) => {
       const element = getFieldElement(root, field.id);
       if (!element) return;
@@ -383,6 +386,18 @@
     if (button) button.classList.toggle("hidden", Boolean(effectGroupForKey(key, "2")));
   }
 
+  function updateEffectPanelCollapsed(group) {
+    const controls = group && getFieldElement(group, EFFECT_DOM[group.dataset.effectKey]?.controlsId || "");
+    const collapsed = group?.dataset.effectCollapsed === "true";
+    if (controls) controls.classList.toggle("hidden", collapsed);
+  }
+
+  function toggleEffectPanelCollapsed(group) {
+    if (!group) return;
+    group.dataset.effectCollapsed = String(group.dataset.effectCollapsed !== "true");
+    updateEffectPanelCollapsed(group);
+  }
+
   function prepareEffectGroupControls(group, key, instance) {
     group.dataset.effectKey = key;
     group.dataset.effectInstance = instance;
@@ -410,6 +425,11 @@
       if (!group || group.dataset.effectKey) return;
       prepareEffectGroupControls(group, key, "1");
       const header = group.querySelector(".effect-header");
+      const label = header.querySelector("label");
+      if (label) {
+        label.classList.add("effect-title-toggle");
+        label.setAttribute("title", "Click the effect name to expand or collapse settings");
+      }
       const addButton = document.createElement("button");
       addButton.type = "button";
       addButton.className = "icon-button effect-add-instance";
@@ -418,6 +438,7 @@
       addButton.setAttribute("title", "Add second instance");
       addButton.textContent = "+";
       header.appendChild(addButton);
+      updateEffectPanelCollapsed(group);
     });
   }
 
@@ -812,7 +833,11 @@
     // Set inner shadow fields
     const shadowEnabled = innerShadowEffect.enabled || false;
     $("innerShadowEnabled").checked = shadowEnabled;
-    $("innerShadowControls").classList.toggle("hidden", !shadowEnabled);
+    const shadowRoot = effectGroupForKey("inner_shadow", "1");
+    if (shadowRoot) {
+      shadowRoot.dataset.effectCollapsed = String(!shadowEnabled);
+      updateEffectPanelCollapsed(shadowRoot);
+    }
     
     $("shadowOpacity").value = innerShadowEffect.opacity ?? 0.4;
     $("shadowOpacityVal").textContent = Math.round((innerShadowEffect.opacity ?? 0.4) * 100) + "%";
@@ -835,7 +860,11 @@
     // Set glass reflection fields
     const glassEnabled = glassReflectionEffect.enabled || false;
     $("glassReflectionEnabled").checked = glassEnabled;
-    $("glassReflectionControls").classList.toggle("hidden", !glassEnabled);
+    const glassRoot = effectGroupForKey("glass_reflection", "1");
+    if (glassRoot) {
+      glassRoot.dataset.effectCollapsed = String(!glassEnabled);
+      updateEffectPanelCollapsed(glassRoot);
+    }
     
     $("reflectionType").value = glassReflectionEffect.type || "diagonal";
     $("reflectionOpacity").value = glassReflectionEffect.opacity ?? 0.15;
@@ -844,7 +873,11 @@
     // Set faded matte paper fields
     const matteEnabled = matteFinishEffect.enabled || false;
     $("matteFinishEnabled").checked = matteEnabled;
-    $("matteFinishControls").classList.toggle("hidden", !matteEnabled);
+    const matteRoot = effectGroupForKey("matte_finish", "1");
+    if (matteRoot) {
+      matteRoot.dataset.effectCollapsed = String(!matteEnabled);
+      updateEffectPanelCollapsed(matteRoot);
+    }
     $("matteShadowLift").value = matteFinishEffect.shadow_lift ?? 0.08;
     $("matteShadowLiftVal").textContent = Math.round((matteFinishEffect.shadow_lift ?? 0.08) * 100) + "%";
     $("matteContrast").value = matteFinishEffect.contrast ?? -0.15;
@@ -853,7 +886,11 @@
     // Set ambient warmth fields
     const tintEnabled = colorTintEffect.enabled || false;
     $("colorTintEnabled").checked = tintEnabled;
-    $("colorTintControls").classList.toggle("hidden", !tintEnabled);
+    const tintRoot = effectGroupForKey("color_tint", "1");
+    if (tintRoot) {
+      tintRoot.dataset.effectCollapsed = String(!tintEnabled);
+      updateEffectPanelCollapsed(tintRoot);
+    }
     $("tintTemperature").value = colorTintEffect.temperature ?? 25;
     const tempSign = (colorTintEffect.temperature ?? 25) > 0 ? "+" : "";
     $("tintTemperatureVal").textContent = tempSign + (colorTintEffect.temperature ?? 25);
@@ -863,7 +900,11 @@
     // Set sunlight blinds fields
     const goboEnabled = goboShadowEffect.enabled || false;
     $("goboShadowEnabled").checked = goboEnabled;
-    $("goboShadowControls").classList.toggle("hidden", !goboEnabled);
+    const goboRoot = effectGroupForKey("gobo_shadow", "1");
+    if (goboRoot) {
+      goboRoot.dataset.effectCollapsed = String(!goboEnabled);
+      updateEffectPanelCollapsed(goboRoot);
+    }
     $("goboOpacity").value = goboShadowEffect.opacity ?? 0.3;
     $("goboOpacityVal").textContent = Math.round((goboShadowEffect.opacity ?? 0.3) * 100) + "%";
     $("goboScale").value = goboShadowEffect.scale ?? 1.0;
@@ -872,7 +913,11 @@
     // Set Photoshop Adjustments
     const psEnabled = photoshopAdjustmentsEffect.enabled || false;
     $("photoshopAdjustmentsEnabled").checked = psEnabled;
-    $("photoshopAdjustmentsControls").classList.toggle("hidden", !psEnabled);
+    const psRoot = effectGroupForKey("photoshop_adjustments", "1");
+    if (psRoot) {
+      psRoot.dataset.effectCollapsed = String(!psEnabled);
+      updateEffectPanelCollapsed(psRoot);
+    }
     $("photoshopColorFilter").value = photoshopAdjustmentsEffect.color_filter || "none";
     $("photoshopBrightness").value = photoshopAdjustmentsEffect.brightness ?? 0.0;
     const psBrtVal = Math.round((photoshopAdjustmentsEffect.brightness ?? 0.0) * 100);
@@ -887,7 +932,11 @@
     // Set Global Reflections & Sun rays
     const refEnabled = globalReflectionsEffect.enabled || false;
     $("globalReflectionsEnabled").checked = refEnabled;
-    $("globalReflectionsControls").classList.toggle("hidden", !refEnabled);
+    const refRoot = effectGroupForKey("global_reflections", "1");
+    if (refRoot) {
+      refRoot.dataset.effectCollapsed = String(!refEnabled);
+      updateEffectPanelCollapsed(refRoot);
+    }
     $("globalWindowType").value = globalReflectionsEffect.window_type || "none";
     $("globalWindowOpacity").value = globalReflectionsEffect.window_opacity ?? 0.2;
     $("globalWindowOpacityVal").textContent = Math.round((globalReflectionsEffect.window_opacity ?? 0.2) * 100) + "%";
@@ -902,7 +951,11 @@
     // Set Global PNG Overlay
     const overlayEnabled = globalPngOverlayEffect.enabled || false;
     $("globalPngOverlayEnabled").checked = overlayEnabled;
-    $("globalPngOverlayControls").classList.toggle("hidden", !overlayEnabled);
+    const overlayPanelRoot = effectGroupForKey("global_png_overlay", "1");
+    if (overlayPanelRoot) {
+      overlayPanelRoot.dataset.effectCollapsed = String(!overlayEnabled);
+      updateEffectPanelCollapsed(overlayPanelRoot);
+    }
     $("globalOverlayOpacity").value = globalPngOverlayEffect.opacity ?? 0.5;
     $("globalOverlayOpacityVal").textContent = Math.round((globalPngOverlayEffect.opacity ?? 0.5) * 100) + "%";
     
@@ -2644,6 +2697,13 @@
       return;
     }
 
+    const titleToggle = e.target.closest(".effect-title-toggle");
+    if (titleToggle && !e.target.matches('input[type="checkbox"]')) {
+      e.preventDefault();
+      toggleEffectPanelCollapsed(titleToggle.closest(".effect-group"));
+      return;
+    }
+
     const linkButton = e.target.closest('[data-original-id="linkShadowSides"]');
     if (linkButton && linkButton.id !== "linkShadowSides") {
       e.preventDefault();
@@ -2720,8 +2780,6 @@
     if (!def) return;
 
     if (e.target.dataset.originalId === def.enabledId) {
-      const controls = getFieldElement(root, def.controlsId);
-      if (controls) controls.classList.toggle("hidden", !e.target.checked);
       updateEffectsState();
       return;
     }
@@ -2759,7 +2817,6 @@
 
   // Shadow enabled checkbox
   $("innerShadowEnabled").onchange = (e) => {
-    $("innerShadowControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
 
@@ -2796,7 +2853,6 @@
 
   // Glass enabled checkbox
   $("glassReflectionEnabled").onchange = (e) => {
-    $("glassReflectionControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
 
@@ -2813,7 +2869,6 @@
 
   // Matte finish enabled checkbox
   $("matteFinishEnabled").onchange = (e) => {
-    $("matteFinishControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Matte Shadow Lift slider
@@ -2829,7 +2884,6 @@
 
   // Color tint enabled checkbox
   $("colorTintEnabled").onchange = (e) => {
-    $("colorTintControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Color Temperature slider
@@ -2847,7 +2901,6 @@
 
   // Gobo shadow enabled checkbox
   $("goboShadowEnabled").onchange = (e) => {
-    $("goboShadowControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Gobo shadow Opacity slider
@@ -2863,7 +2916,6 @@
 
   // Photoshop adjustments enabled checkbox
   $("photoshopAdjustmentsEnabled").onchange = (e) => {
-    $("photoshopAdjustmentsControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Photoshop filter select
@@ -2891,7 +2943,6 @@
 
   // Global reflections enabled checkbox
   $("globalReflectionsEnabled").onchange = (e) => {
-    $("globalReflectionsControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Window shadow type select
@@ -2925,7 +2976,6 @@
 
   // Global PNG Overlay enabled checkbox
   $("globalPngOverlayEnabled").onchange = (e) => {
-    $("globalPngOverlayControls").classList.toggle("hidden", !e.target.checked);
     updateEffectsState();
   };
   // Trigger file click

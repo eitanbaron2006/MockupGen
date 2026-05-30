@@ -3170,10 +3170,20 @@ input[type="checkbox"]:disabled {
 .effect-add-instance,
 .effect-remove-instance {
   flex: 0 0 auto;
-  font-size: 17px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
   height: 24px;
   margin-left: 2px;
   width: 24px;
+}
+
+.effect-add-instance {
+  font-size: 17px;
+}
+
+.effect-title-toggle {
+  cursor: pointer;
 }
 
 .effect-remove-instance {
