@@ -486,6 +486,8 @@ def render_simple_mockup(
     output_folder: Path,
     fit_mode: str | None = None,
     realism: bool = True,
+    effects: dict | None = None,
+    artwork_area: dict | None = None,
 ) -> RenderResult:
     if output_format.lower() != "png":
         raise RenderValidationError("Only png output format is currently supported")
@@ -493,6 +495,10 @@ def render_simple_mockup(
     template_folder, manifest = load_manifest(templates_folder, template_id)
     if "simple" not in manifest["supported_modes"]:
         raise RenderValidationError("Template does not support simple rendering")
+
+    if artwork_area:
+        manifest = manifest.copy()
+        manifest["artwork_area"] = artwork_area
 
     canvas_size, area = _validated_canvas_and_area(manifest)
     background = load_rgba(_safe_asset_path(template_folder, manifest["background"]))
@@ -538,7 +544,8 @@ def render_simple_mockup(
 
     # Apply scene integration filters (Print contrast, Paper Grain, Custom/Default reflection & shadows) if enabled
     if realism:
-        artwork_layer = _apply_realism_filter(artwork_layer, manifest.get("effects"))
+        active_effects = effects if effects is not None else manifest.get("effects")
+        artwork_layer = _apply_realism_filter(artwork_layer, active_effects)
 
     if realism:
         # Premium Super Sample Anti-Aliased (SSAA) rendering and edge softening

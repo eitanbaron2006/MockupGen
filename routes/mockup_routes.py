@@ -89,14 +89,28 @@ def render_mockup():
             realism_val = request.form.get("realism", default_realism).strip().lower()
             realism = realism_val != "false"
             
+            catalog = current_app.extensions.get("catalog_service")
+            db_effects = None
+            db_artwork_area = None
+            db_fit_mode = fit_mode
+            if catalog and template_id:
+                db_template = catalog.get_template(template_id)
+                if db_template:
+                    db_effects = db_template.get("effects")
+                    db_artwork_area = db_template.get("artwork_area")
+                    if not db_fit_mode:
+                        db_fit_mode = db_template.get("fit_mode")
+
             result = render_simple_mockup(
                 template_id=template_id,
                 artwork_path=artwork_path,
                 output_format=output_format,
                 templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
                 output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
-                fit_mode=fit_mode,
+                fit_mode=db_fit_mode,
                 realism=realism,
+                effects=db_effects,
+                artwork_area=db_artwork_area,
             )
             return jsonify(result.as_response())
         elif mode == "ai":
