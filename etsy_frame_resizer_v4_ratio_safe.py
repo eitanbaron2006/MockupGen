@@ -102,24 +102,89 @@ MUTED   = "#5a5448"  # Muted brown-grey secondary text
 SUCCESS = "#6e7448"  # Olive green success state
 FOLDER_ACTIVE = "#e2e6c7"   # Soft warm olive-green tint when folder is active
 
-# ── Print sizes ───────────────────────────────────────────────────────────────
-SIZE_GROUPS = [
-    ("Small Prints", [
-        ("4×4",  1200, 1200), ("4×6",  1200, 1800),
-        ("5×5",  1500, 1500), ("5×7",  1500, 2100),
-    ]),
-    ("Medium Prints", [
-        ("8×8",   2400, 2400), ("8×10",  2400, 3000),
-        ("8×12",  2400, 3600), ("9×12",  2700, 3600),
-        ("10×10", 3000, 3000), ("10×14", 3000, 4200),
-    ]),
-    ("Large Prints", [
-        ("11×14", 3300, 4200), ("12×12", 3600, 3600),
-        ("12×16", 3600, 4800), ("12×18", 3600, 5400),
-        ("16×20", 4800, 6000), ("18×24", 5400, 7200),
-        ("20×24", 6000, 7200), ("24×36", 7200, 10800),
-    ]),
-]
+# ── Ratio-safe Etsy print sizes ──────────────────────────────────────────────
+# Professional Etsy printable output should NOT force one artwork into unrelated
+# aspect ratios. This table exports only sizes that match the uploaded artwork's
+# detected aspect ratio. No crop, no fake extension, no added margins.
+RATIO_SIZE_GROUPS = {
+    "1:1": {
+        "title": "Square 1:1 Prints",
+        "sizes": [
+            ("8×8", 2400, 2400),
+            ("10×10", 3000, 3000),
+            ("12×12", 3600, 3600),
+            ("16×16", 4800, 4800),
+            ("20×20", 6000, 6000),
+            ("24×24", 7200, 7200),
+        ],
+        "note": "Fits square frames: 8x8, 10x10, 12x12, 16x16, 20x20, 24x24",
+    },
+    "2:3": {
+        "title": "2:3 Ratio Prints",
+        "sizes": [
+            ("4×6", 1200, 1800),
+            ("8×12", 2400, 3600),
+            ("12×18", 3600, 5400),
+            ("16×24", 4800, 7200),
+            ("20×30", 6000, 9000),
+            ("24×36", 7200, 10800),
+        ],
+        "note": "Fits frames: 4x6, 8x12, 12x18, 16x24, 20x30, 24x36",
+    },
+    "3:4": {
+        "title": "3:4 Ratio Prints",
+        "sizes": [
+            ("6×8", 1800, 2400),
+            ("9×12", 2700, 3600),
+            ("12×16", 3600, 4800),
+            ("15×20", 4500, 6000),
+            ("18×24", 5400, 7200),
+        ],
+        "note": "Fits frames: 6x8, 9x12, 12x16, 15x20, 18x24",
+    },
+    "4:5": {
+        "title": "4:5 Ratio Prints",
+        "sizes": [
+            ("4×5", 1200, 1500),
+            ("8×10", 2400, 3000),
+            ("12×15", 3600, 4500),
+            ("16×20", 4800, 6000),
+            ("20×25", 6000, 7500),
+            ("24×30", 7200, 9000),
+        ],
+        "note": "Fits frames: 4x5, 8x10, 12x15, 16x20, 20x25, 24x30",
+    },
+    "11:14": {
+        "title": "11:14 Ratio Prints",
+        "sizes": [
+            ("11×14", 3300, 4200),
+            ("22×28", 6600, 8400),
+        ],
+        "note": "Fits frames: 11x14 and 22x28",
+    },
+    "A-Series": {
+        "title": "ISO A-Series Prints",
+        "sizes": [
+            ("A5", 1748, 2480),
+            ("A4", 2480, 3508),
+            ("A3", 3508, 4961),
+            ("A2", 4961, 7016),
+            ("A1", 7016, 9933),
+        ],
+        "note": "Fits ISO A-Series frames: A5, A4, A3, A2, A1",
+    },
+}
+
+KNOWN_RATIOS = {
+    "1:1": 1.0,
+    "2:3": 2 / 3,
+    "3:4": 3 / 4,
+    "4:5": 4 / 5,
+    "11:14": 11 / 14,
+    "A-Series": 1 / math.sqrt(2),
+}
+
+RATIO_TOLERANCE = 0.025  # about 2.5%; enough for minor pixel rounding, not enough to fake a different ratio
 
 # ── Algorithms ────────────────────────────────────────────────────────────────
 def scale_basic(img, w, h):
@@ -158,6 +223,109 @@ def process_image(img, w, h, quality):
     elif quality == "gigapixel":    return scale_ai_gigapixel(img, w, h)
     return img
 
+
+def detect_ratio_group(w, h):
+    """Return the closest supported Etsy ratio group for the artwork.
+
+    Detection uses the artwork as-is. Landscape artwork is matched by its
+    normalized portrait ratio, then exported as landscape sizes later.
+    """
+    if not w or not h:
+        return None, None, None
+
+    raw_ratio = w / h
+    normalized_ratio = min(raw_ratio, 1 / raw_ratio)  # portrait-style comparison
+
+    best_name = None
+    best_diff = 999
+    for name, target_ratio in KNOWN_RATIOS.items():
+        diff = abs(normalized_ratio - target_ratio)
+        if diff < best_diff:
+            best_name = name
+            best_diff = diff
+
+    if best_diff > RATIO_TOLERANCE:
+        return None, raw_ratio, best_diff
+    return best_name, raw_ratio, best_diff
+
+
+def ratio_items_for_artwork(ratio_group, orientation):
+    """Build the export item list for the detected artwork ratio only."""
+    if ratio_group not in RATIO_SIZE_GROUPS:
+        return []
+
+    cfg = RATIO_SIZE_GROUPS[ratio_group]
+    items = []
+    for idx, (name, w, h) in enumerate(cfg["sizes"], start=1):
+        export_name = name
+        export_w, export_h = w, h
+
+        # If the source artwork is landscape, create landscape output sizes only.
+        # Example: 2:3 portrait sizes become 6x4, 12x8, 36x24, etc.
+        if orientation == "landscape" and w != h:
+            if "×" in name:
+                a, b = name.split("×", 1)
+                export_name = f"{b}×{a}"
+            else:
+                export_name = f"{name} Landscape"
+            export_w, export_h = h, w
+
+        safe_ratio = ratio_group.replace(":", "x").replace("-", "_").lower()
+        safe_size = export_name.replace("×", "x").replace(" ", "_")
+        filename = f"{idx:02d}_{safe_ratio}_{safe_size}_{export_w}x{export_h}px.jpg"
+
+        items.append({
+            "name": export_name,
+            "ratio": ratio_group,
+            "filename": filename,
+            "w": export_w,
+            "h": export_h,
+            "sizes": cfg["note"],
+        })
+    return items
+
+
+def render_ratio_safe_output(img, target_w, target_h, quality):
+    """Resize only to a matching-ratio target size.
+
+    No crop, no background extension, no extra margins. This assumes target_w / target_h
+    matches the source artwork ratio within the accepted ratio group.
+    """
+    return process_image(img, target_w, target_h, quality).convert("RGBA")
+
+
+def printing_guide_text(ratio_group, items, orientation):
+    if not ratio_group or ratio_group not in RATIO_SIZE_GROUPS:
+        return """Thank you for your purchase!\n\nThis package contains ratio-safe printable artwork files.\n"""
+
+    cfg = RATIO_SIZE_GROUPS[ratio_group]
+    lines = [
+        "Thank you for your purchase!",
+        "",
+        "This is a digital printable wall art package. No physical item will be shipped.",
+        "All files were generated in ratio-safe mode:",
+        "- no cropping",
+        "- no fake background extension",
+        "- no added margins",
+        "- only print sizes that match the original artwork ratio",
+        "",
+        f"Detected artwork ratio: {ratio_group}",
+        f"Orientation: {orientation}",
+        "",
+        cfg["note"],
+        "",
+        "Included files:",
+    ]
+    for item in items:
+        lines.append(f"- {item['filename']} — {item['name']} — {item['w']}x{item['h']} px")
+    lines.extend([
+        "",
+        "Print tip: choose the file that matches your frame size exactly.",
+        "For best results, print on high-quality matte paper, fine-art paper, or canvas.",
+    ])
+    return "\n".join(lines)
+
+
 def gcd(a, b): return gcd(b, a%b) if b else a
 
 def get_orientation(w, h):
@@ -183,13 +351,15 @@ class FrameResizerApp(tk.Tk):
         super().__init__()
         self.title("Mockup Resizer — Etsy · 300 DPI")
         self.configure(bg=BG)
-        self._center_window(1170, 880)
+        self._center_window(1110, 880)
         self.resizable(False, False)
 
         self.current_img         = None
         self.session_uid         = ""
         self.current_orientation = "portrait"
         self.current_quality     = "step-unsharp"
+        self.current_ratio_group = None
+        self.current_ratio_items = []
         self._thumb_refs         = []
         self._render_gen         = 0
         self._ai_error_shown     = False
@@ -214,13 +384,10 @@ class FrameResizerApp(tk.Tk):
 
     def _center_window(self, width=1110, height=880):
         self.update_idletasks()
-
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
-
         x = (screen_w - width) // 2
         y = (screen_h - height) // 2
-
         self.geometry(f"{width}x{height}+{x}+{y}")
 
     # ── Layout ────────────────────────────────────────────────────────────────
@@ -314,6 +481,23 @@ class FrameResizerApp(tk.Tk):
             
         self._set_quality_ui("step-unsharp")
 
+        # SECTION: Ratio-safe policy
+        self.fit_mode_section = tk.Frame(self.sidebar, bg=SURFACE)
+        self._sidebar_section_label("Ratio-Safe Output", parent=self.fit_mode_section)
+
+        mode_card = tk.Frame(self.fit_mode_section, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
+        mode_card.pack(fill="x", padx=20, pady=(2, 12))
+        mode_inner = tk.Frame(mode_card, bg=SURFACE, padx=10, pady=8)
+        mode_inner.pack(fill="x")
+
+        self._ratio_policy_lbl = tk.Label(
+            mode_inner,
+            text="Upload artwork to detect its ratio. The app will export only matching print sizes. No crop, no fake extension, no added margins.",
+            bg=SURFACE, fg=MUTED, font=("Segoe UI", 7),
+            wraplength=240, justify="left"
+        )
+        self._ratio_policy_lbl.pack(anchor="w")
+
         # SECTION: Output Folder
         self.folder_section = tk.Frame(self.sidebar, bg=SURFACE)
         self._sidebar_section_label("Output Location", parent=self.folder_section)
@@ -353,9 +537,9 @@ class FrameResizerApp(tk.Tk):
         # Breadcrumb / Title on left
         crumb_frame = tk.Frame(topbar, bg=BG)
         crumb_frame.pack(side="left", padx=24, pady=18)
-        tk.Label(crumb_frame, text="SIZES /", bg=BG, fg=MUTED,
+        tk.Label(crumb_frame, text="ETSY PACKAGE /", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9, "bold")).pack(side="left")
-        tk.Label(crumb_frame, text="SELECT TARGETS", bg=BG, fg=TEXT,
+        tk.Label(crumb_frame, text="RATIO FILES", bg=BG, fg=TEXT,
                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(6, 0))
 
         # Action Buttons on right
@@ -374,7 +558,7 @@ class FrameResizerApp(tk.Tk):
         self._select_all_btn.pack(side="left", padx=(0, 6))
 
         self._process_btn = tk.Button(
-            actions_frame, text="▶  Process Selected",
+            actions_frame, text="▶  Create Etsy Files",
             bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"),
             relief="flat", bd=0, padx=14, pady=6, cursor="hand2",
             command=self._process_selected)
@@ -487,8 +671,13 @@ class FrameResizerApp(tk.Tk):
             return  # no auto-save, user downloads manually
         def _worker():
             try:
+                self._write_printing_guide(folder)
                 dest = os.path.join(folder, fname)
-                result_img.convert("RGB").save(dest, "PNG")
+                ext = os.path.splitext(dest)[1].lower()
+                if ext in (".jpg", ".jpeg"):
+                    result_img.convert("RGB").save(dest, "JPEG", quality=95, optimize=True)
+                else:
+                    result_img.convert("RGB").save(dest, "PNG")
                 print(f"[AutoSave] Saved → {dest}")
             except Exception as e:
                 print(f"[AutoSave] Error: {e}")
@@ -501,43 +690,17 @@ class FrameResizerApp(tk.Tk):
     def _build_empty_grid(self):
         for w in self.grid_inner.winfo_children():
             w.destroy()
-        for group_label, sizes in SIZE_GROUPS:
-            self._section_title(self.grid_inner, group_label)
-            grid_frame = tk.Frame(self.grid_inner, bg=BG)
-            grid_frame.pack(fill="x", padx=24, pady=(0, 8))
-            for col in range(3):
-                grid_frame.columnconfigure(col, weight=1)
-            for idx, (name, w, h) in enumerate(sizes):
-                r = idx // 3
-                c = idx % 3
-                self._empty_card(grid_frame, name, w, h, r, c)
 
-    def _empty_card(self, parent, name, w, h, r, c):
-        card = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER,
-                        highlightcolor=BORDER, highlightthickness=1, bd=0,
-                        width=CARD_W, height=CARD_H)
-        card.grid(row=r, column=c, padx=4, pady=4, sticky="nw")
-        card.pack_propagate(False)
-        
-        preview = tk.Frame(card, bg=BG, width=THUMB_SIZE, height=THUMB_SIZE)
-        preview.pack(side="left", padx=6, pady=6)
-        preview.pack_propagate(False)
-        
-        tk.Label(preview, text="▢", bg=BG, fg=MUTED,
-                 font=("Segoe UI", 16)).place(relx=0.5, rely=0.5, anchor="center")
-                 
-        info = tk.Frame(card, bg=SURFACE)
-        info.pack(side="left", fill="both", expand=True, padx=4, pady=6)
-        
-        tk.Label(info, text=f'{name}"', bg=SURFACE, fg=TEXT,
-                 font=("Georgia", 11, "bold"), anchor="w").pack(anchor="w")
-                 
-        sub_info = tk.Frame(info, bg=SURFACE)
-        sub_info.pack(anchor="w", fill="x")
-        tk.Label(sub_info, text=f"{w}×{h}", bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 8)).pack(side="left")
-        tk.Label(sub_info, text=" • 300 DPI", bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 8)).pack(side="left")
+        self._section_title(self.grid_inner, "Upload artwork")
+        box = tk.Frame(self.grid_inner, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
+        box.pack(fill="x", padx=24, pady=(8, 12))
+
+        tk.Label(
+            box,
+            text="Upload one artwork file. The app will detect its aspect ratio and show only matching Etsy print sizes.",
+            bg=SURFACE, fg=MUTED, font=("Segoe UI", 10, "bold"),
+            padx=18, pady=18, wraplength=650, justify="left"
+        ).pack(anchor="w")
 
     def _section_title(self, parent, text):
         f = tk.Frame(parent, bg=BG)
@@ -580,9 +743,24 @@ class FrameResizerApp(tk.Tk):
 
         w, h = img.size
         g = gcd(w, h)
+        ratio_group, raw_ratio, diff = detect_ratio_group(w, h)
+        self.current_ratio_group = ratio_group
+        self.current_ratio_items = ratio_items_for_artwork(ratio_group, self.current_orientation) if ratio_group else []
+
         self._stat_vars["Width"].set(str(w))
         self._stat_vars["Height"].set(str(h))
         self._stat_vars["Ratio"].set(f"{w//g}:{h//g}")
+
+        if ratio_group:
+            self._ratio_policy_lbl.configure(
+                text=f"Detected: {ratio_group} · {self.current_orientation}. Only matching print sizes will be created. No crop, no fake extension, no added margins.",
+                fg=SUCCESS
+            )
+        else:
+            self._ratio_policy_lbl.configure(
+                text="Custom / unsupported ratio detected. This app will not force it into Etsy ratios. Create a matching-ratio artwork version first, or add this ratio to RATIO_SIZE_GROUPS.",
+                fg=ACCENT
+            )
         try:
             self._stat_vars["Size"].set(f"{os.path.getsize(path)/1024/1024:.1f} MB")
         except OSError:
@@ -592,6 +770,8 @@ class FrameResizerApp(tk.Tk):
             self.stats_frame.pack(fill="x", pady=(0, 0))
         if not self.quality_section.winfo_ismapped():
             self.quality_section.pack(fill="x")
+        if not self.fit_mode_section.winfo_ismapped():
+            self.fit_mode_section.pack(fill="x")
         if not self.folder_section.winfo_ismapped():
             self.folder_section.pack(fill="x")
 
@@ -698,41 +878,55 @@ class FrameResizerApp(tk.Tk):
         self._select_all_btn.config(text="Select All")
 
         img = self.current_img
-        src_w, src_h = img.size
-        groups = list(SIZE_GROUPS)
+        items = list(self.current_ratio_items or [])
 
-        def build_group(idx):
-            if idx >= len(groups):
-                self._update_sel_count()
-                return
-            group_label, sizes = groups[idx]
-            self._section_title(self.grid_inner, group_label)
-            grid_frame = tk.Frame(self.grid_inner, bg=BG)
-            grid_frame.pack(fill="x", padx=24, pady=(0, 8))
-            for col in range(3):
-                grid_frame.columnconfigure(col, weight=1)
-                
-            for col_idx, (raw_name, raw_w, raw_h) in enumerate(sizes):
-                r = col_idx // 3
-                c = col_idx % 3
-                name, tw, th = adapt_size(raw_name, raw_w, raw_h,
-                                          self.current_orientation)
-                scale    = min(tw / src_w, th / src_h)
-                actual_w = round(src_w * scale)
-                actual_h = round(src_h * scale)
-                card_key = f"{name}_{actual_w}_{actual_h}"
-                cd = self._make_selectable_card(
-                    grid_frame, name, tw, th, actual_w, actual_h, card_key, r, c)
-                self._card_registry[card_key] = {
-                    "cd": cd, "img": img,
-                    "w": actual_w, "h": actual_h, "name": name,
-                    "var": cd["sel_var"]
-                }
-            self.after(0, build_group, idx + 1)
+        if not items:
+            self._section_title(self.grid_inner, "Unsupported ratio")
+            box = tk.Frame(self.grid_inner, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
+            box.pack(fill="x", padx=24, pady=(8, 12))
+            tk.Label(
+                box,
+                text=("This artwork ratio does not closely match the standard Etsy ratios in this app. "
+                      "The app will not crop, stretch, add margins, or fake new areas. "
+                      "Create/export a source artwork in 1:1, 2:3, 3:4, 4:5, 11:14, or A-Series, then upload it here."),
+                bg=SURFACE, fg=ACCENT, font=("Segoe UI", 10, "bold"),
+                padx=18, pady=18, wraplength=650, justify="left"
+            ).pack(anchor="w")
+            self._update_sel_count()
+            return
 
-        build_group(0)
+        title = RATIO_SIZE_GROUPS[self.current_ratio_group]["title"]
+        if self.current_orientation == "landscape" and self.current_ratio_group != "1:1":
+            title += " — Landscape"
+        self._section_title(self.grid_inner, title)
 
-    def _make_selectable_card(self, parent, name, tw, th, actual_w, actual_h, card_key, r, c):
+        grid_frame = tk.Frame(self.grid_inner, bg=BG)
+        grid_frame.pack(fill="x", padx=24, pady=(0, 8))
+        for col in range(3):
+            grid_frame.columnconfigure(col, weight=1)
+
+        for col_idx, item in enumerate(items):
+            r = col_idx // 3
+            c = col_idx % 3
+            name = item["name"]
+            tw = item["w"]
+            th = item["h"]
+            filename = item["filename"]
+            sizes = item["sizes"]
+            card_key = f"{self.current_ratio_group}_{tw}x{th}_{filename}"
+            cd = self._make_selectable_card(
+                grid_frame, name, tw, th, tw, th, card_key, r, c, sizes=sizes)
+            self._card_registry[card_key] = {
+                "cd": cd, "img": img,
+                "w": tw, "h": th, "name": name,
+                "filename": filename,
+                "sizes": sizes,
+                "var": cd["sel_var"]
+            }
+
+        self._update_sel_count()
+
+    def _make_selectable_card(self, parent, name, tw, th, actual_w, actual_h, card_key, r, c, sizes=""):
         scale = min(THUMB_SIZE / actual_w, THUMB_SIZE / actual_h)
         thumb_w = max(1, round(actual_w * scale))
         thumb_h = max(1, round(actual_h * scale))
@@ -749,7 +943,7 @@ class FrameResizerApp(tk.Tk):
         preview_frame.pack(side="left", padx=6, pady=6)
         preview_frame.pack_propagate(False)
 
-        ph_lbl = tk.Label(preview_frame, text=f'{name}"',
+        ph_lbl = tk.Label(preview_frame, text=name.replace(" Ratio", ""),
                           bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold"))
         ph_lbl.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -774,13 +968,15 @@ class FrameResizerApp(tk.Tk):
         info = tk.Frame(card, bg=SURFACE)
         info.pack(side="left", fill="both", expand=True, padx=4, pady=4)
         
-        tk.Label(info, text=f'{name}"', bg=SURFACE, fg=TEXT,
-                 font=("Georgia", 11, "bold"), anchor="w").pack(anchor="w")
+        tk.Label(info, text=name, bg=SURFACE, fg=TEXT,
+                 font=("Georgia", 10, "bold"), anchor="w").pack(anchor="w")
                  
-        tk.Label(info, text=f"{tw}×{th}", bg=SURFACE, fg=MUTED,
+        tk.Label(info, text=f"{tw}×{th}px", bg=SURFACE, fg=MUTED,
                  font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+        tk.Label(info, text=sizes, bg=SURFACE, fg=MUTED,
+                 font=("Segoe UI", 7), anchor="w", wraplength=130, justify="left").pack(anchor="w")
                  
-        status_lbl = tk.Label(info, text=f"{actual_w}×{actual_h}", bg=SURFACE, fg=SUCCESS,
+        status_lbl = tk.Label(info, text="Ready to create", bg=SURFACE, fg=SUCCESS,
                               font=("Segoe UI", 7, "bold"), anchor="w")
         status_lbl.pack(anchor="w")
 
@@ -836,16 +1032,12 @@ class FrameResizerApp(tk.Tk):
         self._update_sel_count()
 
     def _process_selected(self):
-        # Include cards that are selected — even already-processed ones,
-        # so switching quality re-renders them with the new algorithm.
         selected = {k: v for k, v in self._card_registry.items()
                     if v["var"].get()}
         if not selected:
             messagebox.showinfo("Process", "לא נבחרו גדלים לעיבוד.")
             return
 
-        # Cards already processed with the SAME quality: skip.
-        # Cards processed with a DIFFERENT quality (or not yet processed): include.
         current_q = self.current_quality
         selected = {k: v for k, v in selected.items()
                     if self._ready_cards.get(k, (None, None, None))[2] != current_q}
@@ -854,6 +1046,9 @@ class FrameResizerApp(tk.Tk):
                 "כל הגדלים הנבחרים כבר עובדו באיכות הנוכחית.\n"
                 "החלף איכות ולחץ שוב כדי לעבד מחדש.")
             return
+
+        if self._output_folder:
+            self._write_printing_guide(self._output_folder)
 
         my_gen  = self._render_gen
         quality = self.current_quality
@@ -867,7 +1062,7 @@ class FrameResizerApp(tk.Tk):
             cd["spin"]()
             cd["dl_btn"].config(state="disabled", bg=SURFACE, fg=MUTED)
             if "status_lbl" in cd and cd["status_lbl"].winfo_exists():
-                cd["status_lbl"].configure(text="◌ Processing...", fg=ACCENT)
+                cd["status_lbl"].configure(text="◌ Creating ratio-safe file...", fg=ACCENT)
 
         self.update_idletasks()
 
@@ -876,18 +1071,18 @@ class FrameResizerApp(tk.Tk):
                 target=self._process_and_update,
                 args=(info["img"], info["w"], info["h"],
                       quality, info["cd"], info["name"],
-                      info["w"], info["h"], my_gen, card_key),
+                      info["filename"], my_gen, card_key),
                 daemon=True,
             ).start()
 
-    def _process_and_update(self, img, actual_w, actual_h, quality,
-                             cd, name, aw, ah, my_gen, card_key):
+    def _process_and_update(self, img, target_w, target_h, quality,
+                             cd, name, filename, my_gen, card_key):
         ai_mode = (quality in ("ai", "gigapixel"))
         with (_AI_SEM if ai_mode else _WORKER_SEM):
             if my_gen != self._render_gen:
                 return
             try:
-                result = process_image(img, actual_w, actual_h, quality)
+                result = render_ratio_safe_output(img, target_w, target_h, quality)
             except RuntimeError as exc:
                 err_msg = str(exc)
                 def _show_err(msg=err_msg):
@@ -903,10 +1098,8 @@ class FrameResizerApp(tk.Tk):
             tw, th = cd["thumb_w"], cd["thumb_h"]
             thumb  = result.resize((tw, th), Image.LANCZOS)
 
-        safe   = name.replace("×", "x")
-        _fname = f"print_{safe}_{aw}x{ah}_{self.session_uid}.png"
+        _fname = filename
 
-        # ── Auto-save as soon as ready (NEW) ─────────────────────────────────
         self._auto_save(result, _fname)
 
         def update():
@@ -927,27 +1120,30 @@ class FrameResizerApp(tk.Tk):
             self._ready_cards[card_key] = (result, _fname, quality)
 
             if "status_lbl" in cd and cd["status_lbl"].winfo_exists():
-                cd["status_lbl"].configure(text="✓ Saved" if self._output_folder else "✓ Ready", fg=SUCCESS)
+                cd["status_lbl"].configure(
+                    text=f"✓ {'Saved' if self._output_folder else 'Ready'} · Ratio-safe",
+                    fg=SUCCESS)
 
-            # Update counter / download bar only when no auto-save folder set
             if not self._output_folder:
                 self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
                 if not self._dl_bar.winfo_ismapped():
                     self._dl_bar.pack(fill="x", pady=(0, 4), before=self.grid_sep)
             else:
-                # Show a small "saved" counter next to folder label instead
                 n = len(self._ready_cards)
-                self._folder_lbl.configure(
-                    text=f"✓  {self._output_folder[:45]}  [{n} saved]")
+                short = self._output_folder if len(self._output_folder) <= 45 else "…" + self._output_folder[-42:]
+                self._folder_lbl.configure(text=f"✓  {short}  [{n} files saved]")
 
             def download(_r=result, _f=_fname):
                 p = filedialog.asksaveasfilename(
-                    defaultextension=".png", initialfile=_f,
-                    filetypes=[("PNG files", "*.png")])
+                    defaultextension=".jpg", initialfile=_f,
+                    filetypes=[("JPEG files", "*.jpg"), ("PNG files", "*.png")])
                 if p:
-                    _r.convert("RGB").save(p, "PNG")
+                    ext = os.path.splitext(p)[1].lower()
+                    if ext in (".jpg", ".jpeg"):
+                        _r.convert("RGB").save(p, "JPEG", quality=95, optimize=True)
+                    else:
+                        _r.convert("RGB").save(p, "PNG")
 
-            # Download button turns to active ACCENT color when ready!
             cd["dl_btn"].configure(state="normal", bg=SURFACE, fg=ACCENT, command=download)
 
         self.after(0, update)
@@ -964,14 +1160,31 @@ class FrameResizerApp(tk.Tk):
             btn.configure(bg=ACCENT if key == q else SURFACE,
                           fg="#ffffff" if key == q else MUTED)
 
+    def _write_printing_guide(self, folder):
+        try:
+            with open(os.path.join(folder, "README_Printing_Guide.txt"), "w", encoding="utf-8") as f:
+                f.write(printing_guide_text(
+                    self.current_ratio_group,
+                    self.current_ratio_items,
+                    self.current_orientation
+                ))
+        except Exception as e:
+            print(f"[Guide] Error writing guide: {e}")
+
     def _save_in_thread(self, items, label):
         """Save a list of (img, fname) to folder — runs in background thread."""
         def _worker(folder, snapshot, count):
             saved = 0
+            self._write_printing_guide(folder)
             for item in snapshot:
                 res, fname = item[0], item[1]
                 try:
-                    res.convert("RGB").save(os.path.join(folder, fname), "PNG")
+                    dest = os.path.join(folder, fname)
+                    ext = os.path.splitext(dest)[1].lower()
+                    if ext in (".jpg", ".jpeg"):
+                        res.convert("RGB").save(dest, "JPEG", quality=95, optimize=True)
+                    else:
+                        res.convert("RGB").save(dest, "PNG")
                     saved += 1
                 except Exception as e:
                     print(f"[Save] Error saving {fname}: {e}")
