@@ -45,21 +45,21 @@
       "type": "diagonal"
     },
     "green_frame_mockups": {
-      "use_perspective": true,
-      "use_vector_clip": true,
-      "fit_mode": "stretch",
+      "aa_scale": 1,
       "artwork_scale": 1,
+      "contain_bg_color": "#ffffff",
+      "edge_aa_radius": 0,
+      "edge_expand": 0,
+      "enable_inner_shadow": false,
+      "feather_radius": 2,
+      "fit_mode": "stretch",
+      "inner_shadow_size": 10,
+      "inner_shadow_strength": 0.35,
+      "mask_build_quality": 2,
       "offset_x": 0,
       "offset_y": 0,
-      "edge_expand": 0,
-      "mask_build_quality": 2,
-      "feather_radius": 2,
-      "edge_aa_radius": 0,
-      "aa_scale": 1,
-      "enable_inner_shadow": false,
-      "inner_shadow_strength": 0.35,
-      "inner_shadow_size": 10,
-      "contain_bg_color": "#ffffff"
+      "use_perspective": true,
+      "use_vector_clip": true
     },
     "inner_shadow": {
       "blur": 15,

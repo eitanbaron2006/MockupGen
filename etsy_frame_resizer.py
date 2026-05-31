@@ -13,42 +13,42 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageFilter, ImageTk
 
-# ── Real-ESRGAN (optional) ────────────────────────────────────────────────────
-try:
-    import torch
-    from realesrgan import RealESRGANer
-    from basicsr.archs.rrdbnet_arch import RRDBNet
-    _ESRGAN_AVAILABLE = True
-except ImportError:
-    _ESRGAN_AVAILABLE = False
+# ── Real-ESRGAN ncnn-vulkan (GPU — AMD/Intel/NVIDIA via Vulkan) ───────────────
+import subprocess, tempfile, pathlib
 
-_esrgan_upsampler = None   # lazy-loaded on first use
+NCNN_EXE = pathlib.Path(r"C:\realesrgan\realesrgan-ncnn-vulkan.exe")
 
-def _get_esrgan():
-    """Lazy-load RealESRGAN model (CPU mode for AMD/Intel)."""
-    global _esrgan_upsampler
-    if _esrgan_upsampler is not None:
-        return _esrgan_upsampler
-    if not _ESRGAN_AVAILABLE:
+def scale_ai_ncnn(img, tw, th):
+    """
+    Upscale via realesrgan-ncnn-vulkan.exe (runs on AMD/Intel/NVIDIA via Vulkan).
+    Writes a temp PNG in, reads the 4× result back, then LANCZOS to exact target.
+    """
+    if not NCNN_EXE.exists():
         raise RuntimeError(
-            "Real-ESRGAN לא מותקן.\n\n"
-            "הרץ:\n  pip install realesrgan basicsr torch torchvision"
+            f"לא נמצא:\n{NCNN_EXE}\n\n"
+            "ודא שחילצת את realesrgan-ncnn-vulkan לתיקייה C:\\realesrgan\\"
         )
-    import urllib.request, pathlib
-    model_path = pathlib.Path(__file__).parent / "RealESRGAN_x4plus.pth"
-    if not model_path.exists():
-        url = ("https://github.com/xinntao/Real-ESRGAN/"
-               "releases/download/v0.1.0/RealESRGAN_x4plus.pth")
-        print(f"Downloading Real-ESRGAN model → {model_path} …")
-        urllib.request.urlretrieve(url, model_path)
-    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64,
-                    num_block=23, num_grow_ch=32, scale=4)
-    _esrgan_upsampler = RealESRGANer(
-        scale=4, model_path=str(model_path), model=model,
-        tile=256, tile_pad=10, pre_pad=0,
-        device=torch.device("cpu"),
-    )
-    return _esrgan_upsampler
+    with tempfile.TemporaryDirectory() as tmp:
+        src_path = pathlib.Path(tmp) / "input.png"
+        dst_path = pathlib.Path(tmp) / "output.png"
+        img.convert("RGB").save(str(src_path), "PNG")
+        result = subprocess.run(
+            [str(NCNN_EXE),
+             "-i", str(src_path),
+             "-o", str(dst_path),
+             "-n", "realesrgan-x4plus",
+             "-s", "4",
+             "-f", "png"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0 or not dst_path.exists():
+            raise RuntimeError(
+                f"realesrgan-ncnn-vulkan נכשל:\n{result.stderr or result.stdout}"
+            )
+        out_img = Image.open(str(dst_path)).copy()
+    if out_img.size != (tw, th):
+        out_img = out_img.resize((tw, th), Image.LANCZOS)
+    return out_img.convert("RGBA")
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG      = "#0f0e0c"
@@ -117,22 +117,7 @@ def scale_bicubic(img, tw, th):
     return source.resize((tw, th), Image.BICUBIC)
 
 def scale_ai(img, tw, th):
-    """
-    Real-ESRGAN 4× upscale, then downscale to exact target with LANCZOS.
-    Works on CPU (slow but correct for AMD/Intel).
-    Input is converted to RGB for the model and back to RGBA after.
-    """
-    upsampler = _get_esrgan()
-    import numpy as np
-    # ESRGAN expects RGB uint8 numpy array
-    rgb = img.convert("RGB")
-    arr = np.array(rgb)
-    out_arr, _ = upsampler.enhance(arr, outscale=4)
-    out_img = Image.fromarray(out_arr, "RGB")
-    # Downscale to exact target with LANCZOS for maximum sharpness
-    if out_img.size != (tw, th):
-        out_img = out_img.resize((tw, th), Image.LANCZOS)
-    return out_img.convert("RGBA")
+    return scale_ai_ncnn(img, tw, th)
 
 def process_image(img, w, h, quality):
     if   quality == "basic":        return scale_basic(img, w, h)
@@ -161,7 +146,8 @@ CARD_W      = 180   # card pixel width
 THUMB_MAX_W = 160   # max thumbnail width inside card
 
 # Limit parallel workers → cards finish progressively, not all at once
-_WORKER_SEM = threading.Semaphore(3)
+_WORKER_SEM    = threading.Semaphore(3)
+_AI_SEM        = threading.Semaphore(1)  # AI: only ONE at a time — GPU overload protection
 
 # Global render-generation counter — threads from old renders self-cancel
 _render_gen = 0
@@ -522,7 +508,8 @@ class FrameResizerApp(tk.Tk):
     def _process_and_update(self, img, actual_w, actual_h, quality,
                              cd, name, aw, ah, my_gen):
         # ── All heavy work stays in the background thread ──────────────────
-        with _WORKER_SEM:   # max 3 concurrent; others queue up → progressive UI
+        ai_mode = (quality == "ai")
+        with (_AI_SEM if ai_mode else _WORKER_SEM):
             # Abort early if a newer render started while we were queued
             if my_gen != self._render_gen:
                 return
