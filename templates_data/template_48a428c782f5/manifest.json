@@ -1,38 +1,38 @@
 {
   "template_id": "template_48a428c782f5",
   "name": "ChatGPT Image May 29 2026 04 12 41 PM 5",
-  "product_type": "vertival-wall-art-frame",
+  "product_type": "horizontal-wall-art",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 275,
-    "y": 253,
-    "width": 715,
-    "height": 452,
+    "x": 284,
+    "y": 259,
+    "width": 701,
+    "height": 440,
     "corners": [
       {
-        "x": 279,
-        "y": 253
-      },
-      {
-        "x": 990,
+        "x": 284,
         "y": 259
       },
       {
-        "x": 990,
-        "y": 705
+        "x": 984,
+        "y": 259
       },
       {
-        "x": 275,
-        "y": 705
+        "x": 985,
+        "y": 698
+      },
+      {
+        "x": 284,
+        "y": 699
       }
     ]
   },
-  "fit_mode": "cover",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": null,
+  "mask": "mask.png",
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -44,6 +44,23 @@
       "opacity": 0.15,
       "type": "diagonal"
     },
+    "green_frame_mockups": {
+      "aa_scale": 1,
+      "artwork_scale": 1,
+      "contain_bg_color": "#ffffff",
+      "edge_aa_radius": 0,
+      "edge_expand": 1,
+      "enable_inner_shadow": false,
+      "feather_radius": 2,
+      "fit_mode": "stretch",
+      "inner_shadow_size": 10,
+      "inner_shadow_strength": 0.35,
+      "mask_build_quality": 2,
+      "offset_x": 0,
+      "offset_y": 0,
+      "use_perspective": true,
+      "use_vector_clip": true
+    },
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
@@ -54,5 +71,90 @@
       "top": 10
     }
   },
-  "raw_artwork_area": null
+  "raw_artwork_area": {
+    "edge_expand": 0,
+    "green_pixels": 309711,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 284,
+        "y": 259
+      },
+      {
+        "x": 984,
+        "y": 259
+      },
+      {
+        "x": 985,
+        "y": 698
+      },
+      {
+        "x": 284,
+        "y": 699
+      }
+    ],
+    "regions": [
+      {
+        "area": 309711,
+        "corners": [
+          {
+            "x": 284,
+            "y": 259
+          },
+          {
+            "x": 984,
+            "y": 259
+          },
+          {
+            "x": 985,
+            "y": 698
+          },
+          {
+            "x": 284,
+            "y": 699
+          }
+        ],
+        "height": 441,
+        "inner_corners": [
+          {
+            "x": 284,
+            "y": 259
+          },
+          {
+            "x": 984,
+            "y": 259
+          },
+          {
+            "x": 985,
+            "y": 698
+          },
+          {
+            "x": 284,
+            "y": 699
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 284,
+            "y": 259
+          },
+          {
+            "x": 984,
+            "y": 259
+          },
+          {
+            "x": 985,
+            "y": 698
+          },
+          {
+            "x": 284,
+            "y": 699
+          }
+        ],
+        "width": 703,
+        "x": 283,
+        "y": 259
+      }
+    ]
+  }
 }
