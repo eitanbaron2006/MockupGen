@@ -13,6 +13,43 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageFilter, ImageTk
 
+# ── Real-ESRGAN (optional) ────────────────────────────────────────────────────
+try:
+    import torch
+    from realesrgan import RealESRGANer
+    from basicsr.archs.rrdbnet_arch import RRDBNet
+    _ESRGAN_AVAILABLE = True
+except ImportError:
+    _ESRGAN_AVAILABLE = False
+
+_esrgan_upsampler = None   # lazy-loaded on first use
+
+def _get_esrgan():
+    """Lazy-load RealESRGAN model (CPU mode for AMD/Intel)."""
+    global _esrgan_upsampler
+    if _esrgan_upsampler is not None:
+        return _esrgan_upsampler
+    if not _ESRGAN_AVAILABLE:
+        raise RuntimeError(
+            "Real-ESRGAN לא מותקן.\n\n"
+            "הרץ:\n  pip install realesrgan basicsr torch torchvision"
+        )
+    import urllib.request, pathlib
+    model_path = pathlib.Path(__file__).parent / "RealESRGAN_x4plus.pth"
+    if not model_path.exists():
+        url = ("https://github.com/xinntao/Real-ESRGAN/"
+               "releases/download/v0.1.0/RealESRGAN_x4plus.pth")
+        print(f"Downloading Real-ESRGAN model → {model_path} …")
+        urllib.request.urlretrieve(url, model_path)
+    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64,
+                    num_block=23, num_grow_ch=32, scale=4)
+    _esrgan_upsampler = RealESRGANer(
+        scale=4, model_path=str(model_path), model=model,
+        tile=256, tile_pad=10, pre_pad=0,
+        device=torch.device("cpu"),
+    )
+    return _esrgan_upsampler
+
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG      = "#0f0e0c"
 SURFACE = "#1a1916"
@@ -63,27 +100,46 @@ def apply_unsharp(img, amount=0.5, radius=1.0):
 
 def scale_bicubic(img, tw, th):
     """
-    Bicubic upscale using PIL's C-level BICUBIC filter (Catmull-Rom).
-    For very large targets: step-scale to an intermediate size first,
-    then do a single bicubic pass — mirrors the JS scaleBicubic() strategy.
-    PIL's implementation runs in C and releases the GIL, so the UI stays live.
+    High-quality bicubic upscale (Catmull-Rom via PIL).
+    Strategy:
+      1. Step-scale (1.5x per pass, LANCZOS) up to ~2/3 of the target size.
+      2. One final BICUBIC pass to hit the exact target — clean, sharp result.
+    This is intentionally the slowest mode.
     """
-    MAX_PX = 4_000_000
     sw, sh = img.size
-    if tw * th > MAX_PX:
-        ratio  = math.sqrt(MAX_PX / (tw * th))
-        mid_w  = round(sw * (tw / sw) * ratio)
-        mid_h  = round(sh * (th / sh) * ratio)
-        source = scale_step(img, mid_w, mid_h)
+    # Step up to 2/3 of target so the final bicubic jump is at most ~1.5x
+    step_target_w = max(sw, round(tw * 2 / 3))
+    step_target_h = max(sh, round(th * 2 / 3))
+    if step_target_w > sw or step_target_h > sh:
+        source = scale_step(img, step_target_w, step_target_h)
     else:
         source = img
     return source.resize((tw, th), Image.BICUBIC)
+
+def scale_ai(img, tw, th):
+    """
+    Real-ESRGAN 4× upscale, then downscale to exact target with LANCZOS.
+    Works on CPU (slow but correct for AMD/Intel).
+    Input is converted to RGB for the model and back to RGBA after.
+    """
+    upsampler = _get_esrgan()
+    import numpy as np
+    # ESRGAN expects RGB uint8 numpy array
+    rgb = img.convert("RGB")
+    arr = np.array(rgb)
+    out_arr, _ = upsampler.enhance(arr, outscale=4)
+    out_img = Image.fromarray(out_arr, "RGB")
+    # Downscale to exact target with LANCZOS for maximum sharpness
+    if out_img.size != (tw, th):
+        out_img = out_img.resize((tw, th), Image.LANCZOS)
+    return out_img.convert("RGBA")
 
 def process_image(img, w, h, quality):
     if   quality == "basic":        return scale_basic(img, w, h)
     elif quality == "step":         return scale_step(img, w, h)
     elif quality == "step-unsharp": return apply_unsharp(scale_step(img, w, h), 0.5, 1.0)
     elif quality == "bicubic":      return apply_unsharp(scale_bicubic(img, w, h), 0.4, 0.8)
+    elif quality == "ai":            return scale_ai(img, w, h)
     return img
 
 def gcd(a, b): return gcd(b, a%b) if b else a
@@ -107,6 +163,9 @@ THUMB_MAX_W = 160   # max thumbnail width inside card
 # Limit parallel workers → cards finish progressively, not all at once
 _WORKER_SEM = threading.Semaphore(3)
 
+# Global render-generation counter — threads from old renders self-cancel
+_render_gen = 0
+
 class FrameResizerApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -119,6 +178,8 @@ class FrameResizerApp(tk.Tk):
         self.current_orientation = "portrait"
         self.current_quality   = "step-unsharp"
         self._thumb_refs       = []
+        self._render_gen       = 0   # bumped on every _render_all; threads check this
+        self._ai_error_shown   = False  # show AI install error only once
 
         self._build_ui()
 
@@ -173,6 +234,7 @@ class FrameResizerApp(tk.Tk):
             ("step",         "Step Scale",     "1.5× per step"),
             ("step-unsharp", "Step + Unsharp", "Recommended ✓"),
             ("bicubic",      "Bicubic",        "Slow / best"),
+            ("ai",           "AI Upscale",     "Real-ESRGAN ✦"),
         ]
         self._q_buttons = []
         btn_row = tk.Frame(self.quality_frame, bg=BORDER, bd=1, relief="solid")
@@ -345,33 +407,44 @@ class FrameResizerApp(tk.Tk):
     def _render_all(self):
         if not self.current_img:
             return
+
+        # Bump generation so in-flight threads from a previous render abort.
+        self._render_gen += 1
+        my_gen = self._render_gen
+
         for w in self.grid_inner.winfo_children():
             w.destroy()
         self._thumb_refs.clear()
 
         img = self.current_img
         src_w, src_h = img.size
+        groups = list(SIZE_GROUPS)
 
-        for group_label, sizes in SIZE_GROUPS:
+        def render_group(idx):
+            if my_gen != self._render_gen or idx >= len(groups):
+                return
+            group_label, sizes = groups[idx]
             self._section_title(self.grid_inner, group_label)
             row = tk.Frame(self.grid_inner, bg=BG)
             row.pack(fill="x", padx=24, pady=(0, 8))
-
             for raw_name, raw_w, raw_h in sizes:
                 name, tw, th = adapt_size(raw_name, raw_w, raw_h,
                                           self.current_orientation)
                 scale    = min(tw / src_w, th / src_h)
                 actual_w = round(src_w * scale)
                 actual_h = round(src_h * scale)
-
                 card_dict = self._make_card(row, name, tw, th, actual_w, actual_h)
-
                 threading.Thread(
                     target=self._process_and_update,
                     args=(img, actual_w, actual_h,
-                          self.current_quality, card_dict, name, actual_w, actual_h),
+                          self.current_quality, card_dict, name,
+                          actual_w, actual_h, my_gen),
                     daemon=True,
                 ).start()
+            # Yield to the event loop before building the next group
+            self.after(0, render_group, idx + 1)
+
+        render_group(0)
 
     def _make_card(self, parent, name, tw, th, actual_w, actual_h):
         # Compute thumbnail size to know card height upfront
@@ -447,10 +520,30 @@ class FrameResizerApp(tk.Tk):
                     dl_btn=dl_btn, thumb_w=thumb_w, thumb_h=thumb_h)
 
     def _process_and_update(self, img, actual_w, actual_h, quality,
-                             cd, name, aw, ah):
+                             cd, name, aw, ah, my_gen):
         # ── All heavy work stays in the background thread ──────────────────
         with _WORKER_SEM:   # max 3 concurrent; others queue up → progressive UI
-            result = process_image(img, actual_w, actual_h, quality)
+            # Abort early if a newer render started while we were queued
+            if my_gen != self._render_gen:
+                return
+            try:
+                result = process_image(img, actual_w, actual_h, quality)
+            except RuntimeError as exc:
+                # Show friendly popup only once across all concurrent threads
+                err_msg = str(exc)
+                def _show_err(msg=err_msg):
+                    if self._ai_error_shown:
+                        return
+                    self._ai_error_shown = True
+                    messagebox.showerror("AI Upscale — שגיאה", msg)
+                    self.current_quality = "step-unsharp"
+                    self._set_quality_ui("step-unsharp")
+                    self._ai_error_shown = False
+                    self._render_all()
+                self.after(0, _show_err)
+                return
+            if my_gen != self._render_gen:
+                return
 
             # Also build the thumbnail PIL image here (CPU work, off main thread)
             tw, th = cd["thumb_w"], cd["thumb_h"]
@@ -458,6 +551,8 @@ class FrameResizerApp(tk.Tk):
 
         # ── Only the tiny Tk-object creation goes to the main thread ───────
         def update():
+            if my_gen != self._render_gen:
+                return   # render was superseded; don't touch stale widgets
             if not cd["card"].winfo_exists():
                 return
 
@@ -500,11 +595,13 @@ class FrameResizerApp(tk.Tk):
     def _set_quality(self, q):
         self.current_quality = q
         self._set_quality_ui(q)
+        if q == "ai":
+            self._ai_error_shown = False
         if self.current_img:
             self._render_all()
 
     def _set_quality_ui(self, q):
-        keys = ["basic", "step", "step-unsharp", "bicubic"]
+        keys = ["basic", "step", "step-unsharp", "bicubic", "ai"]
         for btn, key in zip(self._q_buttons, keys):
             btn.configure(bg=ACCENT if key == q else SURFACE,
                           fg=BG     if key == q else MUTED)

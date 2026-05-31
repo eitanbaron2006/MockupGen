@@ -49,10 +49,36 @@ def optimized_render_perspective(region: GreenRegion, art: Image.Image, state: G
     from services.green_frame_mockup_service import _source_image
     src = _source_image(art, target_w, target_h, settings)
     
+    # Pad source image by 4 pixels to prevent edge bleeding/transparency under PIL perspective warp
+    pad = 4
+    W, H = src.width, src.height
+    padded = Image.new("RGBA", (W + 2 * pad, H + 2 * pad))
+    padded.paste(src, (pad, pad))
+    
+    # Repeat edges (top, bottom, left, right)
+    left = padded.crop((pad, pad, pad + 1, pad + H))
+    padded.paste(left.resize((pad, H), Image.Resampling.NEAREST), (0, pad))
+    
+    right = padded.crop((pad + W - 1, pad, pad + W, pad + H))
+    padded.paste(right.resize((pad, H), Image.Resampling.NEAREST), (pad + W, pad))
+    
+    top = padded.crop((0, pad, W + 2 * pad, pad + 1))
+    padded.paste(top.resize((W + 2 * pad, pad), Image.Resampling.NEAREST), (0, 0))
+    
+    bottom = padded.crop((0, pad + H - 1, W + 2 * pad, pad + H))
+    padded.paste(bottom.resize((W + 2 * pad, pad), Image.Resampling.NEAREST), (0, pad + H))
+    
+    src = padded
+    
     ss = max(1, settings.aa_scale)
     
     # Scale destination points for supersampling
-    src_pts = [{"x": 0.0, "y": 0.0}, {"x": float(src.width - 1), "y": 0.0}, {"x": float(src.width - 1), "y": float(src.height - 1)}, {"x": 0.0, "y": float(src.height - 1)}]
+    src_pts = [
+        {"x": float(pad), "y": float(pad)},
+        {"x": float(pad + W - 1), "y": float(pad)},
+        {"x": float(pad + W - 1), "y": float(pad + H - 1)},
+        {"x": float(pad), "y": float(pad + H - 1)},
+    ]
     dst_pts = [warp["tl"], warp["tr"], warp["br"], warp["bl"]]
     dst_pts_scaled = [{"x": p["x"] * ss, "y": p["y"] * ss} for p in dst_pts]
     
@@ -61,11 +87,23 @@ def optimized_render_perspective(region: GreenRegion, art: Image.Image, state: G
         return None
     try:
         inv = np.linalg.inv(h.reshape(3, 3)).reshape(9)
+        if abs(inv[8]) > 1e-9:
+            inv = inv / inv[8]
+        else:
+            return None
     except np.linalg.LinAlgError:
         return None
         
     coefficients = inv[:8]
-    out_w, out_h = max(1, round(region.w * ss)), max(1, round(region.h * ss))
+    # Define padded crop bounding box to prevent edge bleeding on subsequent resize
+    crop_pad = 4 if state.width >= 100 else 0
+    cx0 = max(0, region.x - crop_pad)
+    cy0 = max(0, region.y - crop_pad)
+    cx1 = min(state.width, region.x + region.w + crop_pad)
+    cy1 = min(state.height, region.y + region.h + crop_pad)
+    cw, ch = cx1 - cx0, cy1 - cy0
+    
+    out_w, out_h = max(1, round(cw * ss)), max(1, round(ch * ss))
     
     # Warp the source image to the scaled canvas size using compiled C code (lightning fast!)
     warped_full = src.transform(
@@ -75,30 +113,28 @@ def optimized_render_perspective(region: GreenRegion, art: Image.Image, state: G
         Image.Resampling.BICUBIC,
     )
     
-    # Crop to the scaled region bounding box
-    rx0, ry0 = round(region.x * ss), round(region.y * ss)
+    # Crop to the scaled region bounding box (with padding)
+    rx0, ry0 = round(cx0 * ss), round(cy0 * ss)
+    out_w, out_h = round(cw * ss), round(ch * ss)
     warped_region = warped_full.crop((rx0, ry0, rx0 + out_w, ry0 + out_h))
     
-    # Now process the soft mask
-    soft_mask_np = state.soft_mask[region.y : region.y + region.h, region.x : region.x + region.w]
+    # Downscale the warped region to target size (cw, ch) BEFORE applying soft mask and un-padding
+    if ss > 1:
+        warped_region = warped_region.resize((cw, ch), Image.Resampling.BICUBIC)
+        
+    # Apply the soft mask at target scale (no resize needed for the mask!)
+    soft_mask_np = state.soft_mask[cy0:cy1, cx0:cx1]
     soft_mask_uint8 = np.clip(soft_mask_np * 255.0, 0, 255).astype(np.uint8)
     soft_mask_region_img = Image.fromarray(soft_mask_uint8, mode="L")
     
-    # Resize the mask to out_w, out_h
-    soft_mask_region_scaled = soft_mask_region_img.resize((out_w, out_h), Image.Resampling.BILINEAR)
-    
-    # Apply optional edge antialiasing blur as in original code
-    blur_radius = round(settings.edge_aa_radius * max(1, ss / 2))
+    blur_radius = round(settings.edge_aa_radius)
     if blur_radius > 0:
-        soft_mask_region_scaled = soft_mask_region_scaled.filter(ImageFilter.BoxBlur(blur_radius))
+        soft_mask_region_img = soft_mask_region_img.filter(ImageFilter.BoxBlur(blur_radius))
         
-    # Multiply warped region's alpha channel with the soft mask
-    final_alpha = ImageChops.multiply(warped_region.getchannel("A"), soft_mask_region_scaled)
-    
-    # Put the final alpha channel back into the warped region image
+    final_alpha = ImageChops.multiply(warped_region.getchannel("A"), soft_mask_region_img)
     warped_region.putalpha(final_alpha)
     
-    return warped_region
+    return warped_region, cx0, cy0, cw, ch
 
 region = detection.regions[0]
 
@@ -113,8 +149,11 @@ opt_res = optimized_render_perspective(region, artwork, detection, settings)
 print(f"Optimized finished in {time.perf_counter() - t0:.4f} seconds")
 
 # Compare visual differences in visible pixels
-orig_arr = np.asarray(orig_res.convert("RGBA")).astype(int)
-opt_arr = np.asarray(opt_res.convert("RGBA")).astype(int)
+orig_res_img, cx0_orig, cy0_orig, cw_orig, ch_orig = orig_res
+opt_res_img, cx0_opt, cy0_opt, cw_opt, ch_opt = opt_res
+
+orig_arr = np.asarray(orig_res_img.convert("RGBA")).astype(int)
+opt_arr = np.asarray(opt_res_img.convert("RGBA")).astype(int)
 
 # Mask of visible pixels (alpha > 5 in either)
 visible = (orig_arr[:, :, 3] > 5) | (opt_arr[:, :, 3] > 5)
