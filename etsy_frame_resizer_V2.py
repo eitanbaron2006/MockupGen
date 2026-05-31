@@ -54,11 +54,6 @@ TPAI_EXE = pathlib.Path(
     r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe")
 
 def scale_ai_gigapixel(img, tw, th):
-    """
-    Run Topaz Photo AI on a single image and return the result.
-    Uses a semaphore (called externally via _AI_SEM) so only one
-    tpai process runs at a time — results appear card-by-card.
-    """
     if not TPAI_EXE.exists():
         raise RuntimeError(
             f"לא נמצא:\n{TPAI_EXE}\n\n"
@@ -105,6 +100,7 @@ ACCENT2 = "#7c6a3e"
 TEXT    = "#e8e4dc"
 MUTED   = "#6b6660"
 SUCCESS = "#5a8a5a"
+FOLDER_ACTIVE = "#2a4a2a"   # dark green tint when output folder is set
 
 # ── Print sizes ───────────────────────────────────────────────────────────────
 SIZE_GROUPS = [
@@ -198,6 +194,7 @@ class FrameResizerApp(tk.Tk):
         self._ai_error_shown     = False
         self._card_registry      = {}
         self._ready_cards        = {}
+        self._output_folder      = ""   # ← NEW: auto-save destination
 
         self._build_ui()
 
@@ -263,6 +260,30 @@ class FrameResizerApp(tk.Tk):
             self._q_buttons.append(btn)
         self._set_quality_ui("step-unsharp")
 
+        # ── Output folder bar (NEW) ──────────────────────────────────────────
+        self._folder_bar = tk.Frame(top, bg=BG)
+        tk.Label(self._folder_bar, text="OUTPUT:", bg=BG, fg=MUTED,
+                 font=("Courier", 9)).pack(side="left", padx=(24, 10))
+
+        self._folder_btn = tk.Button(
+            self._folder_bar, text="📁  Set Output Folder",
+            bg=SURFACE, fg=MUTED, font=("Courier", 9),
+            relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+            command=self._pick_output_folder)
+        self._folder_btn.pack(side="left", padx=(0, 8))
+
+        self._folder_lbl = tk.Label(
+            self._folder_bar, text="Not set — files will need manual download",
+            bg=BG, fg=MUTED, font=("Courier", 9))
+        self._folder_lbl.pack(side="left")
+
+        self._clear_folder_btn = tk.Button(
+            self._folder_bar, text="✕",
+            bg=SURFACE, fg=MUTED, font=("Courier", 9),
+            relief="flat", bd=0, padx=6, pady=5, cursor="hand2",
+            command=self._clear_output_folder)
+        # packed only when a folder is set
+
         # Action bar
         self._action_bar = tk.Frame(top, bg=BG)
         tk.Label(self._action_bar, text="SIZES:", bg=BG, fg=MUTED,
@@ -283,7 +304,7 @@ class FrameResizerApp(tk.Tk):
                                        bg=BG, fg=MUTED, font=("Courier", 9))
         self._sel_count_lbl.pack(side="left")
 
-        # Download bar
+        # Download bar (shown only when output folder is NOT set)
         self._dl_bar = tk.Frame(top, bg=BG)
         tk.Label(self._dl_bar, text="DOWNLOAD:", bg=BG, fg=MUTED,
                  font=("Courier", 9)).pack(side="left", padx=(24, 10))
@@ -332,26 +353,44 @@ class FrameResizerApp(tk.Tk):
 
         self._build_empty_grid()
 
-    def _build_upload_zone(self, parent):
-        outer = tk.Frame(parent, bg=ACCENT2, padx=1, pady=1)
-        outer.pack(fill="x", padx=24, pady=12)
-        self.upload_bg = tk.Frame(outer, bg=SURFACE, cursor="hand2")
-        self.upload_bg.pack(fill="both", expand=True)
-        inner = tk.Frame(self.upload_bg, bg=SURFACE)
-        inner.pack(padx=40, pady=24)
-        tk.Label(inner, text="⬡", bg=SURFACE, fg=ACCENT,
-                 font=("Courier", 26)).pack()
-        tk.Label(inner, text="Drop your image here", bg=SURFACE, fg=ACCENT,
-                 font=("Georgia", 14, "italic")).pack(pady=(4, 2))
-        tk.Label(inner, text="PNG, JPG, WEBP  —  or click to browse",
-                 bg=SURFACE, fg=MUTED, font=("Courier", 9)).pack()
-        for w in (outer, self.upload_bg, inner) + tuple(inner.winfo_children()):
-            w.bind("<Button-1>", self._on_click_upload)
-        self.upload_bg.bind("<Enter>",
-            lambda e: self.upload_bg.configure(bg="#201e1a"))
-        self.upload_bg.bind("<Leave>",
-            lambda e: self.upload_bg.configure(bg=SURFACE))
+    # ── Output folder helpers (NEW) ───────────────────────────────────────────
+    def _pick_output_folder(self):
+        folder = filedialog.askdirectory(title="בחר תיקיית יעד לשמירה אוטומטית")
+        if not folder:
+            return
+        self._output_folder = folder
+        short = folder if len(folder) <= 45 else "…" + folder[-42:]
+        self._folder_lbl.configure(
+            text=f"✓  {short}", fg=SUCCESS)
+        self._folder_btn.configure(bg=FOLDER_ACTIVE, fg=SUCCESS)
+        self._clear_folder_btn.pack(side="left", padx=(4, 0))
+        # Hide the manual download bar — not needed any more
+        self._dl_bar.pack_forget()
 
+    def _clear_output_folder(self):
+        self._output_folder = ""
+        self._folder_lbl.configure(
+            text="Not set — files will need manual download", fg=MUTED)
+        self._folder_btn.configure(bg=SURFACE, fg=MUTED)
+        self._clear_folder_btn.pack_forget()
+
+    def _auto_save(self, result_img, fname):
+        """Save one image to the output folder in a background thread."""
+        folder = self._output_folder
+        if not folder:
+            return  # no auto-save, user downloads manually
+        def _worker():
+            try:
+                dest = os.path.join(folder, fname)
+                result_img.convert("RGB").save(dest, "PNG")
+                print(f"[AutoSave] Saved → {dest}")
+            except Exception as e:
+                print(f"[AutoSave] Error: {e}")
+                self.after(0, lambda: messagebox.showerror(
+                    "שמירה אוטומטית", f"לא הצלחתי לשמור:\n{fname}\n\n{e}"))
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # ── Empty grid ────────────────────────────────────────────────────────────
     def _build_empty_grid(self):
         for w in self.grid_inner.winfo_children():
             w.destroy()
@@ -417,6 +456,9 @@ class FrameResizerApp(tk.Tk):
         if not self.orient_tag.winfo_ismapped():
             self.orient_tag.pack(side="left", padx=(8, 0))
 
+        # ── Source image preview in upload zone ───────────────────────────────
+        self._update_source_preview(img, path)
+
         w, h = img.size
         g = gcd(w, h)
         self._stat_vars["Width"].set(str(w))
@@ -432,12 +474,89 @@ class FrameResizerApp(tk.Tk):
                                   in_=self.stats_frame.master)
         if not self.quality_frame.winfo_ismapped():
             self.quality_frame.pack(fill="x", pady=(6, 4))
+        if not self._folder_bar.winfo_ismapped():
+            self._folder_bar.pack(fill="x", pady=(0, 2))
         if not self._action_bar.winfo_ismapped():
             self._action_bar.pack(fill="x", pady=(0, 4))
         if not self.grid_sep.winfo_ismapped():
             self.grid_sep.pack(fill="x", padx=24, pady=(0, 4))
 
         self._build_selectable_grid()
+
+    def _build_upload_zone(self, parent):
+        outer = tk.Frame(parent, bg=ACCENT2, padx=1, pady=1)
+        outer.pack(fill="x", padx=24, pady=12)
+        self.upload_bg = tk.Frame(outer, bg=SURFACE, cursor="hand2")
+        self.upload_bg.pack(fill="both", expand=True)
+
+        # ── Left: source image preview (hidden until an image is loaded) ──────
+        self._src_preview_frame = tk.Frame(
+            self.upload_bg, bg="#141210", width=200, relief="flat")
+        # not packed yet — appears after first upload
+
+        self._src_thumb_lbl = tk.Label(
+            self._src_preview_frame, bg="#141210")
+        # placed via place() in _update_source_preview so it fills the panel
+
+        self._src_name_lbl = tk.Label(
+            self._src_preview_frame, text="", bg="#141210", fg=MUTED,
+            font=("Courier", 7), wraplength=188, justify="center")
+        self._src_name_lbl.place(relx=0.5, rely=0.94, anchor="center")
+
+        self._src_thumb_ref = None   # keep ImageTk reference alive
+
+        # ── Right: drop / click zone ──────────────────────────────────────────
+        inner = tk.Frame(self.upload_bg, bg=SURFACE)
+        inner.pack(side="left", fill="both", expand=True, padx=40, pady=24)
+        tk.Label(inner, text="⬡", bg=SURFACE, fg=ACCENT,
+                 font=("Courier", 26)).pack()
+        tk.Label(inner, text="Drop your image here", bg=SURFACE, fg=ACCENT,
+                 font=("Georgia", 14, "italic")).pack(pady=(4, 2))
+        self._upload_sub_lbl = tk.Label(
+            inner, text="PNG, JPG, WEBP  —  or click to browse",
+            bg=SURFACE, fg=MUTED, font=("Courier", 9))
+        self._upload_sub_lbl.pack()
+
+        for w in (outer, self.upload_bg, inner) + tuple(inner.winfo_children()):
+            w.bind("<Button-1>", self._on_click_upload)
+        self.upload_bg.bind("<Enter>",
+            lambda e: self.upload_bg.configure(bg="#201e1a"))
+        self.upload_bg.bind("<Leave>",
+            lambda e: self.upload_bg.configure(bg=SURFACE))
+
+    def _update_source_preview(self, img, path):
+        """Show a thumbnail of the source image filling the upload zone left panel."""
+        PREV_W = 196          # panel is 200px wide, leave 2px each side
+        LABEL_H = 16          # px reserved at bottom for filename
+
+        # We need the actual rendered height of the upload zone.
+        # Force geometry calculation first.
+        self.upload_bg.update_idletasks()
+        panel_h = self.upload_bg.winfo_height()
+        if panel_h < 20:      # not yet rendered — use a sensible default
+            panel_h = 110
+        PREV_H = panel_h - LABEL_H
+
+        iw, ih = img.size
+        scale  = min(PREV_W / iw, PREV_H / ih)
+        tw     = max(1, round(iw * scale))
+        th     = max(1, round(ih * scale))
+
+        thumb  = img.resize((tw, th), Image.LANCZOS)
+        photo  = ImageTk.PhotoImage(thumb)
+        self._src_thumb_ref = photo   # prevent GC
+
+        self._src_thumb_lbl.configure(image=photo, bg="#141210")
+        self._src_thumb_lbl.image = photo
+        # Centre the thumb inside the panel; name sits at the very bottom
+        self._src_thumb_lbl.place(relx=0.5, rely=0.47, anchor="center")
+
+        fname = os.path.basename(path)
+        short = fname if len(fname) <= 22 else fname[:20] + "…"
+        self._src_name_lbl.configure(text=short)
+
+        if not self._src_preview_frame.winfo_ismapped():
+            self._src_preview_frame.pack(side="left", fill="y", padx=(0, 0), pady=0)
 
     def _build_selectable_grid(self):
         self._render_gen += 1
@@ -510,7 +629,6 @@ class FrameResizerApp(tk.Tk):
         def spin():
             if not spin_lbl.winfo_exists():
                 return
-            # Don't gate on winfo_ismapped — it may not be mapped yet on first call
             spin_var.set(spin_chars[spin_idx[0] % len(spin_chars)])
             spin_idx[0] += 1
             spin_job[0] = self.after(150, spin)
@@ -586,10 +704,23 @@ class FrameResizerApp(tk.Tk):
         self._update_sel_count()
 
     def _process_selected(self):
+        # Include cards that are selected — even already-processed ones,
+        # so switching quality re-renders them with the new algorithm.
         selected = {k: v for k, v in self._card_registry.items()
-                    if v["var"].get() and k not in self._ready_cards}
+                    if v["var"].get()}
         if not selected:
-            messagebox.showinfo("Process", "לא נבחרו גדלים לעיבוד (או שכולם כבר עובדו).")
+            messagebox.showinfo("Process", "לא נבחרו גדלים לעיבוד.")
+            return
+
+        # Cards already processed with the SAME quality: skip.
+        # Cards processed with a DIFFERENT quality (or not yet processed): include.
+        current_q = self.current_quality
+        selected = {k: v for k, v in selected.items()
+                    if self._ready_cards.get(k, (None, None, None))[2] != current_q}
+        if not selected:
+            messagebox.showinfo("Process",
+                "כל הגדלים הנבחרים כבר עובדו באיכות הנוכחית.\n"
+                "החלף איכות ולחץ שוב כדי לעבד מחדש.")
             return
 
         my_gen  = self._render_gen
@@ -604,12 +735,8 @@ class FrameResizerApp(tk.Tk):
             cd["spin"]()
             cd["dl_btn"].config(state="disabled", bg=SURFACE, fg=MUTED)
 
-        # Force Tkinter to draw spinners before threads start
         self.update_idletasks()
 
-        # All qualities use the same per-card thread pattern.
-        # _AI_SEM(1) ensures only one tpai/ncnn process runs at a time,
-        # so cards appear progressively as each finishes.
         for card_key, info in selected.items():
             threading.Thread(
                 target=self._process_and_update,
@@ -618,7 +745,6 @@ class FrameResizerApp(tk.Tk):
                       info["w"], info["h"], my_gen, card_key),
                 daemon=True,
             ).start()
-
 
     def _process_and_update(self, img, actual_w, actual_h, quality,
                              cd, name, aw, ah, my_gen, card_key):
@@ -643,6 +769,12 @@ class FrameResizerApp(tk.Tk):
             tw, th = cd["thumb_w"], cd["thumb_h"]
             thumb  = result.resize((tw, th), Image.LANCZOS)
 
+        safe   = name.replace("×", "x")
+        _fname = f"print_{safe}_{aw}x{ah}_{self.session_uid}.png"
+
+        # ── Auto-save as soon as ready (NEW) ─────────────────────────────────
+        self._auto_save(result, _fname)
+
         def update():
             if my_gen != self._render_gen or not cd["card"].winfo_exists():
                 return
@@ -657,18 +789,28 @@ class FrameResizerApp(tk.Tk):
             lbl.configure(image=photo, bg="#1e1c18")
             lbl.image = photo
             lbl.place(relx=0.5, rely=0.5, anchor="center")
-            safe   = name.replace("×", "x")
-            _fname = f"print_{safe}_{aw}x{ah}_{self.session_uid}.png"
-            self._ready_cards[card_key] = (result, _fname)
-            self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
-            if not self._dl_bar.winfo_ismapped():
-                self._dl_bar.pack(fill="x", pady=(0, 4), before=self.grid_sep)
+
+            self._ready_cards[card_key] = (result, _fname, quality)
+
+            # Update counter / download bar only when no auto-save folder set
+            if not self._output_folder:
+                self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
+                if not self._dl_bar.winfo_ismapped():
+                    self._dl_bar.pack(fill="x", pady=(0, 4), before=self.grid_sep)
+            else:
+                # Show a small "saved" counter next to folder label instead
+                n = len(self._ready_cards)
+                self._folder_lbl.configure(
+                    text=f"✓  {self._output_folder[:45]}  [{n} saved]")
+
             def download(_r=result, _f=_fname):
                 p = filedialog.asksaveasfilename(
                     defaultextension=".png", initialfile=_f,
                     filetypes=[("PNG files", "*.png")])
                 if p:
                     _r.convert("RGB").save(p, "PNG")
+
+            # Download button: still useful even with auto-save (save elsewhere)
             cd["dl_btn"].configure(state="normal", command=download)
 
         self.after(0, update)
@@ -689,7 +831,8 @@ class FrameResizerApp(tk.Tk):
         """Save a list of (img, fname) to folder — runs in background thread."""
         def _worker(folder, snapshot, count):
             saved = 0
-            for (res, fname) in snapshot:
+            for item in snapshot:
+                res, fname = item[0], item[1]
                 try:
                     res.convert("RGB").save(os.path.join(folder, fname), "PNG")
                     saved += 1
