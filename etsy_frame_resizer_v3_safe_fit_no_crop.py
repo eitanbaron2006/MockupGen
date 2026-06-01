@@ -52,7 +52,8 @@ def init_db():
     # Seed default settings
     default_settings = [
         ("ncnn_exe_path", r"C:\realesrgan\realesrgan-ncnn-vulkan.exe"),
-        ("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe")
+        ("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe"),
+        ("default_output_folder", "")
     ]
     for key, val in default_settings:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
@@ -414,9 +415,9 @@ _AI_SEM     = threading.Semaphore(1)
 class FrameResizerApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Mockup Resizer — Etsy · 300 DPI")
+        self.title("Wall Art Resizer — Etsy · 300 DPI")
         self.configure(bg=BG)
-        self._center_window(1110, 740)
+        self._center_window(1110, 760)
         self.resizable(False, False)
 
         self.current_img         = None
@@ -429,7 +430,6 @@ class FrameResizerApp(tk.Tk):
         self._ai_error_shown     = False
         self._card_registry      = {}
         self._ready_cards        = {}
-        self._output_folder      = ""   # ← NEW: auto-save destination
 
         # Modern TTK style config to make scrollbars match warm parchment style
         style = ttk.Style()
@@ -473,7 +473,7 @@ class FrameResizerApp(tk.Tk):
         logo_container = tk.Frame(self.sidebar, bg=SURFACE)
         logo_container.pack(fill="x", padx=20, pady=(12, 6))
         
-        tk.Label(logo_container, text="Mockup", bg=SURFACE, fg=TEXT,
+        tk.Label(logo_container, text="Wall Art", bg=SURFACE, fg=TEXT,
                  font=("Georgia", 20, "italic")).pack(side="left")
         tk.Label(logo_container, text="Resizer", bg=SURFACE, fg=ACCENT,
                  font=("Segoe UI", 20, "bold")).pack(side="left")
@@ -499,12 +499,13 @@ class FrameResizerApp(tk.Tk):
 
         self._sidebar_divider()
 
-        # SECTION: Mockup File
-        self._sidebar_section_label("Mockup File")
+        # SECTION: Wall Art File
+        self._sidebar_section_label("Wall Art File")
         self._build_upload_zone(self.sidebar)
 
-        # We will pack the stats frame inside the sidebar, hidden until loaded
+        # We will pack the stats frame inside the sidebar, always shown
         self.stats_frame = tk.Frame(self.sidebar, bg=SURFACE)
+        self.stats_frame.pack(fill="x", pady=(0, 0))
         self._stat_vars = {}
         
         stats_card = tk.Frame(self.stats_frame, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
@@ -525,6 +526,7 @@ class FrameResizerApp(tk.Tk):
 
         # SECTION: Quality Profile (stacked vertical options)
         self.quality_section = tk.Frame(self.sidebar, bg=SURFACE)
+        self.quality_section.pack(fill="x")
         self._sidebar_section_label("Quality Profile", parent=self.quality_section)
         
         q_options = [
@@ -553,6 +555,7 @@ class FrameResizerApp(tk.Tk):
 
         # SECTION: Etsy output mode
         self.fit_mode_section = tk.Frame(self.sidebar, bg=SURFACE)
+        self.fit_mode_section.pack(fill="x")
         self._sidebar_section_label("Etsy Output Mode", parent=self.fit_mode_section)
 
         mode_card = tk.Frame(self.fit_mode_section, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
@@ -561,33 +564,40 @@ class FrameResizerApp(tk.Tk):
         mode_inner.pack(fill="x")
 
         self._fit_mode_var = tk.StringVar(value="fit_white")
+        self._fit_mode_radios = []
 
-        tk.Radiobutton(
+        r1 = tk.Radiobutton(
             mode_inner, text="Safe Fit — no crop, white margins if needed",
             variable=self._fit_mode_var, value="fit_white",
             bg=SURFACE, fg=TEXT, selectcolor="#ffffff",
             activebackground=SURFACE, activeforeground=TEXT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fit_white")
-        ).pack(anchor="w")
+        )
+        r1.pack(anchor="w")
+        self._fit_mode_radios.append(r1)
 
-        tk.Radiobutton(
+        r2 = tk.Radiobutton(
             mode_inner, text="Safe Fill — no crop, blurred extension",
             variable=self._fit_mode_var, value="fit_blur",
             bg=SURFACE, fg=TEXT, selectcolor="#ffffff",
             activebackground=SURFACE, activeforeground=TEXT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fit_blur")
-        ).pack(anchor="w", pady=(2, 0))
+        )
+        r2.pack(anchor="w", pady=(2, 0))
+        self._fit_mode_radios.append(r2)
 
-        tk.Radiobutton(
+        r3 = tk.Radiobutton(
             mode_inner, text="Expert: Fill / Crop — may cut artwork",
             variable=self._fit_mode_var, value="fill",
             bg=SURFACE, fg=ACCENT, selectcolor="#ffffff",
             activebackground=SURFACE, activeforeground=ACCENT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fill")
-        ).pack(anchor="w", pady=(2, 0))
+        )
+        r3.pack(anchor="w", pady=(2, 0))
+        self._fit_mode_radios.append(r3)
 
         tk.Label(
             mode_inner,
@@ -596,33 +606,6 @@ class FrameResizerApp(tk.Tk):
             wraplength=240, justify="left"
         ).pack(anchor="w", pady=(2, 0))
 
-        # SECTION: Output Folder
-        self.folder_section = tk.Frame(self.sidebar, bg=SURFACE)
-        self._sidebar_section_label("Output Location", parent=self.folder_section)
-        
-        folder_card = tk.Frame(self.folder_section, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
-        folder_card.pack(fill="x", padx=20, pady=(2, 4))
-        
-        folder_inner = tk.Frame(folder_card, bg=SURFACE, padx=10, pady=8)
-        folder_inner.pack(fill="x")
-        
-        self._folder_btn = tk.Button(
-            folder_inner, text="📁  Set Output Folder",
-            bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
-            relief="flat", bd=0, padx=10, pady=5, cursor="hand2",
-            command=self._pick_output_folder)
-        self._folder_btn.pack(anchor="w", pady=(0, 4))
-        
-        self._folder_lbl = tk.Label(
-            folder_inner, text="Not set — manual download required",
-            bg=SURFACE, fg=MUTED, font=("Segoe UI", 7, "bold"), wraplength=240, justify="left")
-        self._folder_lbl.pack(anchor="w")
-
-        self._clear_folder_btn = tk.Button(
-            folder_inner, text="✕ Clear Output",
-            bg=SURFACE, fg=ACCENT, font=("Segoe UI", 7, "bold"),
-            relief="flat", bd=0, padx=4, pady=2, cursor="hand2",
-            command=self._clear_output_folder)
 
         # ── Right Shell Content ───────────────────────────────────────────────
         
@@ -719,17 +702,12 @@ class FrameResizerApp(tk.Tk):
         self._scroll_canvas.bind("<Configure>",
             lambda e: self._scroll_canvas.itemconfig(self._cw_id, width=e.width))
         
-        for seq, delta in (("<MouseWheel>", None), ("<Button-4>", -1), ("<Button-5>", 1)):
-            if delta is None:
-                self._scroll_canvas.bind(seq,
-                    lambda e: self._scroll_canvas.yview_scroll(
-                        int(-1 * e.delta / 120), "units"))
-            else:
-                self._scroll_canvas.bind(seq,
-                    lambda e, d=delta: self._scroll_canvas.yview_scroll(d, "units"))
+        self._bind_mouse_wheel(scroll_container)
+        self._bind_mouse_wheel(self._scroll_canvas)
 
         self._build_empty_grid()
         self._update_download_bar_state()
+        self._set_sidebar_state(enabled=False)
 
     # ── Sidebar Helpers ───────────────────────────────────────────────────────
     def _sidebar_section_label(self, text, parent=None):
@@ -745,28 +723,9 @@ class FrameResizerApp(tk.Tk):
         div.pack(fill="x", padx=20, pady=6)
         return div
 
-    # ── Output folder helpers (NEW) ───────────────────────────────────────────
-    def _pick_output_folder(self):
-        folder = filedialog.askdirectory(title="בחר תיקיית יעד לשמירה אוטומטית")
-        if not folder:
-            return
-        self._output_folder = folder
-        short = folder if len(folder) <= 32 else "…" + folder[-29:]
-        self._folder_lbl.configure(
-            text=f"✓  {short}", fg=SUCCESS)
-        self._folder_btn.configure(bg=FOLDER_ACTIVE, fg=SUCCESS)
-        self._clear_folder_btn.pack(anchor="w", pady=(2, 0))
-
-    def _clear_output_folder(self):
-        self._output_folder = ""
-        self._folder_lbl.configure(
-            text="Not set — manual download required", fg=MUTED)
-        self._folder_btn.configure(bg=SURFACE, fg=MUTED)
-        self._clear_folder_btn.pack_forget()
-
     def _auto_save(self, result_img, fname):
         """Save one image to the output folder in a background thread."""
-        folder = self._output_folder
+        folder = get_setting("default_output_folder", "")
         if not folder:
             return  # no auto-save, user downloads manually
         def _worker():
@@ -801,6 +760,7 @@ class FrameResizerApp(tk.Tk):
                 r = idx // 3
                 c = idx % 3
                 self._empty_card(grid_frame, item["name"], item["w"], item["h"], item["sizes"], r, c)
+        self._bind_mouse_wheel(self.grid_inner)
 
     def _empty_card(self, parent, name, w, h, sizes, r, c):
         card = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER,
@@ -851,6 +811,7 @@ class FrameResizerApp(tk.Tk):
 
     def _on_click_upload(self, event=None):
         path = filedialog.askopenfilename(
+            title="Select Original Artwork",
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp *.bmp *.tiff"),
                        ("All files", "*.*")])
         if path:
@@ -890,24 +851,21 @@ class FrameResizerApp(tk.Tk):
         except OSError:
             self._stat_vars["Size"].set("—")
 
-        if not self.stats_frame.winfo_ismapped():
-            self.stats_frame.pack(fill="x", pady=(0, 0))
-        if not self.quality_section.winfo_ismapped():
-            self.quality_section.pack(fill="x")
-        if not self.folder_section.winfo_ismapped():
-            self.folder_section.pack(fill="x")
+        self._set_sidebar_state(enabled=True)
 
         self._build_selectable_grid()
 
     def _build_upload_zone(self, parent):
-        outer = tk.Frame(parent, bg=BORDER, padx=1, pady=1)
+        outer = tk.Frame(parent, bg=BORDER, padx=1, pady=1, height=122)
         outer.pack(fill="x", padx=20, pady=(4, 8))
+        outer.pack_propagate(False)
         self.upload_bg = tk.Frame(outer, bg=SURFACE, cursor="hand2")
         self.upload_bg.pack(fill="both", expand=True)
+        self.upload_bg.pack_propagate(False)
 
         # ── Left: source image preview (hidden until an image is loaded) ──────
         self._src_preview_frame = tk.Frame(
-            self.upload_bg, bg=BG, height=100, relief="flat")
+            self.upload_bg, bg=BG, height=120, relief="flat")
         # not packed yet — appears after first upload
 
         self._src_thumb_lbl = tk.Label(
@@ -918,11 +876,11 @@ class FrameResizerApp(tk.Tk):
 
         # ── Right: drop / click zone ──────────────────────────────────────────
         self._upload_inner = tk.Frame(self.upload_bg, bg=SURFACE)
-        self._upload_inner.pack(fill="both", expand=True, padx=20, pady=10)
+        self._upload_inner.pack(fill="both", expand=True, padx=20, pady=5)
         
         tk.Label(self._upload_inner, text="⬡", bg=SURFACE, fg=ACCENT,
                  font=("Segoe UI", 24)).pack()
-        tk.Label(self._upload_inner, text="Drop mockup image", bg=SURFACE, fg=TEXT,
+        tk.Label(self._upload_inner, text="Drop artwork image", bg=SURFACE, fg=TEXT,
                  font=("Georgia", 12, "italic")).pack(pady=(2, 1))
         self._upload_sub_lbl = tk.Label(
             self._upload_inner, text="or click to browse",
@@ -931,7 +889,11 @@ class FrameResizerApp(tk.Tk):
 
         # Dynamic upload overlay label underneath upload card
         self._upload_replace_lbl = tk.Label(
-            parent, text="Click preview to change mockup",
+            parent, text="Click preview to change artwork",
+            bg=SURFACE, fg=MUTED, font=("Segoe UI", 7, "bold"))
+        # Dynamic upload overlay label underneath upload card
+        self._upload_replace_lbl = tk.Label(
+            parent, text="Click preview to change artwork",
             bg=SURFACE, fg=MUTED, font=("Segoe UI", 7, "bold"))
 
         # Recursive hover effects for light parchment aesthetic
@@ -961,7 +923,7 @@ class FrameResizerApp(tk.Tk):
         """Show a thumbnail of the source image filling the upload zone."""
         # The upload zone card is packed in the sidebar (~270px inner width)
         PREV_W = 220
-        PREV_H = 100
+        PREV_H = 110
 
         iw, ih = img.size
         scale  = min(PREV_W / iw, PREV_H / ih)
@@ -1005,6 +967,7 @@ class FrameResizerApp(tk.Tk):
         def build_group(idx):
             if idx >= len(groups):
                 self._update_sel_count()
+                self._bind_mouse_wheel(self.grid_inner)
                 return
             group_label, items = groups[idx]
             self._section_title(self.grid_inner, group_label)
@@ -1147,6 +1110,30 @@ class FrameResizerApp(tk.Tk):
         else:
             self._download_selected_btn.configure(state="disabled", fg=MUTED)
 
+    def _set_sidebar_state(self, enabled=True):
+        state = "normal" if enabled else "disabled"
+        if hasattr(self, "_q_buttons"):
+            for btn in self._q_buttons:
+                btn.configure(state=state)
+        if hasattr(self, "_fit_mode_radios"):
+            for rad in self._fit_mode_radios:
+                rad.configure(state=state)
+
+    def _on_mouse_wheel(self, event):
+        if event.num == 4:
+            self._scroll_canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self._scroll_canvas.yview_scroll(1, "units")
+        elif event.delta:
+            self._scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _bind_mouse_wheel(self, widget):
+        widget.bind("<MouseWheel>", self._on_mouse_wheel)
+        widget.bind("<Button-4>", self._on_mouse_wheel)
+        widget.bind("<Button-5>", self._on_mouse_wheel)
+        for child in widget.winfo_children():
+            self._bind_mouse_wheel(child)
+
     def _toggle_all(self):
         vals = [r["var"].get() for r in self._card_registry.values()]
         new_val = not all(vals)
@@ -1174,8 +1161,9 @@ class FrameResizerApp(tk.Tk):
                 "החלף איכות או מצב התאמה ולחץ שוב כדי לעבד מחדש.")
             return
 
-        if self._output_folder:
-            self._write_printing_guide(self._output_folder)
+        folder = get_setting("default_output_folder", "")
+        if folder:
+            self._write_printing_guide(folder)
 
         my_gen  = self._render_gen
         quality = self.current_quality
@@ -1249,15 +1237,12 @@ class FrameResizerApp(tk.Tk):
 
             if "status_lbl" in cd and cd["status_lbl"].winfo_exists():
                 mode_label = {"fit_white": "Safe Fit", "fit_blur": "Safe Blur", "fill": "Crop"}.get(fit_mode, fit_mode)
+                folder = get_setting("default_output_folder", "")
                 cd["status_lbl"].configure(
-                    text=f"✓ {'Saved' if self._output_folder else 'Ready'} · {mode_label}",
+                    text=f"✓ {'Saved' if folder else 'Ready'} · {mode_label}",
                     fg=SUCCESS)
 
             self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
-            if self._output_folder:
-                n = len(self._ready_cards)
-                short = self._output_folder if len(self._output_folder) <= 45 else "…" + self._output_folder[-42:]
-                self._folder_lbl.configure(text=f"✓  {short}  [{n} files saved]")
             self._update_download_bar_state()
 
             def download(_r=result, _f=_fname):
@@ -1417,12 +1402,33 @@ class FrameResizerApp(tk.Tk):
 
         tk.Button(frame_tpai, text="Browse...", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=8, pady=2, cursor="hand2", command=browse_tpai).pack(side="left")
 
+        # Output Folder section
+        lbl_sec2 = tk.Label(tab_general, text="DEFAULT OUTPUT DIRECTORY", bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold"))
+        lbl_sec2.pack(anchor="w", padx=16, pady=(16, 12))
+
+        frame_out = tk.Frame(tab_general, bg=BG)
+        frame_out.pack(fill="x", padx=16, pady=8)
+        tk.Label(frame_out, text="Default Output Folder:", bg=BG, fg=TEXT, font=("Segoe UI", 8, "bold"), width=22, anchor="w").pack(side="left")
+        
+        out_var = tk.StringVar(value=get_setting("default_output_folder", ""))
+        out_entry = tk.Entry(frame_out, textvariable=out_var, bg=SURFACE, fg=TEXT, relief="flat", highlightbackground=BORDER, highlightthickness=1, font=("Segoe UI", 8), width=45)
+        out_entry.pack(side="left", padx=8)
+
+        def browse_out():
+            path = filedialog.askdirectory(title="Select Default Output Folder")
+            if path:
+                out_var.set(path.replace("/", "\\"))
+
+        tk.Button(frame_out, text="Browse...", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=8, pady=2, cursor="hand2", command=browse_out).pack(side="left")
+
         # Info label
         info_lbl = tk.Label(tab_general, text="Note: Changing these paths will take effect immediately for new upscale operations without requiring an app restart.", bg=BG, fg=MUTED, font=("Segoe UI", 7), justify="left", wraplength=600)
         info_lbl.pack(anchor="w", padx=16, pady=16)
 
         def save_general_settings():
-            success = set_setting("ncnn_exe_path", ncnn_var.get()) and set_setting("tpai_exe_path", tpai_var.get())
+            success = set_setting("ncnn_exe_path", ncnn_var.get()) and \
+                      set_setting("tpai_exe_path", tpai_var.get()) and \
+                      set_setting("default_output_folder", out_var.get())
             if success:
                 messagebox.showinfo("Success", "General settings saved successfully!", parent=settings_win)
             else:
