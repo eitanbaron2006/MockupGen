@@ -525,14 +525,14 @@ class FrameResizerApp(tk.Tk):
         except Exception as e:
             print(f"Error loading settings icon: {e}")
 
-        # Badges tags row
+        # Badges tags row (Using high-quality neutral tags to match the professional parchment/charcoal theme)
         self.badges_frame = tk.Frame(self.sidebar, bg=SURFACE)
         self.badges_frame.pack(fill="x", padx=20, pady=(0, 8))
         for tag_text in ("Etsy", "300 DPI"):
-            tk.Label(self.badges_frame, text=tag_text, bg=ACCENT2, fg=ACCENT,
+            tk.Label(self.badges_frame, text=tag_text, bg=BORDER, fg=MUTED,
                      font=("Segoe UI", 8, "bold"), padx=6, pady=2,
                      relief="flat").pack(side="left", padx=(0, 6))
-        self.orient_tag = tk.Label(self.badges_frame, text="", bg=ACCENT2, fg=ACCENT,
+        self.orient_tag = tk.Label(self.badges_frame, text="", bg=BORDER, fg=MUTED,
                                    font=("Segoe UI", 8, "bold"), padx=6, pady=2,
                                    relief="flat")
 
@@ -547,21 +547,22 @@ class FrameResizerApp(tk.Tk):
         self.stats_frame.pack(fill="x", pady=(0, 0))
         self._stat_vars = {}
         
+        # High-density, professional horizontal layout (1 row, 4 columns) to save vertical space
         stats_card = tk.Frame(self.stats_frame, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
         stats_card.pack(fill="x", padx=20, pady=(2, 4))
         
-        stats_items = [("Width", 0, 0), ("Height", 0, 1), ("Ratio", 1, 0), ("Size", 1, 1)]
-        for label, r, c in stats_items:
-            cell = tk.Frame(stats_card, bg=SURFACE, padx=6, pady=2)
-            cell.grid(row=r, column=c, sticky="nsew")
+        stats_items = [("Width", 0), ("Height", 1), ("Ratio", 2), ("Size", 3)]
+        for label, c in stats_items:
+            cell = tk.Frame(stats_card, bg=SURFACE, padx=2, pady=4)
+            cell.grid(row=0, column=c, sticky="nsew")
             var = tk.StringVar(value="—")
             self._stat_vars[label] = var
             tk.Label(cell, textvariable=var, bg=SURFACE, fg=ACCENT,
-                     font=("Georgia", 9, "bold")).pack(anchor="w")
+                     font=("Segoe UI", 8, "bold")).pack(anchor="center")
             tk.Label(cell, text=label.upper(), bg=SURFACE, fg=MUTED,
-                     font=("Segoe UI", 7, "bold")).pack(anchor="w")
-        stats_card.grid_columnconfigure(0, weight=1)
-        stats_card.grid_columnconfigure(1, weight=1)
+                     font=("Segoe UI", 7, "bold")).pack(anchor="center")
+        for col in range(4):
+            stats_card.grid_columnconfigure(col, weight=1)
 
         # SECTION: Quality Profile (stacked vertical options)
         self.quality_section = tk.Frame(self.sidebar, bg=SURFACE)
