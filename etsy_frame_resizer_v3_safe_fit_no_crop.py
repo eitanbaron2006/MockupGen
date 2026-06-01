@@ -482,9 +482,9 @@ class FrameResizerApp(tk.Tk):
 
         self._settings_btn = tk.Button(logo_container, text="⚙", bg=SURFACE, fg=MUTED,
                                        activebackground=SURFACE, activeforeground=TEXT,
-                                       font=("Segoe UI", 14), relief="flat", bd=0, cursor="hand2",
+                                       font=("Segoe UI", 11), relief="flat", bd=0, cursor="hand2",
                                        command=self._show_settings)
-        self._settings_btn.pack(side="right")
+        self._settings_btn.pack(side="right", pady=(4, 0))
 
         # Badges tags row
         self.badges_frame = tk.Frame(self.sidebar, bg=SURFACE)
@@ -1430,12 +1430,12 @@ class FrameResizerApp(tk.Tk):
                       set_setting("tpai_exe_path", tpai_var.get()) and \
                       set_setting("default_output_folder", out_var.get())
             if success:
-                messagebox.showinfo("Success", "General settings saved successfully!", parent=settings_win)
+                settings_win.destroy()
             else:
                 messagebox.showerror("Error", "Failed to save settings.", parent=settings_win)
 
         # Save Button
-        tk.Button(tab_general, text="✓ Save AI Configs", bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=16, pady=6, cursor="hand2", command=save_general_settings).pack(side="bottom", anchor="e", padx=16, pady=16)
+        tk.Button(tab_general, text="✓ Save", bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=16, pady=6, cursor="hand2", command=save_general_settings).pack(side="bottom", anchor="e", padx=16, pady=16)
 
 
         # Tab 2: Sizes & Ratios Manager
