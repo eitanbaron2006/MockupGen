@@ -480,11 +480,17 @@ class FrameResizerApp(tk.Tk):
         tk.Label(logo_container, text=".", bg=SURFACE, fg=ACCENT,
                  font=("Segoe UI", 20, "bold")).pack(side="left")
 
-        self._settings_btn = tk.Button(logo_container, text="⚙", bg=SURFACE, fg=MUTED,
-                                       activebackground=SURFACE, activeforeground=TEXT,
-                                       font=("Segoe UI", 11), relief="flat", bd=0, cursor="hand2",
-                                       command=self._show_settings)
-        self._settings_btn.pack(side="right", pady=(4, 0))
+        # Load custom settings gear icon (settings-gears.png)
+        self._settings_icon = None
+        try:
+            icon_path = "settings-gears.png"
+            if os.path.exists(icon_path):
+                img = Image.open(icon_path)
+                # Resize to a perfect elegant size (20x20 px)
+                img = img.resize((20, 20), Image.LANCZOS)
+                self._settings_icon = ImageTk.PhotoImage(img)
+        except Exception as e:
+            print(f"Error loading settings icon: {e}")
 
         # Badges tags row
         self.badges_frame = tk.Frame(self.sidebar, bg=SURFACE)
@@ -623,27 +629,18 @@ class FrameResizerApp(tk.Tk):
         tk.Label(crumb_frame, text="RATIO FILES", bg=BG, fg=TEXT,
                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(6, 0))
 
-        # Action Buttons on right
-        actions_frame = tk.Frame(topbar, bg=BG)
-        actions_frame.pack(side="right", padx=24, pady=13)
-
-        self._sel_count_lbl = tk.Label(actions_frame, text="", bg=BG, fg=MUTED,
-                                       font=("Segoe UI", 9, "bold"))
-        self._sel_count_lbl.pack(side="left", padx=(0, 12))
-
-        self._select_all_btn = tk.Button(
-            actions_frame, text="Select All",
-            bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
-            relief="flat", bd=0, padx=12, pady=6, cursor="hand2",
-            command=self._toggle_all)
-        self._select_all_btn.pack(side="left", padx=(0, 6))
-
-        self._process_btn = tk.Button(
-            actions_frame, text="▶  Create Etsy Files",
-            bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"),
-            relief="flat", bd=0, padx=14, pady=6, cursor="hand2",
-            command=self._process_selected)
-        self._process_btn.pack(side="left")
+        # Settings gear icon on the far right of topbar
+        if self._settings_icon:
+            self._settings_btn = tk.Button(topbar, image=self._settings_icon, bg=BG,
+                                           activebackground=BG, relief="flat", bd=0, cursor="hand2",
+                                           command=self._show_settings)
+            self._settings_btn.image = self._settings_icon  # Keep reference alive
+        else:
+            self._settings_btn = tk.Button(topbar, text="⚙", bg=BG, fg=MUTED,
+                                           activebackground=BG, activeforeground=TEXT,
+                                           font=("Segoe UI Symbol", 10), relief="flat", bd=0, cursor="hand2",
+                                           command=self._show_settings)
+        self._settings_btn.pack(side="right", padx=24, pady=18)
 
         # Download Bar (always shown)
         self._dl_bar = tk.Frame(self.shell, bg=BG, highlightbackground=BORDER, highlightthickness=1, bd=0)
@@ -655,20 +652,39 @@ class FrameResizerApp(tk.Tk):
                  font=("Segoe UI", 8, "bold")).pack(side="left", padx=(0, 10))
         
         self._download_all_btn = tk.Button(dl_inner, text="↓  Download All",
-                  bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
-                  relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=self._download_all)
+                   bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
+                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
+                   command=self._download_all)
         self._download_all_btn.pack(side="left", padx=(0, 4))
         
         self._download_selected_btn = tk.Button(dl_inner, text="↓  Download Selected",
-                  bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
-                  relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=self._download_selected)
+                   bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
+                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
+                   command=self._download_selected)
         self._download_selected_btn.pack(side="left")
         
         self._dl_count_lbl = tk.Label(dl_inner, text="", bg=BG, fg=MUTED,
                                       font=("Segoe UI", 8, "bold"))
         self._dl_count_lbl.pack(side="left", padx=(10, 0))
+
+        # Action Buttons on right (Create Etsy Files and Select All)
+        self._process_btn = tk.Button(
+            dl_inner, text="▶  Create Etsy Files",
+            bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"),
+            relief="flat", bd=0, padx=14, pady=4, cursor="hand2",
+            command=self._process_selected)
+        self._process_btn.pack(side="right")
+
+        self._select_all_btn = tk.Button(
+            dl_inner, text="Select All",
+            bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
+            relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
+            command=self._toggle_all)
+        self._select_all_btn.pack(side="right", padx=(0, 6))
+
+        self._sel_count_lbl = tk.Label(dl_inner, text="", bg=BG, fg=MUTED,
+                                       font=("Segoe UI", 8, "bold"))
+        self._sel_count_lbl.pack(side="right", padx=(0, 12))
 
         self.grid_sep = tk.Frame(self.shell, bg=BORDER, height=1)
         self.grid_sep.pack(fill="x", padx=24, pady=0)
