@@ -12,27 +12,146 @@ import uuid
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageFilter, ImageTk
+import sqlite3
+import subprocess, tempfile, pathlib
 
 # Allow very large images from AI 4× upscale (ncnn/Gigapixel output)
 Image.MAX_IMAGE_PIXELS = None
 
+# ── SQLite Database Setup ─────────────────────────────────────────────────────
+DB_FILE = "etsy_resizer_settings.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Settings table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE,
+        value TEXT
+    )
+    """)
+    
+    # Sizes table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sizes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        label TEXT,
+        filename TEXT,
+        w INTEGER,
+        h INTEGER,
+        sizes TEXT,
+        is_custom INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1
+    )
+    """)
+    
+    # Seed default settings
+    default_settings = [
+        ("ncnn_exe_path", r"C:\realesrgan\realesrgan-ncnn-vulkan.exe"),
+        ("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe")
+    ]
+    for key, val in default_settings:
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
+        
+    # Seed default sizes
+    default_sizes = [
+        ("2:3 Ratio", "2:3", "01_2x3_ratio_24x36_inch.jpg", 7200, 10800, "4x6, 8x12, 12x18, 16x24, 20x30, 24x36", 0, 1),
+        ("3:4 Ratio", "3:4", "02_3x4_ratio_18x24_inch.jpg", 5400, 7200, "6x8, 9x12, 12x16, 15x20, 18x24", 0, 1),
+        ("4:5 Ratio", "4:5", "03_4x5_ratio_24x30_inch.jpg", 7200, 9000, "4x5, 8x10, 12x15, 16x20, 20x25, 24x30", 0, 1),
+        ("11:14 Ratio", "11:14", "04_11x14_ratio_22x28_inch.jpg", 6600, 8400, "11x14, 22x28", 0, 1),
+        ("A-Series Ratio", "A", "05_A_series_ratio_A1.jpg", 7016, 9933, "A5, A4, A3, A2, A1", 0, 1),
+        ("1:1 Square", "1:1", "06_1x1_square_ratio_24x24_inch.jpg", 7200, 7200, "5x5, 8x8, 10x10, 12x12, 16x16, 20x20, 24x24", 0, 1),
+        # Pre-populated but inactive sizes
+        ("5:7 Ratio", "5:7", "07_5x7_ratio_50x70_cm.jpg", 5000, 7000, "5x7, 50x70cm", 0, 0),
+        ("US Letter", "US Letter", "08_letter_8.5x11_inch.jpg", 5100, 6600, "8.5x11", 0, 0),
+        ("3:1 Panoramic", "3:1", "09_3x1_panoramic_36x12_inch.jpg", 10800, 3600, "36x12, 30x10", 0, 0),
+        ("2:1 Panoramic", "2:1", "10_2x1_panoramic_36x18_inch.jpg", 10800, 5400, "36x18, 24x12", 0, 0)
+    ]
+    
+    for row in default_sizes:
+        cursor.execute("""
+        INSERT OR IGNORE INTO sizes (name, label, filename, w, h, sizes, is_custom, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, row)
+        
+    conn.commit()
+    conn.close()
+
+def get_setting(key, default=""):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key=?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except Exception:
+        return default
+
+def set_setting(key, value):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error saving setting {key}: {e}")
+        return False
+
+def get_active_sizes():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, label, filename, w, h, sizes FROM sizes WHERE is_active=1")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        outputs = []
+        for r in rows:
+            outputs.append({
+                "name": r[0],
+                "label": r[1],
+                "filename": r[2],
+                "w": r[3],
+                "h": r[4],
+                "sizes": r[5]
+            })
+        return outputs
+    except Exception as e:
+        print(f"Error fetching active sizes: {e}")
+        return []
+
+def reload_size_groups():
+    global SIZE_GROUPS
+    active_outputs = get_active_sizes()
+    SIZE_GROUPS = [("Etsy Printable Ratio Files", active_outputs)]
+
+# Initialize DB on import
+init_db()
+active_outputs_init = get_active_sizes()
+SIZE_GROUPS = [("Etsy Printable Ratio Files", active_outputs_init)]
+
 # ── Real-ESRGAN ncnn-vulkan ───────────────────────────────────────────────────
-import subprocess, tempfile, pathlib
-
-NCNN_EXE = pathlib.Path(r"C:\realesrgan\realesrgan-ncnn-vulkan.exe")
-
 def scale_ai_ncnn(img, tw, th):
-    if not NCNN_EXE.exists():
+    exe_path_str = get_setting("ncnn_exe_path", r"C:\realesrgan\realesrgan-ncnn-vulkan.exe")
+    ncnn_exe = pathlib.Path(exe_path_str)
+    if not ncnn_exe.exists():
         raise RuntimeError(
-            f"לא נמצא:\n{NCNN_EXE}\n\n"
-            "ודא שחילצת את realesrgan-ncnn-vulkan לתיקייה C:\\realesrgan\\"
+            f"לא נמצא:\n{ncnn_exe}\n\n"
+            "ודא שחילצת את realesrgan-ncnn-vulkan או הגדרת את המיקום הנכון בהגדרות."
         )
     with tempfile.TemporaryDirectory() as tmp:
         src_path = pathlib.Path(tmp) / "input.png"
         dst_path = pathlib.Path(tmp) / "output.png"
         img.convert("RGB").save(str(src_path), "PNG")
         result = subprocess.run(
-            [str(NCNN_EXE),
+            [str(ncnn_exe),
              "-i", str(src_path),
              "-o", str(dst_path),
              "-n", "realesrgan-x4plus",
@@ -50,14 +169,13 @@ def scale_ai_ncnn(img, tw, th):
     return out_img.convert("RGBA")
 
 # ── Topaz Photo AI ───────────────────────────────────────────────────────────
-TPAI_EXE = pathlib.Path(
-    r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe")
-
 def scale_ai_gigapixel(img, tw, th):
-    if not TPAI_EXE.exists():
+    exe_path_str = get_setting("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe")
+    tpai_exe = pathlib.Path(exe_path_str)
+    if not tpai_exe.exists():
         raise RuntimeError(
-            f"לא נמצא:\n{TPAI_EXE}\n\n"
-            "ודא ש-Topaz Photo AI מותקן בנתיב הנכון."
+            f"לא נמצא:\n{tpai_exe}\n\n"
+            "ודא ש-Topaz Photo AI מותקן או הגדרת את המיקום הנכון בהגדרות."
         )
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = pathlib.Path(tmp)
@@ -68,7 +186,7 @@ def scale_ai_gigapixel(img, tw, th):
 
         print(f"[Topaz] Processing single image → {tw}×{th} ...")
         result = subprocess.run(
-            [str(TPAI_EXE),
+            [str(tpai_exe),
              str(src_path),
              "-o", str(out_dir),
              "--format", "png",
@@ -101,63 +219,6 @@ TEXT    = "#15140f"  # Ink / Dark Charcoal text
 MUTED   = "#5a5448"  # Muted brown-grey secondary text
 SUCCESS = "#6e7448"  # Olive green success state
 FOLDER_ACTIVE = "#e2e6c7"   # Soft warm olive-green tint when folder is active
-
-# ── Etsy print ratio package ─────────────────────────────────────────────────
-# Instead of exporting dozens of individual physical sizes, this list creates
-# the standard aspect-ratio files that most Etsy printable-wall-art buyers need.
-# Pixel sizes are based on 300 DPI and cover the largest common print in each ratio.
-ETSY_RATIO_OUTPUTS = [
-    {
-        "name": "2:3 Ratio",
-        "label": "2:3",
-        "filename": "01_2x3_ratio_24x36_inch.jpg",
-        "w": 7200,
-        "h": 10800,
-        "sizes": "4x6, 8x12, 12x18, 16x24, 20x30, 24x36",
-    },
-    {
-        "name": "3:4 Ratio",
-        "label": "3:4",
-        "filename": "02_3x4_ratio_18x24_inch.jpg",
-        "w": 5400,
-        "h": 7200,
-        "sizes": "6x8, 9x12, 12x16, 15x20, 18x24",
-    },
-    {
-        "name": "4:5 Ratio",
-        "label": "4:5",
-        "filename": "03_4x5_ratio_24x30_inch.jpg",
-        "w": 7200,
-        "h": 9000,
-        "sizes": "4x5, 8x10, 12x15, 16x20, 20x25, 24x30",
-    },
-    {
-        "name": "11:14 Ratio",
-        "label": "11:14",
-        "filename": "04_11x14_ratio_22x28_inch.jpg",
-        "w": 6600,
-        "h": 8400,
-        "sizes": "11x14, 22x28",
-    },
-    {
-        "name": "A-Series Ratio",
-        "label": "A",
-        "filename": "05_A_series_ratio_A1.jpg",
-        "w": 7016,
-        "h": 9933,
-        "sizes": "A5, A4, A3, A2, A1",
-    },
-    {
-        "name": "1:1 Square",
-        "label": "1:1",
-        "filename": "06_1x1_square_ratio_24x24_inch.jpg",
-        "w": 7200,
-        "h": 7200,
-        "sizes": "5x5, 8x8, 10x10, 12x12, 16x16, 20x20, 24x24",
-    },
-]
-
-SIZE_GROUPS = [("Etsy Printable Ratio Files", ETSY_RATIO_OUTPUTS)]
 
 # ── Algorithms ────────────────────────────────────────────────────────────────
 def scale_basic(img, w, h):
@@ -342,9 +403,10 @@ def adapt_size(name, w, h, orientation):
     return f"{b}×{a}", h, w
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-CARD_W      = 240
-CARD_H      = 80
-THUMB_SIZE  = 68
+CARD_W      = 236
+CARD_H      = 280
+THUMB_W     = 224
+THUMB_H     = 136
 
 _WORKER_SEM = threading.Semaphore(3)
 _AI_SEM     = threading.Semaphore(1)
@@ -354,7 +416,7 @@ class FrameResizerApp(tk.Tk):
         super().__init__()
         self.title("Mockup Resizer — Etsy · 300 DPI")
         self.configure(bg=BG)
-        self._center_window(1110, 880)
+        self._center_window(1110, 740)
         self.resizable(False, False)
 
         self.current_img         = None
@@ -384,7 +446,7 @@ class FrameResizerApp(tk.Tk):
 
         self._build_ui()
 
-    def _center_window(self, width=1110, height=880):
+    def _center_window(self, width=1110, height=740):
         self.update_idletasks()
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
@@ -409,7 +471,7 @@ class FrameResizerApp(tk.Tk):
         # ── Left Sidebar Content ───────────────────────────────────────────────
         # Logo branding at top
         logo_container = tk.Frame(self.sidebar, bg=SURFACE)
-        logo_container.pack(fill="x", padx=20, pady=(24, 12))
+        logo_container.pack(fill="x", padx=20, pady=(12, 6))
         
         tk.Label(logo_container, text="Mockup", bg=SURFACE, fg=TEXT,
                  font=("Georgia", 20, "italic")).pack(side="left")
@@ -418,9 +480,15 @@ class FrameResizerApp(tk.Tk):
         tk.Label(logo_container, text=".", bg=SURFACE, fg=ACCENT,
                  font=("Segoe UI", 20, "bold")).pack(side="left")
 
+        self._settings_btn = tk.Button(logo_container, text="⚙", bg=SURFACE, fg=MUTED,
+                                       activebackground=SURFACE, activeforeground=TEXT,
+                                       font=("Segoe UI", 14), relief="flat", bd=0, cursor="hand2",
+                                       command=self._show_settings)
+        self._settings_btn.pack(side="right")
+
         # Badges tags row
         self.badges_frame = tk.Frame(self.sidebar, bg=SURFACE)
-        self.badges_frame.pack(fill="x", padx=20, pady=(0, 16))
+        self.badges_frame.pack(fill="x", padx=20, pady=(0, 8))
         for tag_text in ("Etsy", "300 DPI"):
             tk.Label(self.badges_frame, text=tag_text, bg="#faeae6", fg=ACCENT,
                      font=("Segoe UI", 8, "bold"), padx=6, pady=2,
@@ -440,16 +508,16 @@ class FrameResizerApp(tk.Tk):
         self._stat_vars = {}
         
         stats_card = tk.Frame(self.stats_frame, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
-        stats_card.pack(fill="x", padx=20, pady=(4, 12))
+        stats_card.pack(fill="x", padx=20, pady=(2, 4))
         
         stats_items = [("Width", 0, 0), ("Height", 0, 1), ("Ratio", 1, 0), ("Size", 1, 1)]
         for label, r, c in stats_items:
-            cell = tk.Frame(stats_card, bg=SURFACE, padx=10, pady=6)
+            cell = tk.Frame(stats_card, bg=SURFACE, padx=6, pady=2)
             cell.grid(row=r, column=c, sticky="nsew")
             var = tk.StringVar(value="—")
             self._stat_vars[label] = var
             tk.Label(cell, textvariable=var, bg=SURFACE, fg=ACCENT,
-                     font=("Georgia", 11, "bold")).pack(anchor="w")
+                     font=("Georgia", 9, "bold")).pack(anchor="w")
             tk.Label(cell, text=label.upper(), bg=SURFACE, fg=MUTED,
                      font=("Segoe UI", 7, "bold")).pack(anchor="w")
         stats_card.grid_columnconfigure(0, weight=1)
@@ -469,16 +537,16 @@ class FrameResizerApp(tk.Tk):
         ]
         self._q_buttons = []
         self._q_container = tk.Frame(self.quality_section, bg=SURFACE)
-        self._q_container.pack(fill="x", padx=20, pady=(2, 10))
+        self._q_container.pack(fill="x", padx=20, pady=(2, 4))
         
         for q, label, sub in q_options:
             btn = tk.Button(self._q_container, text=f"{label}  —  {sub}",
                             bg=SURFACE, fg=MUTED, anchor="w",
                             activebackground=BORDER, activeforeground=TEXT,
                             font=("Segoe UI", 8, "bold"), relief="flat", bd=0,
-                            padx=12, pady=6, cursor="hand2",
+                            padx=8, pady=3, cursor="hand2",
                             command=lambda _q=q: self._set_quality(_q))
-            btn.pack(fill="x", pady=2)
+            btn.pack(fill="x", pady=1)
             self._q_buttons.append(btn)
             
         self._set_quality_ui("step-unsharp")
@@ -488,7 +556,7 @@ class FrameResizerApp(tk.Tk):
         self._sidebar_section_label("Etsy Output Mode", parent=self.fit_mode_section)
 
         mode_card = tk.Frame(self.fit_mode_section, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
-        mode_card.pack(fill="x", padx=20, pady=(2, 12))
+        mode_card.pack(fill="x", padx=20, pady=(2, 4))
         mode_inner = tk.Frame(mode_card, bg=SURFACE, padx=10, pady=8)
         mode_inner.pack(fill="x")
 
@@ -510,7 +578,7 @@ class FrameResizerApp(tk.Tk):
             activebackground=SURFACE, activeforeground=TEXT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fit_blur")
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         tk.Radiobutton(
             mode_inner, text="Expert: Fill / Crop — may cut artwork",
@@ -519,21 +587,21 @@ class FrameResizerApp(tk.Tk):
             activebackground=SURFACE, activeforeground=ACCENT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fill")
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         tk.Label(
             mode_inner,
             text="Recommended: Safe Fit. It creates exact Etsy ratio files without cutting the artwork. Use blurred extension only when you do not want plain margins.",
             bg=SURFACE, fg=MUTED, font=("Segoe UI", 7),
             wraplength=240, justify="left"
-        ).pack(anchor="w", pady=(6, 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         # SECTION: Output Folder
         self.folder_section = tk.Frame(self.sidebar, bg=SURFACE)
         self._sidebar_section_label("Output Location", parent=self.folder_section)
         
         folder_card = tk.Frame(self.folder_section, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, bd=0)
-        folder_card.pack(fill="x", padx=20, pady=(2, 12))
+        folder_card.pack(fill="x", padx=20, pady=(2, 4))
         
         folder_inner = tk.Frame(folder_card, bg=SURFACE, padx=10, pady=8)
         folder_inner.pack(fill="x")
@@ -594,23 +662,26 @@ class FrameResizerApp(tk.Tk):
             command=self._process_selected)
         self._process_btn.pack(side="left")
 
-        # Download Bar (shown only when output folder is NOT set)
+        # Download Bar (always shown)
         self._dl_bar = tk.Frame(self.shell, bg=BG, highlightbackground=BORDER, highlightthickness=1, bd=0)
+        self._dl_bar.pack(fill="x")
         
         dl_inner = tk.Frame(self._dl_bar, bg=BG, padx=24, pady=8)
         dl_inner.pack(fill="x")
         tk.Label(dl_inner, text="DOWNLOADS:", bg=BG, fg=MUTED,
                  font=("Segoe UI", 8, "bold")).pack(side="left", padx=(0, 10))
         
-        tk.Button(dl_inner, text="↓  Download All",
+        self._download_all_btn = tk.Button(dl_inner, text="↓  Download All",
                   bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=self._download_all).pack(side="left", padx=(0, 4))
+                  command=self._download_all)
+        self._download_all_btn.pack(side="left", padx=(0, 4))
         
-        tk.Button(dl_inner, text="↓  Download Selected",
+        self._download_selected_btn = tk.Button(dl_inner, text="↓  Download Selected",
                   bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"),
                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=self._download_selected).pack(side="left")
+                  command=self._download_selected)
+        self._download_selected_btn.pack(side="left")
         
         self._dl_count_lbl = tk.Label(dl_inner, text="", bg=BG, fg=MUTED,
                                       font=("Segoe UI", 8, "bold"))
@@ -658,6 +729,7 @@ class FrameResizerApp(tk.Tk):
                     lambda e, d=delta: self._scroll_canvas.yview_scroll(d, "units"))
 
         self._build_empty_grid()
+        self._update_download_bar_state()
 
     # ── Sidebar Helpers ───────────────────────────────────────────────────────
     def _sidebar_section_label(self, text, parent=None):
@@ -670,7 +742,7 @@ class FrameResizerApp(tk.Tk):
 
     def _sidebar_divider(self):
         div = tk.Frame(self.sidebar, bg=BORDER, height=1)
-        div.pack(fill="x", padx=20, pady=10)
+        div.pack(fill="x", padx=20, pady=6)
         return div
 
     # ── Output folder helpers (NEW) ───────────────────────────────────────────
@@ -684,8 +756,6 @@ class FrameResizerApp(tk.Tk):
             text=f"✓  {short}", fg=SUCCESS)
         self._folder_btn.configure(bg=FOLDER_ACTIVE, fg=SUCCESS)
         self._clear_folder_btn.pack(anchor="w", pady=(2, 0))
-        # Hide the manual download bar — not needed any more
-        self._dl_bar.pack_forget()
 
     def _clear_output_folder(self):
         self._output_folder = ""
@@ -739,15 +809,15 @@ class FrameResizerApp(tk.Tk):
         card.grid(row=r, column=c, padx=4, pady=4, sticky="nw")
         card.pack_propagate(False)
         
-        preview = tk.Frame(card, bg=BG, width=THUMB_SIZE, height=THUMB_SIZE)
-        preview.pack(side="left", padx=6, pady=6)
+        preview = tk.Frame(card, bg=BG, width=THUMB_W, height=THUMB_H)
+        preview.pack(side="top", padx=6, pady=6)
         preview.pack_propagate(False)
         
         tk.Label(preview, text="▢", bg=BG, fg=MUTED,
-                 font=("Segoe UI", 16)).place(relx=0.5, rely=0.5, anchor="center")
+                 font=("Segoe UI", 24)).place(relx=0.5, rely=0.5, anchor="center")
                  
         info = tk.Frame(card, bg=SURFACE)
-        info.pack(side="left", fill="both", expand=True, padx=4, pady=6)
+        info.pack(side="top", fill="both", expand=True, padx=10, pady=(2, 4))
         
         tk.Label(info, text=name, bg=SURFACE, fg=TEXT,
                  font=("Georgia", 10, "bold"), anchor="w").pack(anchor="w")
@@ -755,7 +825,21 @@ class FrameResizerApp(tk.Tk):
         tk.Label(info, text=f"{w}×{h}px", bg=SURFACE, fg=MUTED,
                  font=("Segoe UI", 8), anchor="w").pack(anchor="w")
         tk.Label(info, text=sizes, bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 7), anchor="w", wraplength=130, justify="left").pack(anchor="w")
+                 font=("Segoe UI", 7), anchor="w", wraplength=216, justify="left").pack(anchor="w")
+
+        controls = tk.Frame(card, bg=SURFACE)
+        controls.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
+
+        chk = tk.Checkbutton(controls, text="Select", bg=SURFACE, fg=MUTED,
+                             activebackground=SURFACE, activeforeground=MUTED,
+                             selectcolor="#ffffff", font=("Segoe UI", 9, "bold"),
+                             state="disabled")
+        chk.pack(side="left", anchor="w")
+
+        dl_btn = tk.Button(controls, text="↓ Save", bg=SURFACE, fg=MUTED,
+                           font=("Segoe UI", 8, "bold"), relief="flat", bd=0,
+                           padx=12, pady=4, state="disabled")
+        dl_btn.pack(side="right", anchor="e")
 
     def _section_title(self, parent, text):
         f = tk.Frame(parent, bg=BG)
@@ -823,7 +907,7 @@ class FrameResizerApp(tk.Tk):
 
         # ── Left: source image preview (hidden until an image is loaded) ──────
         self._src_preview_frame = tk.Frame(
-            self.upload_bg, bg=BG, height=140, relief="flat")
+            self.upload_bg, bg=BG, height=100, relief="flat")
         # not packed yet — appears after first upload
 
         self._src_thumb_lbl = tk.Label(
@@ -834,7 +918,7 @@ class FrameResizerApp(tk.Tk):
 
         # ── Right: drop / click zone ──────────────────────────────────────────
         self._upload_inner = tk.Frame(self.upload_bg, bg=SURFACE)
-        self._upload_inner.pack(fill="both", expand=True, padx=20, pady=20)
+        self._upload_inner.pack(fill="both", expand=True, padx=20, pady=10)
         
         tk.Label(self._upload_inner, text="⬡", bg=SURFACE, fg=ACCENT,
                  font=("Segoe UI", 24)).pack()
@@ -852,20 +936,20 @@ class FrameResizerApp(tk.Tk):
 
         # Recursive hover effects for light parchment aesthetic
         def _on_enter(e):
-            self.upload_bg.configure(background="#faeae6")
-            self._upload_inner.configure(background="#faeae6")
+            self.upload_bg["background"] = "#faeae6"
+            self._upload_inner["background"] = "#faeae6"
             for child in self._upload_inner.winfo_children():
-                child.configure(background="#faeae6")
-            self._src_preview_frame.configure(background="#faeae6")
-            self._src_thumb_lbl.configure(background="#faeae6")
+                child["background"] = "#faeae6"
+            self._src_preview_frame["background"] = "#faeae6"
+            self._src_thumb_lbl["background"] = "#faeae6"
 
         def _on_leave(e):
-            self.upload_bg.configure(background=SURFACE)
-            self._upload_inner.configure(background=SURFACE)
+            self.upload_bg["background"] = SURFACE
+            self._upload_inner["background"] = SURFACE
             for child in self._upload_inner.winfo_children():
-                child.configure(background=SURFACE)
-            self._src_preview_frame.configure(background=BG)
-            self._src_thumb_lbl.configure(background=BG)
+                child["background"] = SURFACE
+            self._src_preview_frame["background"] = BG
+            self._src_thumb_lbl["background"] = BG
 
         for w in (outer, self.upload_bg, self._upload_inner) + tuple(self._upload_inner.winfo_children()) + (self._src_preview_frame, self._src_thumb_lbl):
             w.bind("<Button-1>", self._on_click_upload)
@@ -876,8 +960,8 @@ class FrameResizerApp(tk.Tk):
     def _update_source_preview(self, img, path):
         """Show a thumbnail of the source image filling the upload zone."""
         # The upload zone card is packed in the sidebar (~270px inner width)
-        PREV_W = 260
-        PREV_H = 140
+        PREV_W = 220
+        PREV_H = 100
 
         iw, ih = img.size
         scale  = min(PREV_W / iw, PREV_H / ih)
@@ -910,7 +994,7 @@ class FrameResizerApp(tk.Tk):
         self._thumb_refs.clear()
         self._card_registry.clear()
         self._ready_cards.clear()
-        self._dl_bar.pack_forget()
+        self._update_download_bar_state()
         self._dl_count_lbl.config(text="")
         self._sel_count_lbl.config(text="")
         self._select_all_btn.config(text="Select All")
@@ -953,7 +1037,7 @@ class FrameResizerApp(tk.Tk):
         build_group(0)
 
     def _make_selectable_card(self, parent, name, tw, th, actual_w, actual_h, card_key, r, c, sizes=""):
-        scale = min(THUMB_SIZE / actual_w, THUMB_SIZE / actual_h)
+        scale = min(THUMB_W / actual_w, THUMB_H / actual_h)
         thumb_w = max(1, round(actual_w * scale))
         thumb_h = max(1, round(actual_h * scale))
 
@@ -965,8 +1049,8 @@ class FrameResizerApp(tk.Tk):
         card.pack_propagate(False)
 
         preview_frame = tk.Frame(card, bg=BG,
-                                 width=THUMB_SIZE, height=THUMB_SIZE)
-        preview_frame.pack(side="left", padx=6, pady=6)
+                                 width=THUMB_W, height=THUMB_H)
+        preview_frame.pack(side="top", padx=6, pady=6)
         preview_frame.pack_propagate(False)
 
         ph_lbl = tk.Label(preview_frame, text=name.replace(" Ratio", ""),
@@ -992,7 +1076,7 @@ class FrameResizerApp(tk.Tk):
         img_lbl = tk.Label(preview_frame, bg=BG)
 
         info = tk.Frame(card, bg=SURFACE)
-        info.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+        info.pack(side="top", fill="both", expand=True, padx=10, pady=(2, 4))
         
         tk.Label(info, text=name, bg=SURFACE, fg=TEXT,
                  font=("Georgia", 10, "bold"), anchor="w").pack(anchor="w")
@@ -1000,30 +1084,30 @@ class FrameResizerApp(tk.Tk):
         tk.Label(info, text=f"{tw}×{th}px", bg=SURFACE, fg=MUTED,
                  font=("Segoe UI", 8), anchor="w").pack(anchor="w")
         tk.Label(info, text=sizes, bg=SURFACE, fg=MUTED,
-                 font=("Segoe UI", 7), anchor="w", wraplength=130, justify="left").pack(anchor="w")
+                 font=("Segoe UI", 7), anchor="w", wraplength=216, justify="left").pack(anchor="w")
                  
         status_lbl = tk.Label(info, text="Ready to create", bg=SURFACE, fg=SUCCESS,
                               font=("Segoe UI", 7, "bold"), anchor="w")
         status_lbl.pack(anchor="w")
 
         controls = tk.Frame(card, bg=SURFACE)
-        controls.pack(side="right", padx=6, pady=4, fill="y")
+        controls.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
 
         sel_var = tk.BooleanVar(value=False)
-        chk = tk.Checkbutton(controls, variable=sel_var,
-                             bg=SURFACE, fg=MUTED,
+        chk = tk.Checkbutton(controls, text="Select", variable=sel_var,
+                             bg=SURFACE, fg=TEXT,
                              selectcolor="#ffffff",
                              activebackground=SURFACE, activeforeground=TEXT,
-                             font=("Segoe UI", 8, "bold"), cursor="hand2",
+                             font=("Segoe UI", 9, "bold"), cursor="hand2",
                              command=self._update_sel_count)
-        chk.pack(side="top", anchor="e")
+        chk.pack(side="left", anchor="w")
 
         dl_btn = tk.Button(controls, text="↓ Save",
                            bg=SURFACE, fg=MUTED,
                            activebackground=ACCENT, activeforeground="#ffffff",
                            font=("Segoe UI", 8, "bold"), relief="flat", bd=0,
-                           padx=4, pady=2, cursor="hand2", state="disabled")
-        dl_btn.pack(side="bottom", anchor="e")
+                           padx=12, pady=4, cursor="hand2", state="disabled")
+        dl_btn.pack(side="right", anchor="e")
         dl_btn.bind("<Enter>",
             lambda e: dl_btn.configure(bg=ACCENT, fg="#ffffff")
                       if str(dl_btn["state"]) == "normal" else None)
@@ -1047,6 +1131,21 @@ class FrameResizerApp(tk.Tk):
         all_sel = count == total and total > 0
         self._select_all_btn.config(
             text="Deselect All" if all_sel else "Select All")
+        self._update_download_bar_state()
+
+    def _update_download_bar_state(self):
+        if not hasattr(self, "_download_all_btn") or not hasattr(self, "_download_selected_btn"):
+            return
+        has_ready = len(self._ready_cards) > 0
+        if has_ready:
+            self._download_all_btn.configure(state="normal", fg=ACCENT)
+        else:
+            self._download_all_btn.configure(state="disabled", fg=MUTED)
+        any_selected = any(r["var"].get() for k, r in self._card_registry.items() if k in self._ready_cards)
+        if has_ready and any_selected:
+            self._download_selected_btn.configure(state="normal", fg=ACCENT)
+        else:
+            self._download_selected_btn.configure(state="disabled", fg=MUTED)
 
     def _toggle_all(self):
         vals = [r["var"].get() for r in self._card_registry.values()]
@@ -1154,14 +1253,12 @@ class FrameResizerApp(tk.Tk):
                     text=f"✓ {'Saved' if self._output_folder else 'Ready'} · {mode_label}",
                     fg=SUCCESS)
 
-            if not self._output_folder:
-                self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
-                if not self._dl_bar.winfo_ismapped():
-                    self._dl_bar.pack(fill="x", pady=(0, 4), before=self.grid_sep)
-            else:
+            self._dl_count_lbl.config(text=f"{len(self._ready_cards)} ready")
+            if self._output_folder:
                 n = len(self._ready_cards)
                 short = self._output_folder if len(self._output_folder) <= 45 else "…" + self._output_folder[-42:]
                 self._folder_lbl.configure(text=f"✓  {short}  [{n} files saved]")
+            self._update_download_bar_state()
 
             def download(_r=result, _f=_fname):
                 p = filedialog.asksaveasfilename(
@@ -1193,7 +1290,7 @@ class FrameResizerApp(tk.Tk):
     def _set_fit_mode(self, mode):
         self.current_fit_mode = mode
         self._ready_cards.clear()
-        self._dl_bar.pack_forget()
+        self._update_download_bar_state()
         for info in self._card_registry.values():
             cd = info.get("cd")
             if cd and "status_lbl" in cd and cd["status_lbl"].winfo_exists():
@@ -1253,6 +1350,279 @@ class FrameResizerApp(tk.Tk):
                 "לא נבחרו גדלים מוכנים.\nסמן checkboxes ונסה שוב.")
             return
         self._save_in_thread(selected, "בחר תיקייה לשמירת הנבחרים")
+
+    def _show_settings(self):
+        settings_win = tk.Toplevel(self)
+        settings_win.title("Settings & Size Manager")
+        settings_win.configure(bg=BG)
+        
+        # Center the window
+        self.update_idletasks()
+        win_w = 700
+        win_h = 520
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        x = (screen_w - win_w) // 2
+        y = (screen_h - win_h) // 2
+        settings_win.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        settings_win.resizable(False, False)
+        settings_win.grab_set() # Make it modal
+
+        # Styled Notebook
+        style = ttk.Style()
+        style.configure("Settings.TNotebook", background=BG, tabmargins=[2, 5, 2, 0])
+        style.configure("Settings.TNotebook.Tab", background=SURFACE, foreground=TEXT, font=("Segoe UI", 9, "bold"), padding=[12, 4])
+        style.map("Settings.TNotebook.Tab", background=[("selected", BG)], foreground=[("selected", ACCENT)])
+
+        notebook = ttk.Notebook(settings_win, style="Settings.TNotebook")
+        notebook.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # Tab 1: General Settings (AI Paths)
+        tab_general = tk.Frame(notebook, bg=BG)
+        notebook.add(tab_general, text=" AI Configurations ")
+
+        # Section label
+        lbl_sec = tk.Label(tab_general, text="AI EXECUTABLE PATHS", bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold"))
+        lbl_sec.pack(anchor="w", padx=16, pady=(16, 12))
+
+        # Real-ESRGAN path
+        frame_ncnn = tk.Frame(tab_general, bg=BG)
+        frame_ncnn.pack(fill="x", padx=16, pady=8)
+        tk.Label(frame_ncnn, text="Real-ESRGAN Exe Path:", bg=BG, fg=TEXT, font=("Segoe UI", 8, "bold"), width=22, anchor="w").pack(side="left")
+        
+        ncnn_var = tk.StringVar(value=get_setting("ncnn_exe_path", r"C:\realesrgan\realesrgan-ncnn-vulkan.exe"))
+        ncnn_entry = tk.Entry(frame_ncnn, textvariable=ncnn_var, bg=SURFACE, fg=TEXT, relief="flat", highlightbackground=BORDER, highlightthickness=1, font=("Segoe UI", 8), width=45)
+        ncnn_entry.pack(side="left", padx=8)
+
+        def browse_ncnn():
+            path = filedialog.askopenfilename(title="Select realesrgan-ncnn-vulkan.exe", filetypes=[("Executable files", "*.exe")])
+            if path:
+                ncnn_var.set(path.replace("/", "\\"))
+
+        tk.Button(frame_ncnn, text="Browse...", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=8, pady=2, cursor="hand2", command=browse_ncnn).pack(side="left")
+
+        # Topaz Photo AI path
+        frame_tpai = tk.Frame(tab_general, bg=BG)
+        frame_tpai.pack(fill="x", padx=16, pady=8)
+        tk.Label(frame_tpai, text="Topaz Photo AI Path:", bg=BG, fg=TEXT, font=("Segoe UI", 8, "bold"), width=22, anchor="w").pack(side="left")
+        
+        tpai_var = tk.StringVar(value=get_setting("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe"))
+        tpai_entry = tk.Entry(frame_tpai, textvariable=tpai_var, bg=SURFACE, fg=TEXT, relief="flat", highlightbackground=BORDER, highlightthickness=1, font=("Segoe UI", 8), width=45)
+        tpai_entry.pack(side="left", padx=8)
+
+        def browse_tpai():
+            path = filedialog.askopenfilename(title="Select tpai.exe", filetypes=[("Executable files", "*.exe")])
+            if path:
+                tpai_var.set(path.replace("/", "\\"))
+
+        tk.Button(frame_tpai, text="Browse...", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=8, pady=2, cursor="hand2", command=browse_tpai).pack(side="left")
+
+        # Info label
+        info_lbl = tk.Label(tab_general, text="Note: Changing these paths will take effect immediately for new upscale operations without requiring an app restart.", bg=BG, fg=MUTED, font=("Segoe UI", 7), justify="left", wraplength=600)
+        info_lbl.pack(anchor="w", padx=16, pady=16)
+
+        def save_general_settings():
+            success = set_setting("ncnn_exe_path", ncnn_var.get()) and set_setting("tpai_exe_path", tpai_var.get())
+            if success:
+                messagebox.showinfo("Success", "General settings saved successfully!", parent=settings_win)
+            else:
+                messagebox.showerror("Error", "Failed to save settings.", parent=settings_win)
+
+        # Save Button
+        tk.Button(tab_general, text="✓ Save AI Configs", bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=16, pady=6, cursor="hand2", command=save_general_settings).pack(side="bottom", anchor="e", padx=16, pady=16)
+
+
+        # Tab 2: Sizes & Ratios Manager
+        tab_sizes = tk.Frame(notebook, bg=BG)
+        notebook.add(tab_sizes, text=" Output Sizes Manager ")
+
+        # Treeview to list all sizes
+        tree_frame = tk.Frame(tab_sizes, bg=BG)
+        tree_frame.pack(fill="both", expand=True, padx=16, pady=(16, 8))
+
+        style.configure("Treeview", background=SURFACE, fieldbackground=SURFACE, foreground=TEXT, font=("Segoe UI", 8))
+        style.configure("Treeview.Heading", background=SURFACE, foreground=MUTED, font=("Segoe UI", 8, "bold"))
+        style.map("Treeview", background=[("selected", ACCENT2)], foreground=[("selected", TEXT)])
+
+        tree_scroll = ttk.Scrollbar(tree_frame)
+        tree_scroll.pack(side="right", fill="y")
+        
+        self._sizes_tree = ttk.Treeview(tree_frame, columns=("active", "name", "resolution", "sizes", "custom"), show="headings", yscrollcommand=tree_scroll.set, height=10)
+        self._sizes_tree.pack(side="left", fill="both", expand=True)
+        tree_scroll.config(command=self._sizes_tree.yview)
+
+        # Set headings and column widths
+        headers = [("active", "Status", 60), ("name", "Ratio Name", 120), ("resolution", "Resolution", 100), ("sizes", "Print Sizes", 200), ("custom", "Custom?", 60)]
+        for col, text, width in headers:
+            self._sizes_tree.heading(col, text=text, anchor="center")
+            self._sizes_tree.column(col, width=width, anchor="center" if col in ("active", "resolution", "custom") else "w")
+
+        def refresh_treeview():
+            for item in self._sizes_tree.get_children():
+                self._sizes_tree.delete(item)
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, label, w, h, sizes, is_custom, is_active FROM sizes")
+                rows = cursor.fetchall()
+                conn.close()
+                for row in rows:
+                    size_id, name, label, w, h, sz_str, is_custom, is_active = row
+                    active_text = "✓ Active" if is_active else "Inactive"
+                    custom_text = "Yes" if is_custom else "No"
+                    res = f"{w}×{h}"
+                    self._sizes_tree.insert("", "end", iid=str(size_id), values=(active_text, name, res, sz_str, custom_text))
+            except Exception as e:
+                print(f"Error refreshing treeview: {e}")
+
+        # Controls frame under treeview
+        ctl_frame = tk.Frame(tab_sizes, bg=BG)
+        ctl_frame.pack(fill="x", padx=16, pady=(0, 16))
+
+        def toggle_active():
+            sel = self._sizes_tree.selection()
+            if not sel:
+                messagebox.showwarning("Selection", "Please select a size to toggle.", parent=settings_win)
+                return
+            size_id = int(sel[0])
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("SELECT is_active FROM sizes WHERE id=?", (size_id,))
+                active = cursor.fetchone()[0]
+                new_active = 0 if active else 1
+                cursor.execute("UPDATE sizes SET is_active=? WHERE id=?", (new_active, size_id))
+                conn.commit()
+                conn.close()
+                
+                refresh_treeview()
+                reload_size_groups()
+                
+                # Refresh main window grid immediately
+                if self.current_img is None:
+                    self._build_empty_grid()
+                else:
+                    self._build_selectable_grid()
+            except Exception as e:
+                print(f"Error toggling active size: {e}")
+
+        def delete_custom_size():
+            sel = self._sizes_tree.selection()
+            if not sel:
+                messagebox.showwarning("Selection", "Please select a size to delete.", parent=settings_win)
+                return
+            size_id = int(sel[0])
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("SELECT is_custom, name FROM sizes WHERE id=?", (size_id,))
+                row = cursor.fetchone()
+                if row:
+                    is_custom, name = row
+                    if is_custom == 0:
+                        messagebox.showwarning("Delete Restricted", f"Built-in size '{name}' cannot be permanently deleted.\n\nYou can only toggle its active status to hide/show it in the main view.", parent=settings_win)
+                        conn.close()
+                        return
+                
+                confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to permanently delete custom size '{name}'?", parent=settings_win)
+                if confirm:
+                    cursor.execute("DELETE FROM sizes WHERE id=?", (size_id,))
+                    conn.commit()
+                    conn.close()
+                    refresh_treeview()
+                    reload_size_groups()
+                    if self.current_img is None:
+                        self._build_empty_grid()
+                    else:
+                        self._build_selectable_grid()
+                else:
+                    conn.close()
+            except Exception as e:
+                print(f"Error deleting size: {e}")
+
+        def open_add_size_dialog():
+            add_win = tk.Toplevel(settings_win)
+            add_win.title("Add Custom Size")
+            add_win.configure(bg=BG)
+            add_win_w = 400
+            add_win_h = 320
+            ax = x + (win_w - add_win_w) // 2
+            ay = y + (win_h - add_win_h) // 2
+            add_win.geometry(f"{add_win_w}x{add_win_h}+{ax}+{ay}")
+            add_win.resizable(False, False)
+            add_win.grab_set()
+
+            # Inputs
+            form_frame = tk.Frame(add_win, bg=BG)
+            form_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+            fields = [("Ratio Name:", "name_var", "e.g., 4:7 Ratio"), 
+                      ("Label:", "label_var", "e.g., 4:7"), 
+                      ("Filename:", "file_var", "e.g., 07_4x7_ratio_20x35_inch.jpg"), 
+                      ("Width (px):", "w_var", "7200"), 
+                      ("Height (px):", "h_var", "12600"), 
+                      ("Print Sizes:", "sz_var", "4x7, 8x14, 12x21, 16x28")]
+
+            form_vars = {}
+            for idx, (label_txt, var_name, default_txt) in enumerate(fields):
+                tk.Label(form_frame, text=label_txt, bg=BG, fg=TEXT, font=("Segoe UI", 8, "bold"), anchor="w").grid(row=idx, column=0, sticky="ew", pady=4)
+                var = tk.StringVar(value=default_txt)
+                form_vars[var_name] = var
+                tk.Entry(form_frame, textvariable=var, bg=SURFACE, fg=TEXT, relief="flat", highlightbackground=BORDER, highlightthickness=1, font=("Segoe UI", 8), width=30).grid(row=idx, column=1, sticky="ew", pady=4, padx=(8, 0))
+
+            def save_custom_size():
+                name_val = form_vars["name_var"].get().strip()
+                label_val = form_vars["label_var"].get().strip()
+                file_val = form_vars["file_var"].get().strip()
+                sz_val = form_vars["sz_var"].get().strip()
+                
+                try:
+                    w_val = int(form_vars["w_var"].get().strip())
+                    h_val = int(form_vars["h_var"].get().strip())
+                except ValueError:
+                    messagebox.showerror("Error", "Width and Height must be valid numbers.", parent=add_win)
+                    return
+
+                if not name_val or not label_val or not file_val:
+                    messagebox.showerror("Error", "Please fill in all mandatory fields.", parent=add_win)
+                    return
+
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                    INSERT INTO sizes (name, label, filename, w, h, sizes, is_custom, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, 1)
+                    """, (name_val, label_val, file_val, w_val, h_val, sz_val))
+                    conn.commit()
+                    conn.close()
+                    
+                    messagebox.showinfo("Success", f"Custom size '{name_val}' added successfully!", parent=add_win)
+                    add_win.destroy()
+                    refresh_treeview()
+                    reload_size_groups()
+                    if self.current_img is None:
+                        self._build_empty_grid()
+                    else:
+                        self._build_selectable_grid()
+                except sqlite3.IntegrityError:
+                    messagebox.showerror("Error", f"A size with name '{name_val}' already exists.", parent=add_win)
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save custom size: {e}", parent=add_win)
+
+            # Save / Cancel Buttons in dialog
+            btn_frame = tk.Frame(form_frame, bg=BG)
+            btn_frame.grid(row=len(fields), column=0, columnspan=2, pady=(12, 0), sticky="e")
+            
+            tk.Button(btn_frame, text="Cancel", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=12, pady=4, cursor="hand2", command=add_win.destroy).pack(side="left", padx=4)
+            tk.Button(btn_frame, text="✓ Add", bg=ACCENT, fg="#ffffff", font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=16, pady=4, cursor="hand2", command=save_custom_size).pack(side="left", padx=4)
+
+        # Action Buttons in Size Manager
+        tk.Button(ctl_frame, text="Toggle Active Status", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=12, pady=6, cursor="hand2", command=toggle_active).pack(side="left", padx=4)
+        tk.Button(ctl_frame, text="+ Add Custom Size", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=12, pady=6, cursor="hand2", command=open_add_size_dialog).pack(side="left", padx=4)
+        tk.Button(ctl_frame, text="✕ Delete Custom Size", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=12, pady=6, cursor="hand2", command=delete_custom_size).pack(side="left", padx=4)
+
+        refresh_treeview()
 
 
 if __name__ == "__main__":
