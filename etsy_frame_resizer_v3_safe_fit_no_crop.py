@@ -53,7 +53,8 @@ def init_db():
     default_settings = [
         ("ncnn_exe_path", r"C:\realesrgan\realesrgan-ncnn-vulkan.exe"),
         ("tpai_exe_path", r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe"),
-        ("default_output_folder", "")
+        ("default_output_folder", ""),
+        ("theme", "light")
     ]
     for key, val in default_settings:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
@@ -413,8 +414,33 @@ _WORKER_SEM = threading.Semaphore(3)
 _AI_SEM     = threading.Semaphore(1)
 
 class FrameResizerApp(tk.Tk):
+    def _apply_theme(self):
+        theme = get_setting("theme", "light")
+        global BG, SURFACE, BORDER, ACCENT, ACCENT2, TEXT, MUTED, SUCCESS, FOLDER_ACTIVE
+        if theme == "dark":
+            BG      = "#0f0e0c"  # Dark gray
+            SURFACE = "#1a1916"  # Darker gray
+            BORDER  = "#2e2c28"  # Dark border
+            ACCENT  = "#d4a853"  # Gold accent
+            ACCENT2 = "#7c6a3e"  # Soft gold
+            TEXT    = "#e8e4dc"  # Off white
+            MUTED   = "#6b6660"  # Muted text
+            SUCCESS = "#5a8a5a"  # Soft green
+            FOLDER_ACTIVE = "#323528"
+        else: # light
+            BG      = "#efe7d2"  # Warm page parchment bg
+            SURFACE = "#f7f1de"  # Lighter cream beige panel bg
+            BORDER  = "#d5cdb8"  # Solid warm beige border
+            ACCENT  = "#ed6f5c"  # Coral red accent
+            ACCENT2 = "#faeae6"  # Soft accent tint (light coral pink)
+            TEXT    = "#15140f"  # Ink / Dark Charcoal text
+            MUTED   = "#5a5448"  # Muted brown-grey secondary text
+            SUCCESS = "#6e7448"  # Olive green success state
+            FOLDER_ACTIVE = "#e2e6c7"   # Soft warm olive-green tint when folder is active
+
     def __init__(self):
         super().__init__()
+        self._apply_theme()
         self.title("Wall Art Resizer — Etsy · 300 DPI")
         self.configure(bg=BG)
         self._center_window(1110, 760)
@@ -442,7 +468,7 @@ class FrameResizerApp(tk.Tk):
                         lightcolor=BG,
                         darkcolor=BG)
         style.map("TScrollbar",
-                  background=[('pressed', '#faeae6'), ('active', '#ece4cf')])
+                  background=[('pressed', ACCENT2), ('active', BORDER)])
 
         self._build_ui()
 
@@ -496,10 +522,10 @@ class FrameResizerApp(tk.Tk):
         self.badges_frame = tk.Frame(self.sidebar, bg=SURFACE)
         self.badges_frame.pack(fill="x", padx=20, pady=(0, 8))
         for tag_text in ("Etsy", "300 DPI"):
-            tk.Label(self.badges_frame, text=tag_text, bg="#faeae6", fg=ACCENT,
+            tk.Label(self.badges_frame, text=tag_text, bg=ACCENT2, fg=ACCENT,
                      font=("Segoe UI", 8, "bold"), padx=6, pady=2,
                      relief="flat").pack(side="left", padx=(0, 6))
-        self.orient_tag = tk.Label(self.badges_frame, text="", bg="#faeae6", fg=ACCENT,
+        self.orient_tag = tk.Label(self.badges_frame, text="", bg=ACCENT2, fg=ACCENT,
                                    font=("Segoe UI", 8, "bold"), padx=6, pady=2,
                                    relief="flat")
 
@@ -575,7 +601,7 @@ class FrameResizerApp(tk.Tk):
         r1 = tk.Radiobutton(
             mode_inner, text="Safe Fit — no crop, white margins if needed",
             variable=self._fit_mode_var, value="fit_white",
-            bg=SURFACE, fg=TEXT, selectcolor="#ffffff",
+            bg=SURFACE, fg=TEXT, selectcolor=SURFACE,
             activebackground=SURFACE, activeforeground=TEXT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fit_white")
@@ -586,7 +612,7 @@ class FrameResizerApp(tk.Tk):
         r2 = tk.Radiobutton(
             mode_inner, text="Safe Fill — no crop, blurred extension",
             variable=self._fit_mode_var, value="fit_blur",
-            bg=SURFACE, fg=TEXT, selectcolor="#ffffff",
+            bg=SURFACE, fg=TEXT, selectcolor=SURFACE,
             activebackground=SURFACE, activeforeground=TEXT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fit_blur")
@@ -597,7 +623,7 @@ class FrameResizerApp(tk.Tk):
         r3 = tk.Radiobutton(
             mode_inner, text="Expert: Fill / Crop — may cut artwork",
             variable=self._fit_mode_var, value="fill",
-            bg=SURFACE, fg=ACCENT, selectcolor="#ffffff",
+            bg=SURFACE, fg=ACCENT, selectcolor=SURFACE,
             activebackground=SURFACE, activeforeground=ACCENT,
             font=("Segoe UI", 8, "bold"),
             command=lambda: self._set_fit_mode("fill")
@@ -808,7 +834,7 @@ class FrameResizerApp(tk.Tk):
 
         chk = tk.Checkbutton(controls, text="Select", bg=SURFACE, fg=MUTED,
                              activebackground=SURFACE, activeforeground=MUTED,
-                             selectcolor="#ffffff", font=("Segoe UI", 9, "bold"),
+                             selectcolor=SURFACE, font=("Segoe UI", 9, "bold"),
                              state="disabled")
         chk.pack(side="left", anchor="w")
 
@@ -914,12 +940,12 @@ class FrameResizerApp(tk.Tk):
 
         # Recursive hover effects for light parchment aesthetic
         def _on_enter(e):
-            self.upload_bg["background"] = "#faeae6"
-            self._upload_inner["background"] = "#faeae6"
+            self.upload_bg["background"] = ACCENT2
+            self._upload_inner["background"] = ACCENT2
             for child in self._upload_inner.winfo_children():
-                child["background"] = "#faeae6"
-            self._src_preview_frame["background"] = "#faeae6"
-            self._src_thumb_lbl["background"] = "#faeae6"
+                child["background"] = ACCENT2
+            self._src_preview_frame["background"] = ACCENT2
+            self._src_thumb_lbl["background"] = ACCENT2
 
         def _on_leave(e):
             self.upload_bg["background"] = SURFACE
@@ -1075,7 +1101,7 @@ class FrameResizerApp(tk.Tk):
         sel_var = tk.BooleanVar(value=False)
         chk = tk.Checkbutton(controls, text="Select", variable=sel_var,
                              bg=SURFACE, fg=TEXT,
-                             selectcolor="#ffffff",
+                             selectcolor=BG,
                              activebackground=SURFACE, activeforeground=TEXT,
                              font=("Segoe UI", 9, "bold"), cursor="hand2",
                              command=self._update_sel_count)
@@ -1437,6 +1463,23 @@ class FrameResizerApp(tk.Tk):
 
         tk.Button(frame_out, text="Browse...", bg=SURFACE, fg=MUTED, font=("Segoe UI", 8, "bold"), relief="flat", bd=0, padx=8, pady=2, cursor="hand2", command=browse_out).pack(side="left")
 
+        # Display Mode section
+        lbl_sec3 = tk.Label(tab_general, text="DISPLAY THEME", bg=BG, fg=MUTED, font=("Segoe UI", 8, "bold"))
+        lbl_sec3.pack(anchor="w", padx=16, pady=(16, 12))
+
+        frame_theme = tk.Frame(tab_general, bg=BG)
+        frame_theme.pack(fill="x", padx=16, pady=8)
+        tk.Label(frame_theme, text="App Display Mode:", bg=BG, fg=TEXT, font=("Segoe UI", 8, "bold"), width=22, anchor="w").pack(side="left")
+
+        theme_var = tk.StringVar(value=get_setting("theme", "light"))
+        
+        # Radio buttons for Light / Dark Mode
+        r_light = tk.Radiobutton(frame_theme, text="Parchment (Light Mode)", variable=theme_var, value="light", bg=BG, fg=TEXT, selectcolor=SURFACE, activebackground=BG, activeforeground=TEXT, font=("Segoe UI", 8, "bold"))
+        r_light.pack(side="left", padx=8)
+        
+        r_dark = tk.Radiobutton(frame_theme, text="Charcoal & Gold (Dark Mode)", variable=theme_var, value="dark", bg=BG, fg=TEXT, selectcolor=SURFACE, activebackground=BG, activeforeground=TEXT, font=("Segoe UI", 8, "bold"))
+        r_dark.pack(side="left", padx=8)
+
         # Info label
         info_lbl = tk.Label(tab_general, text="Note: Changing these paths will take effect immediately for new upscale operations without requiring an app restart.", bg=BG, fg=MUTED, font=("Segoe UI", 7), justify="left", wraplength=600)
         info_lbl.pack(anchor="w", padx=16, pady=16)
@@ -1444,9 +1487,12 @@ class FrameResizerApp(tk.Tk):
         def save_general_settings():
             success = set_setting("ncnn_exe_path", ncnn_var.get()) and \
                       set_setting("tpai_exe_path", tpai_var.get()) and \
-                      set_setting("default_output_folder", out_var.get())
+                      set_setting("default_output_folder", out_var.get()) and \
+                      set_setting("theme", theme_var.get())
             if success:
+                self._apply_theme() # Reload globals
                 settings_win.destroy()
+                messagebox.showinfo("Display Mode", "אנא הפעל מחדש את האפליקציה כדי להחיל את שינוי מצב התצוגה באופן מלא.", parent=self)
             else:
                 messagebox.showerror("Error", "Failed to save settings.", parent=settings_win)
 
