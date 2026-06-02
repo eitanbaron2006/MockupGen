@@ -1,0 +1,11 @@
+{
+    "sqltools.useNodeRuntime": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "database": "${workspaceFolder:MockupGen}/etsy_resizer_settings.db",
+            "name": "resizerdb"
+        }
+    ]
+}
