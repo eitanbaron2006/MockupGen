@@ -1695,6 +1695,107 @@
     });
   }
 
+  function areaCorners(area) {
+    if (area && Array.isArray(area.corners) && area.corners.length >= 4) return area.corners;
+    if (!area) return [];
+    return [
+      { x: area.x, y: area.y },
+      { x: area.x + area.width, y: area.y },
+      { x: area.x + area.width, y: area.y + area.height },
+      { x: area.x, y: area.y + area.height }
+    ];
+  }
+
+  function greenFrameOverlayRegions(template) {
+    const rawRegions = template.raw_artwork_area && Array.isArray(template.raw_artwork_area.regions)
+      ? template.raw_artwork_area.regions
+      : [];
+    const regions = rawRegions.length ? rawRegions : [template.artwork_area];
+    return regions
+      .filter((region) => region && Number(region.width) > 0 && Number(region.height) > 0)
+      .map((region) => ({
+        ...region,
+        corners: region.corners || region.inner_corners || areaCorners(region)
+      }))
+      .filter((region) => Array.isArray(region.corners) && region.corners.length >= 4);
+  }
+
+  function renderGreenFrameArtworkOverlay(template, image) {
+    const overlayDiv = $("selectionImageOverlay");
+    const overlayImg = $("selectionOverlayImg");
+    const rect = getRenderedImageRect(image);
+    if (!overlayDiv || !overlayImg || !rect || !state.selectionStyle.overlayImage) return;
+
+    overlayDiv.querySelectorAll(".green-frame-region-overlay").forEach((node) => node.remove());
+    overlayDiv.classList.remove("hidden");
+    overlayDiv.style.left = "0";
+    overlayDiv.style.top = "0";
+    overlayDiv.style.width = "100%";
+    overlayDiv.style.height = "100%";
+    overlayDiv.style.transform = "none";
+    overlayDiv.style.overflow = "visible";
+    overlayImg.classList.add("hidden");
+    overlayImg.src = state.selectionStyle.overlayImage;
+
+    const fitMode = $("greenFitMode").value || "cover";
+    const artworkScale = Number($("greenArtworkScale").value) / 100;
+    const offsetX = Number($("greenOffsetX").value) / 100;
+    const offsetY = Number($("greenOffsetY").value) / 100;
+    const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
+    const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
+
+    greenFrameOverlayRegions(template).forEach((region) => {
+      const corners = region.corners;
+      const displayPoints = corners.map(p => ({
+        x: (p.x / template.canvas_width) * rect.width,
+        y: (p.y / template.canvas_height) * rect.height
+      }));
+      const canvasW = Number(region.width);
+      const canvasH = Number(region.height);
+      const regionDiv = document.createElement("div");
+      regionDiv.className = "green-frame-region-overlay";
+      regionDiv.style.width = `${canvasW}px`;
+      regionDiv.style.height = `${canvasH}px`;
+      regionDiv.style.left = `${rect.left}px`;
+      regionDiv.style.top = `${rect.top}px`;
+      regionDiv.style.transform = `matrix3d(${getMatrix3d(canvasW, canvasH, displayPoints[0], displayPoints[1], displayPoints[2], displayPoints[3]).join(",")})`;
+
+      const regionImg = document.createElement("img");
+      regionImg.src = state.selectionStyle.overlayImage;
+      let baseW = canvasW;
+      let baseH = canvasH;
+      if (fitMode !== "stretch") {
+        const imageRatio = naturalW / naturalH;
+        const containerRatio = canvasW / canvasH;
+        if (fitMode === "contain") {
+          if (imageRatio > containerRatio) {
+            baseW = canvasW;
+            baseH = canvasW / imageRatio;
+          } else {
+            baseH = canvasH;
+            baseW = canvasH * imageRatio;
+          }
+        } else if (imageRatio > containerRatio) {
+          baseH = canvasH;
+          baseW = canvasH * imageRatio;
+        } else {
+          baseW = canvasW;
+          baseH = canvasW / imageRatio;
+        }
+      }
+      const scaledW = baseW * artworkScale;
+      const scaledH = baseH * artworkScale;
+      regionImg.style.position = "absolute";
+      regionImg.style.width = `${scaledW}px`;
+      regionImg.style.height = `${scaledH}px`;
+      regionImg.style.left = `${(canvasW - scaledW) / 2 + offsetX * canvasW / 2}px`;
+      regionImg.style.top = `${(canvasH - scaledH) / 2 + offsetY * canvasH / 2}px`;
+      regionImg.style.objectFit = "fill";
+      regionDiv.appendChild(regionImg);
+      overlayDiv.appendChild(regionDiv);
+    });
+  }
+
   function drawSelection() {
     if (state.globalOverlayPlacementActive) {
       $("selectionSvg").classList.add("hidden");
@@ -1719,80 +1820,7 @@
     if (isGreenFrameTemplate(template)) {
       selectionSvg.classList.add("hidden");
       if (state.selectionStyle.overlayImage) {
-        const overlayDiv = $("selectionImageOverlay");
-        const overlayImg = $("selectionOverlayImg");
-        const rect = getRenderedImageRect(image);
-        if (overlayDiv && overlayImg && rect) {
-          overlayDiv.classList.remove("hidden");
-          if (!template.artwork_area.corners) {
-            const area = template.artwork_area;
-            template.artwork_area.corners = [
-              { x: area.x, y: area.y },
-              { x: area.x + area.width, y: area.y },
-              { x: area.x + area.width, y: area.y + area.height },
-              { x: area.x, y: area.y + area.height }
-            ];
-          }
-          const corners = template.artwork_area.corners;
-          const displayPoints = corners.map(p => {
-            const cx = (p.x / template.canvas_width) * rect.width;
-            const cy = (p.y / template.canvas_height) * rect.height;
-            return { x: cx, y: cy };
-          });
-          const canvasW = template.artwork_area.width;
-          const canvasH = template.artwork_area.height;
-          overlayDiv.style.width = `${canvasW}px`;
-          overlayDiv.style.height = `${canvasH}px`;
-          overlayDiv.style.left = `${rect.left}px`;
-          overlayDiv.style.top = `${rect.top}px`;
-
-          const matrix = getMatrix3d(canvasW, canvasH, displayPoints[0], displayPoints[1], displayPoints[2], displayPoints[3]);
-          overlayDiv.style.transform = `matrix3d(${matrix.join(",")})`;
-
-          overlayImg.src = state.selectionStyle.overlayImage;
-          
-          const fitMode = $("greenFitMode").value || "cover";
-          const artworkScale = Number($("greenArtworkScale").value) / 100;
-          const offsetX = Number($("greenOffsetX").value) / 100;
-          const offsetY = Number($("greenOffsetY").value) / 100;
-          
-          const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
-          const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
-          
-          let baseW = canvasW;
-          let baseH = canvasH;
-          if (fitMode !== "stretch") {
-            const imageRatio = naturalW / naturalH;
-            const containerRatio = canvasW / canvasH;
-            if (fitMode === "contain") {
-              if (imageRatio > containerRatio) {
-                baseW = canvasW;
-                baseH = canvasW / imageRatio;
-              } else {
-                baseH = canvasH;
-                baseW = canvasH * imageRatio;
-              }
-            } else { // cover
-              if (imageRatio > containerRatio) {
-                baseH = canvasH;
-                baseW = canvasH * imageRatio;
-              } else {
-                baseW = canvasW;
-                baseH = canvasW / imageRatio;
-              }
-            }
-          }
-          
-          const scaledW = baseW * artworkScale;
-          const scaledH = baseH * artworkScale;
-          
-          overlayImg.style.position = "absolute";
-          overlayImg.style.width = `${scaledW}px`;
-          overlayImg.style.height = `${scaledH}px`;
-          overlayImg.style.left = `${(canvasW - scaledW) / 2 + offsetX * canvasW / 2}px`;
-          overlayImg.style.top = `${(canvasH - scaledH) / 2 + offsetY * canvasH / 2}px`;
-          overlayImg.style.objectFit = "fill";
-        }
+        renderGreenFrameArtworkOverlay(template, image);
       } else {
         $("selectionImageOverlay").classList.add("hidden");
         if ($("selectionRenderedMockup")) {
@@ -1850,6 +1878,9 @@
     if (overlayDiv && overlayImg) {
       const style = state.selectionStyle;
       const showOverlay = style.overlayMode === "image" && Boolean(style.overlayImage);
+      overlayDiv.querySelectorAll(".green-frame-region-overlay").forEach((node) => node.remove());
+      overlayDiv.style.overflow = "hidden";
+      overlayImg.classList.remove("hidden");
       overlayDiv.classList.toggle("hidden", !showOverlay);
 
       if (!showOverlay) {

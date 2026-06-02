@@ -96,9 +96,17 @@ def test_green_frame_edit_mode_keeps_lightweight_artwork_overlay_visible():
     green_branch = js.split("if (isGreenFrameTemplate(template)) {", 1)[1].split("return;", 1)[0]
 
     assert "if (state.selectionStyle.overlayImage)" in green_branch
-    assert 'overlayDiv.classList.remove("hidden")' in green_branch
-    assert "overlayImg.src = state.selectionStyle.overlayImage" in green_branch
+    assert "renderGreenFrameArtworkOverlay(template, image)" in green_branch
     assert "state.greenFramePlacementActive && state.selectionStyle.overlayImage" not in green_branch
+
+
+def test_green_frame_edit_mode_uses_all_detected_regions_for_lightweight_overlay():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    assert "function greenFrameOverlayRegions(template)" in js
+    assert "template.raw_artwork_area.regions" in js
+    assert "green-frame-region-overlay" in js
+    assert "greenFrameOverlayRegions(template).forEach" in js
 
 
 def test_preview_mode_refreshes_after_green_frame_control_changes():

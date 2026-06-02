@@ -3179,6 +3179,12 @@ input[type="checkbox"]:disabled {
   display: block;
 }
 
+.green-frame-region-overlay {
+  position: absolute;
+  overflow: hidden;
+  transform-origin: 0 0;
+}
+
 .global-overlay-placement {
   position: absolute;
   inset: 0;
