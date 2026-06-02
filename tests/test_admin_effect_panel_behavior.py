@@ -69,3 +69,15 @@ def test_admin_sidebar_can_be_resized_and_remembers_width():
     assert "mockupStudio.sidebarWidth" in js
     assert "setPointerCapture" in js
     assert "localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY" in js
+
+
+def test_regular_mockup_switch_preloads_background_before_atomic_artwork_sync():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    assert "loadRegularMockupBackgroundAtomically(template)" in js
+    assert "preloadRegularMockupBackgrounds(state.templates)" in js
+    assert "if (!isGreenFrameTemplate(template))" in js
+    assert "const preloadedBackground = new Image();" in js
+    assert "preloadedBackground.onload = () => {" in js
+    assert "$(\"canvasImage\").src = backgroundUrl;" in js
+    assert "drawSelection();" in js

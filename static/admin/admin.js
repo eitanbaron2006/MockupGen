@@ -848,6 +848,7 @@
     }
     const query = `?product_type=${encodeURIComponent(state.selectedCategory.slug)}`;
     state.templates = (await api(`/api/admin/templates${query}`)).templates;
+    preloadRegularMockupBackgrounds(state.templates);
     const desiredId = preferredTemplateId || (state.selected && state.selected.template_id);
     state.selected =
       state.templates.find((template) => template.template_id === desiredId) ||
@@ -1017,6 +1018,52 @@
     return value == null ? "" : `Confidence ${Math.round(value * 100)}%`;
   }
 
+  let regularBackgroundLoadToken = 0;
+  const regularBackgroundPreloadCache = new Map();
+  function preloadRegularMockupBackgrounds(templates) {
+    templates.forEach((template) => {
+      if (isGreenFrameTemplate(template)) return;
+      const backgroundUrl = `/api/admin/templates/${template.template_id}/asset/background.png`;
+      if (regularBackgroundPreloadCache.has(backgroundUrl)) return;
+      const backgroundImage = new Image();
+      backgroundImage.src = backgroundUrl;
+      regularBackgroundPreloadCache.set(backgroundUrl, backgroundImage);
+    });
+  }
+
+  function loadRegularMockupBackgroundAtomically(template) {
+    const backgroundUrl = `/api/admin/templates/${template.template_id}/asset/background.png`;
+    if (!isGreenFrameTemplate(template)) {
+      const token = ++regularBackgroundLoadToken;
+      const preloadedBackground = new Image();
+      const applyPreloadedBackground = () => {
+        if (!state.selected || state.selected.template_id !== template.template_id || token !== regularBackgroundLoadToken) return;
+        $("canvasImage").onload = null;
+        $("canvasImage").src = backgroundUrl;
+        requestAnimationFrame(() => {
+          drawSelection();
+        });
+      };
+      preloadedBackground.onload = () => {
+        applyPreloadedBackground();
+      };
+      preloadedBackground.onerror = () => {
+        if (!state.selected || state.selected.template_id !== template.template_id || token !== regularBackgroundLoadToken) return;
+        $("canvasImage").onload = () => {
+          requestAnimationFrame(drawSelection);
+        };
+        $("canvasImage").src = backgroundUrl;
+      };
+      preloadedBackground.src = backgroundUrl;
+      return;
+    }
+
+    $("canvasImage").onload = () => {
+      requestAnimationFrame(drawSelection);
+    };
+    $("canvasImage").src = backgroundUrl;
+  }
+
   function renderEditor() {
     const template = state.selected;
     const hasTemplate = Boolean(template);
@@ -1081,10 +1128,7 @@
       ? "Approved rectangle is active. Run Detect frame to compare safely."
       : "Detect frame or adjust the artwork area before approval.";
     $("selectionSvg").classList.add("hidden");
-    $("canvasImage").onload = () => {
-      requestAnimationFrame(drawSelection);
-    };
-    $("canvasImage").src = `/api/admin/templates/${template.template_id}/asset/background.png`;
+    loadRegularMockupBackgroundAtomically(template);
     $("templateName").value = template.name;
     $("categorySelect").innerHTML = state.categories.map((category) =>
       `<option value="${category.id}">${escapeHtml(category.name)}</option>`
