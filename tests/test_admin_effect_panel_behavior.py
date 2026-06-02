@@ -74,10 +74,28 @@ def test_admin_sidebar_can_be_resized_and_remembers_width():
 def test_regular_mockup_switch_preloads_background_before_atomic_artwork_sync():
     js = ADMIN_JS.read_text(encoding="utf-8")
 
-    assert "loadRegularMockupBackgroundAtomically(template)" in js
-    assert "preloadRegularMockupBackgrounds(state.templates)" in js
-    assert "if (!isGreenFrameTemplate(template))" in js
-    assert "const preloadedBackground = new Image();" in js
+    assert "loadEditorBackgroundAtomically(template)" in js
+    assert "preloadEditorBackgrounds(state.templates)" in js
+    assert "|| new Image()" in js
     assert "preloadedBackground.onload = () => {" in js
     assert "$(\"canvasImage\").src = backgroundUrl;" in js
     assert "drawSelection();" in js
+
+
+def test_green_frame_edit_mode_does_not_render_heavy_preview_on_selection_draw():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    green_branch = js.split("if (isGreenFrameTemplate(template)) {", 1)[1].split("return;", 1)[0]
+
+    assert "refreshGreenFrameMockupPreview()" not in green_branch
+    assert "greenFramePreviewTimeout" not in green_branch
+    assert "selectionRenderedMockup" in green_branch
+
+
+def test_green_frame_edit_mode_keeps_lightweight_artwork_overlay_visible():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    green_branch = js.split("if (isGreenFrameTemplate(template)) {", 1)[1].split("return;", 1)[0]
+
+    assert "if (state.selectionStyle.overlayImage)" in green_branch
+    assert 'overlayDiv.classList.remove("hidden")' in green_branch
+    assert "overlayImg.src = state.selectionStyle.overlayImage" in green_branch
+    assert "state.greenFramePlacementActive && state.selectionStyle.overlayImage" not in green_branch

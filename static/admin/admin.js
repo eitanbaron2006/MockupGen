@@ -848,7 +848,7 @@
     }
     const query = `?product_type=${encodeURIComponent(state.selectedCategory.slug)}`;
     state.templates = (await api(`/api/admin/templates${query}`)).templates;
-    preloadRegularMockupBackgrounds(state.templates);
+    preloadEditorBackgrounds(state.templates);
     const desiredId = preferredTemplateId || (state.selected && state.selected.template_id);
     state.selected =
       state.templates.find((template) => template.template_id === desiredId) ||
@@ -1018,50 +1018,46 @@
     return value == null ? "" : `Confidence ${Math.round(value * 100)}%`;
   }
 
-  let regularBackgroundLoadToken = 0;
-  const regularBackgroundPreloadCache = new Map();
-  function preloadRegularMockupBackgrounds(templates) {
+  let editorBackgroundLoadToken = 0;
+  const editorBackgroundPreloadCache = new Map();
+  function preloadEditorBackgrounds(templates) {
     templates.forEach((template) => {
-      if (isGreenFrameTemplate(template)) return;
       const backgroundUrl = `/api/admin/templates/${template.template_id}/asset/background.png`;
-      if (regularBackgroundPreloadCache.has(backgroundUrl)) return;
+      if (editorBackgroundPreloadCache.has(backgroundUrl)) return;
       const backgroundImage = new Image();
       backgroundImage.src = backgroundUrl;
-      regularBackgroundPreloadCache.set(backgroundUrl, backgroundImage);
+      editorBackgroundPreloadCache.set(backgroundUrl, backgroundImage);
     });
   }
 
-  function loadRegularMockupBackgroundAtomically(template) {
+  function loadEditorBackgroundAtomically(template) {
     const backgroundUrl = `/api/admin/templates/${template.template_id}/asset/background.png`;
-    if (!isGreenFrameTemplate(template)) {
-      const token = ++regularBackgroundLoadToken;
-      const preloadedBackground = new Image();
-      const applyPreloadedBackground = () => {
-        if (!state.selected || state.selected.template_id !== template.template_id || token !== regularBackgroundLoadToken) return;
-        $("canvasImage").onload = null;
-        $("canvasImage").src = backgroundUrl;
-        requestAnimationFrame(() => {
-          drawSelection();
-        });
-      };
-      preloadedBackground.onload = () => {
-        applyPreloadedBackground();
-      };
-      preloadedBackground.onerror = () => {
-        if (!state.selected || state.selected.template_id !== template.template_id || token !== regularBackgroundLoadToken) return;
-        $("canvasImage").onload = () => {
-          requestAnimationFrame(drawSelection);
-        };
-        $("canvasImage").src = backgroundUrl;
-      };
-      preloadedBackground.src = backgroundUrl;
-      return;
-    }
-
-    $("canvasImage").onload = () => {
-      requestAnimationFrame(drawSelection);
+    const token = ++editorBackgroundLoadToken;
+    const preloadedBackground = editorBackgroundPreloadCache.get(backgroundUrl) || new Image();
+    editorBackgroundPreloadCache.set(backgroundUrl, preloadedBackground);
+    const applyPreloadedBackground = () => {
+      if (!state.selected || state.selected.template_id !== template.template_id || token !== editorBackgroundLoadToken) return;
+      $("canvasImage").onload = null;
+      $("canvasImage").src = backgroundUrl;
+      requestAnimationFrame(() => {
+        drawSelection();
+      });
     };
-    $("canvasImage").src = backgroundUrl;
+    preloadedBackground.onload = () => {
+      applyPreloadedBackground();
+    };
+    preloadedBackground.onerror = () => {
+      if (!state.selected || state.selected.template_id !== template.template_id || token !== editorBackgroundLoadToken) return;
+      $("canvasImage").onload = () => {
+        requestAnimationFrame(drawSelection);
+      };
+      $("canvasImage").src = backgroundUrl;
+    };
+    if (preloadedBackground.complete && preloadedBackground.naturalWidth > 0) {
+      applyPreloadedBackground();
+    } else if (!preloadedBackground.src) {
+      preloadedBackground.src = backgroundUrl;
+    }
   }
 
   function renderEditor() {
@@ -1128,7 +1124,7 @@
       ? "Approved rectangle is active. Run Detect frame to compare safely."
       : "Detect frame or adjust the artwork area before approval.";
     $("selectionSvg").classList.add("hidden");
-    loadRegularMockupBackgroundAtomically(template);
+    loadEditorBackgroundAtomically(template);
     $("templateName").value = template.name;
     $("categorySelect").innerHTML = state.categories.map((category) =>
       `<option value="${category.id}">${escapeHtml(category.name)}</option>`
@@ -1722,7 +1718,7 @@
 
     if (isGreenFrameTemplate(template)) {
       selectionSvg.classList.add("hidden");
-      if (state.greenFramePlacementActive && state.selectionStyle.overlayImage) {
+      if (state.selectionStyle.overlayImage) {
         const overlayDiv = $("selectionImageOverlay");
         const overlayImg = $("selectionOverlayImg");
         const rect = getRenderedImageRect(image);
@@ -1799,12 +1795,7 @@
         }
       } else {
         $("selectionImageOverlay").classList.add("hidden");
-        if (state.selectionStyle.overlayImage) {
-          if (greenFramePreviewTimeout) clearTimeout(greenFramePreviewTimeout);
-          greenFramePreviewTimeout = setTimeout(() => {
-            refreshGreenFrameMockupPreview();
-          }, 120);
-        } else if ($("selectionRenderedMockup")) {
+        if ($("selectionRenderedMockup")) {
           $("selectionRenderedMockup").classList.add("hidden");
           $("selectionRenderedMockup").src = "";
         }
