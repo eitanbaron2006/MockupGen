@@ -2150,8 +2150,8 @@
     return state.selected;
   }
 
-  async function persistTemplateState(template) {
-    if (!template || !template.artwork_area || state.busy) return;
+  async function persistTemplateState(template, options = {}) {
+    if (!template || !template.artwork_area || (state.busy && !options.force)) return;
     try {
       const payload = await api(`/api/admin/templates/${template.template_id}`, {
         method: "PATCH",
@@ -3241,9 +3241,13 @@
     updateGreenFrameControlLabels();
     if (greenFrameSettingsSaveTimeout) clearTimeout(greenFrameSettingsSaveTimeout);
     greenFrameSettingsSaveTimeout = setTimeout(async () => {
-      await persistTemplateState(state.selected);
+      await persistTemplateState(state.selected, { force: state.isPreviewingMockup });
       if (isGreenFrameTemplate() && state.selectionStyle.overlayImage) {
-        refreshGreenFrameMockupPreview();
+        if (state.isPreviewingMockup) {
+          refreshPreviewMockup();
+        } else {
+          refreshGreenFrameMockupPreview();
+        }
       }
     }, 250);
   }
@@ -3475,7 +3479,7 @@
     }
 
     try {
-      await persistTemplateState(state.selected);
+      await persistTemplateState(state.selected, { force: state.isPreviewingMockup });
 
       // Debounce live-refresh in preview mode, except checkbox changes show a loading overlay until refresh completes.
       if (state.isPreviewingMockup) {

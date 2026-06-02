@@ -99,3 +99,20 @@ def test_green_frame_edit_mode_keeps_lightweight_artwork_overlay_visible():
     assert 'overlayDiv.classList.remove("hidden")' in green_branch
     assert "overlayImg.src = state.selectionStyle.overlayImage" in green_branch
     assert "state.greenFramePlacementActive && state.selectionStyle.overlayImage" not in green_branch
+
+
+def test_preview_mode_refreshes_after_green_frame_control_changes():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    body = js.split("function updateGreenFrameSettingsFromControls()", 1)[1].split("\n  [", 1)[0]
+
+    assert "state.isPreviewingMockup" in body
+    assert "refreshPreviewMockup()" in body
+    assert "refreshGreenFrameMockupPreview()" in body
+
+
+def test_preview_effect_updates_can_persist_while_preview_render_is_busy():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    assert "async function persistTemplateState(template, options = {})" in js
+    assert "(state.busy && !options.force)" in js
+    assert "persistTemplateState(state.selected, { force: state.isPreviewingMockup })" in js
