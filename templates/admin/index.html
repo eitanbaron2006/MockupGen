@@ -30,6 +30,8 @@
           <div class="sub">Administrator</div>
         </div>
       </div>
+      <button class="sidebar-resize-handle" id="sidebarResizeHandle" type="button" aria-label="Resize sidebar"
+        title="Drag to resize sidebar"></button>
     </aside>
     <section class="shell">
       <header class="topbar">
@@ -98,6 +100,8 @@
                 <div id="globalOverlayPlacementItem" class="global-overlay-placement-item">
                   <img id="globalOverlayPlacementImg" src="" alt="Global PNG overlay placement preview">
                 </div>
+              </div>
+              <div id="greenFramePlacementLayer" class="global-overlay-placement hidden" aria-label="Drag green frame artwork">
               </div>
               <img id="selectionRenderedMockup" class="selection-rendered-mockup hidden" alt="Rendered mockup">
               <svg id="selectionSvg" class="selection-svg hidden">
@@ -354,6 +358,7 @@
                     <span id="greenArtworkScaleVal">100%</span>
                   </div>
                 </div>
+                <button type="button" class="btn compact" id="greenFramePlaceBtn" style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with mouse</button>
                 <div class="slider-row">
                   <label for="greenOffsetX">Offset X</label>
                   <div class="slider-container-row">
@@ -926,6 +931,17 @@
       <div class="modal-actions">
         <button class="btn" id="cancelDelete">Cancel</button>
         <button class="btn danger" id="confirmDelete">Delete mockup</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="systemDialog">
+    <div class="modal system-dialog-modal" role="dialog" aria-modal="true" aria-labelledby="systemDialogTitle">
+      <h2 id="systemDialogTitle">Confirm action</h2>
+      <div class="sub" id="systemDialogMessage"></div>
+      <input id="systemDialogInput" class="text-input hidden" autocomplete="off">
+      <div class="modal-actions">
+        <button class="btn" id="systemDialogCancel">Cancel</button>
+        <button class="btn primary" id="systemDialogConfirm">OK</button>
       </div>
     </div>
   </div>

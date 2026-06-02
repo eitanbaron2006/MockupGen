@@ -153,6 +153,43 @@ class CatalogService:
             ).fetchone()
         return dict(row) if row else None
 
+    def update_category(self, category_id: int, name: str) -> dict[str, Any]:
+        current = self.get_category(category_id)
+        if not current:
+            raise CatalogError("Category not found")
+        cleaned = name.strip()
+        if not cleaned:
+            raise CatalogError("Category name is required")
+        slug = slugify(cleaned)
+        with self._connect() as connection:
+            conflict = connection.execute(
+                """
+                SELECT 1 FROM categories
+                WHERE (lower(name) = lower(?) OR slug = ?) AND id != ?
+                """,
+                (cleaned, slug, category_id),
+            ).fetchone()
+            if conflict:
+                raise CatalogError("Category already exists")
+            cursor = connection.execute(
+                "UPDATE categories SET name = ?, slug = ? WHERE id = ?",
+                (cleaned, slug, category_id),
+            )
+            if not cursor.rowcount:
+                raise CatalogError("Category not found")
+        return self.get_category(category_id)
+
+    def delete_empty_category(self, category_id: int) -> None:
+        with self._connect() as connection:
+            template_count = connection.execute(
+                "SELECT COUNT(*) FROM templates WHERE category_id = ?", (category_id,)
+            ).fetchone()[0]
+            if template_count:
+                raise CatalogError("Only empty categories can be deleted")
+            cursor = connection.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+            if not cursor.rowcount:
+                raise CatalogError("Category not found")
+
     def list_categories(self, *, active_only: bool = False) -> list[dict[str, Any]]:
         condition = "WHERE t.status = 'active'" if active_only else ""
         query = f"""

@@ -45,3 +45,27 @@ def test_effect_checkbox_changes_show_loading_overlay():
     assert 'id="effectUpdateOverlay"' in html
     assert "setEffectUpdateLoading" in js
     assert "showLoading: true" in js
+
+
+def test_admin_uses_system_dialogs_instead_of_browser_alerts():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    assert "systemDialog" in html
+    assert "systemPrompt(" in js
+    assert "window.prompt(" not in js
+    assert "window.confirm(" not in js
+    assert "alert(" not in js
+
+
+def test_admin_sidebar_can_be_resized_and_remembers_width():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    assert 'id="sidebarResizeHandle"' in html
+    assert "--sidebar-width" in css
+    assert "grid-template-columns: var(--sidebar-width" in css
+    assert "mockupStudio.sidebarWidth" in js
+    assert "setPointerCapture" in js
+    assert "localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY" in js

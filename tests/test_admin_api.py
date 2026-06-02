@@ -392,6 +392,67 @@ def test_delete_active_template_removes_public_template_assets(tmp_path: Path):
     assert not public_folder.exists()
 
 
+def test_rename_category_updates_name_and_slug(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+
+    response = client.patch(
+        f"/api/admin/categories/{category['id']}",
+        json={"name": "Fine Art Prints"},
+        headers=headers,
+    )
+    categories = client.get("/api/admin/categories").get_json()["categories"]
+
+    assert response.status_code == 200
+    assert response.get_json()["category"]["name"] == "Fine Art Prints"
+    assert response.get_json()["category"]["slug"] == "fine-art-prints"
+    assert categories[0]["name"] == "Fine Art Prints"
+    assert categories[0]["slug"] == "fine-art-prints"
+
+
+def test_delete_empty_category_removes_it(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Empty Category"}, headers=headers
+    ).get_json()["category"]
+
+    response = client.delete(f"/api/admin/categories/{category['id']}", headers=headers)
+    categories = client.get("/api/admin/categories").get_json()["categories"]
+
+    assert response.status_code == 200
+    assert response.get_json()["category_id"] == category["id"]
+    assert categories == []
+
+
+def test_delete_category_with_templates_is_rejected(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    response = client.delete(f"/api/admin/categories/{category['id']}", headers=headers)
+    categories = client.get("/api/admin/categories").get_json()["categories"]
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Only empty categories can be deleted"
+    assert categories[0]["name"] == "Wall Art"
+    assert categories[0]["template_count"] == 1
+
+
 def test_reactivating_existing_active_template_publishes_new_reviewed_area(tmp_path: Path):
     app = build_app(tmp_path)
     client = app.test_client()

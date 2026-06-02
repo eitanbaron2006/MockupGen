@@ -1,6 +1,10 @@
 (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
   const SELECTION_STYLE_STORAGE_KEY = "mockupStudio.selectionStyle";
+  const SIDEBAR_WIDTH_STORAGE_KEY = "mockupStudio.sidebarWidth";
+  const DEFAULT_SIDEBAR_WIDTH = 252;
+  const MIN_SIDEBAR_WIDTH = 232;
+  const MAX_SIDEBAR_WIDTH = 520;
   const DEFAULT_SELECTION_STYLE = {
     polygonColor: "#ed6f5c",
     crossColor: "#ed6f5c",
@@ -20,6 +24,25 @@
     if (!Number.isFinite(number)) return fallback;
     return Math.min(max, Math.max(min, number));
   }
+
+  function setSidebarWidth(width, persist = true) {
+    const nextWidth = clampStyleNumber(width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH);
+    document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
+    if (persist) {
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(Math.round(nextWidth)));
+    }
+    return nextWidth;
+  }
+
+  function loadSidebarWidthPreference() {
+    try {
+      return setSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY), false);
+    } catch (_error) {
+      return setSidebarWidth(DEFAULT_SIDEBAR_WIDTH, false);
+    }
+  }
+
+  loadSidebarWidthPreference();
 
   function dataURLtoFile(dataurl, filename) {
     const arr = dataurl.split(",");
@@ -170,7 +193,9 @@
     isPreviewingMockup: false,
     wasPreviewingMockup: false,
     globalOverlayPlacementActive: false,
-    globalOverlayDrag: null
+    globalOverlayDrag: null,
+    greenFramePlacementActive: false,
+    greenFrameDrag: null
   };
   const wizardState = {
     active: false,
@@ -639,12 +664,80 @@
     return element.innerHTML;
   }
 
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
   let toastTimer;
   function toast(message) {
     $("toast").textContent = message;
     $("toast").classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => $("toast").classList.remove("show"), 3200);
+  }
+
+  let activeSystemDialog = null;
+  function closeSystemDialog(value) {
+    if (!activeSystemDialog) return;
+    $("systemDialog").classList.remove("open");
+    activeSystemDialog.resolve(value);
+    activeSystemDialog = null;
+  }
+
+  function openSystemDialog({
+    title,
+    message = "",
+    defaultValue = "",
+    mode = "alert",
+    confirmLabel = "OK",
+    cancelLabel = "Cancel",
+    danger = false
+  }) {
+    return new Promise((resolve) => {
+      if (activeSystemDialog) {
+        closeSystemDialog(mode === "prompt" ? null : false);
+      }
+      activeSystemDialog = { resolve, mode };
+      const input = $("systemDialogInput");
+      const cancel = $("systemDialogCancel");
+      const confirm = $("systemDialogConfirm");
+      $("systemDialogTitle").textContent = title;
+      $("systemDialogMessage").textContent = message;
+      input.value = defaultValue;
+      input.classList.toggle("hidden", mode !== "prompt");
+      cancel.textContent = cancelLabel;
+      cancel.classList.toggle("hidden", mode === "alert");
+      confirm.textContent = confirmLabel;
+      confirm.classList.toggle("danger", danger);
+      $("systemDialog").classList.add("open");
+      setTimeout(() => (mode === "prompt" ? input : confirm).focus(), 0);
+    });
+  }
+
+  function systemAlert(title, message = "") {
+    return openSystemDialog({ title, message, mode: "alert", confirmLabel: "OK" });
+  }
+
+  function systemConfirm(title, message, options = {}) {
+    return openSystemDialog({
+      title,
+      message,
+      mode: "confirm",
+      confirmLabel: options.confirmLabel || "Confirm",
+      cancelLabel: options.cancelLabel || "Cancel",
+      danger: Boolean(options.danger)
+    });
+  }
+
+  function systemPrompt(title, defaultValue = "", message = "") {
+    return openSystemDialog({
+      title,
+      message,
+      defaultValue,
+      mode: "prompt",
+      confirmLabel: "Save",
+      cancelLabel: "Cancel"
+    });
   }
 
   function setStatus(message, failure = false) {
@@ -668,12 +761,18 @@
 
   function renderCategories() {
     $("categories").innerHTML = state.categories.map((category) => `
-      <button class="category ${state.selectedCategory && state.selectedCategory.id === category.id ? "selected" : ""}" data-category="${category.id}">
-        <span>${escapeHtml(category.name)}</span><span class="count">${category.template_count}</span>
-      </button>
+      <div class="category-row ${state.selectedCategory && state.selectedCategory.id === category.id ? "selected" : ""}">
+        <button class="category category-select" data-category="${category.id}">
+          <span class="category-name">${escapeHtml(category.name)}</span><span class="count">${category.template_count}</span>
+        </button>
+        <div class="category-actions">
+          <button class="category-action category-rename" type="button" data-category="${category.id}" aria-label="Rename ${escapeAttr(category.name)}" title="Rename category">✎</button>
+          <button class="category-action category-delete" type="button" data-category="${category.id}" aria-label="Delete ${escapeAttr(category.name)}" title="${category.template_count > 0 ? "Only empty categories can be deleted" : "Delete empty category"}" ${category.template_count > 0 ? "disabled" : ""}>×</button>
+        </div>
+      </div>
     `).join("") || '<div class="empty">Create a product category to begin.</div>';
     $("breadcrumb").textContent = state.selectedCategory ? state.selectedCategory.name : "Select category";
-    document.querySelectorAll(".category").forEach((button) => {
+    document.querySelectorAll(".category-select").forEach((button) => {
       button.onclick = async () => {
         if (state.busy) return;
         autoSaveCurrent();
@@ -683,6 +782,60 @@
         await loadTemplates();
       };
     });
+    document.querySelectorAll(".category-rename").forEach((button) => {
+      button.onclick = () => renameCategory(Number(button.dataset.category));
+    });
+    document.querySelectorAll(".category-delete").forEach((button) => {
+      button.onclick = () => deleteCategory(Number(button.dataset.category));
+    });
+  }
+
+  async function renameCategory(categoryId) {
+    if (state.busy) return;
+    const category = state.categories.find((item) => item.id === categoryId);
+    if (!category) return;
+    const nextName = await systemPrompt("Rename category", category.name);
+    if (nextName === null) return;
+    const cleaned = nextName.trim();
+    if (!cleaned || cleaned === category.name) return;
+    try {
+      const payload = await api(`/api/admin/categories/${category.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: cleaned })
+      });
+      await loadCategories(payload.category.id);
+      await loadTemplates(state.selected && state.selected.template_id);
+      toast("Category renamed");
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  async function deleteCategory(categoryId) {
+    if (state.busy) return;
+    const category = state.categories.find((item) => item.id === categoryId);
+    if (!category) return;
+    if (Number(category.template_count) > 0) {
+      toast("Only empty categories can be deleted");
+      return;
+    }
+    const confirmed = await systemConfirm(
+      "Delete category",
+      `Delete empty category "${category.name}"?`,
+      { confirmLabel: "Delete category", danger: true }
+    );
+    if (!confirmed) return;
+    try {
+      await api(`/api/admin/categories/${category.id}`, { method: "DELETE" });
+      if (state.selectedCategory && state.selectedCategory.id === category.id) {
+        state.selectedCategory = null;
+      }
+      await loadCategories();
+      await loadTemplates();
+      toast("Category deleted");
+    } catch (error) {
+      toast(error.message);
+    }
   }
 
   async function loadTemplates(preferredTemplateId) {
@@ -805,11 +958,14 @@
           }
         });
         if (errorCount > 0) {
-          alert(`Batch detection finished, but ${errorCount} template(s) failed to detect properly.`);
+          await systemAlert(
+            "Batch detection finished",
+            `${errorCount} template(s) failed to detect properly.`
+          );
         }
       }
     } catch (error) {
-      alert("Batch detection failed: " + error.message);
+      await systemAlert("Batch detection failed", error.message);
     } finally {
       state.busy = false;
       renderQueue();
@@ -820,7 +976,11 @@
   $("batchDeleteButton").onclick = async () => {
     if (state.selectedForBatch.size === 0 || state.busy) return;
     const ids = Array.from(state.selectedForBatch);
-    const confirmed = window.confirm(`Delete ${ids.length} selected mockup${ids.length === 1 ? "" : "s"}?`);
+    const confirmed = await systemConfirm(
+      "Delete selected mockups",
+      `Delete ${ids.length} selected mockup${ids.length === 1 ? "" : "s"}?`,
+      { confirmLabel: "Delete mockups", danger: true }
+    );
     if (!confirmed) return;
 
     const selectedTemplateId = state.selected && state.selected.template_id;
@@ -869,6 +1029,7 @@
     $("publishButton").disabled = state.busy || !hasTemplate;
     if (!template) {
       setGlobalOverlayPlacementActive(false);
+      setGreenFramePlacementActive(false);
       $("currentTitle").textContent = "Select a mockup";
       $("confidence").textContent = "";
       $("coordX").textContent = "-";
@@ -883,6 +1044,7 @@
 
     // Reset preview mode on template switch/re-render
     state.isPreviewingMockup = false;
+    setGreenFramePlacementActive(false);
     if ($("selectionRenderedMockup")) {
       $("selectionRenderedMockup").classList.add("hidden");
       $("selectionRenderedMockup").src = "";
@@ -1292,6 +1454,39 @@
     renderGlobalOverlayPlacement();
   }
 
+  function setGreenFramePlacementActive(active) {
+    state.greenFramePlacementActive = Boolean(active);
+    const button = $("greenFramePlaceBtn");
+    if (button) {
+      button.classList.toggle("active", state.greenFramePlacementActive);
+      button.textContent = state.greenFramePlacementActive ? "Exit mouse positioning" : "Position with mouse";
+    }
+    const placementLayer = $("greenFramePlacementLayer");
+    if (placementLayer) {
+      placementLayer.classList.toggle("hidden", !state.greenFramePlacementActive);
+    }
+    
+    if (state.greenFramePlacementActive) {
+      if (!state.selectionStyle.overlayImage) {
+        toast("Choose or upload a preview image first.");
+        state.greenFramePlacementActive = false;
+        if (button) {
+          button.classList.remove("active");
+          button.textContent = "Position with mouse";
+        }
+        if (placementLayer) {
+          placementLayer.classList.add("hidden");
+        }
+      } else {
+        if ($("selectionRenderedMockup")) $("selectionRenderedMockup").classList.add("hidden");
+        drawSelection();
+      }
+    } else {
+      if ($("selectionImageOverlay")) $("selectionImageOverlay").classList.add("hidden");
+      drawSelection();
+    }
+  }
+
   function applySelectionStyle() {
     const style = state.selectionStyle;
     const svg = $("selectionSvg");
@@ -1483,15 +1678,92 @@
 
     if (isGreenFrameTemplate(template)) {
       selectionSvg.classList.add("hidden");
-      $("selectionImageOverlay").classList.add("hidden");
-      if (state.selectionStyle.overlayImage) {
-        if (greenFramePreviewTimeout) clearTimeout(greenFramePreviewTimeout);
-        greenFramePreviewTimeout = setTimeout(() => {
-          refreshGreenFrameMockupPreview();
-        }, 120);
-      } else if ($("selectionRenderedMockup")) {
-        $("selectionRenderedMockup").classList.add("hidden");
-        $("selectionRenderedMockup").src = "";
+      if (state.greenFramePlacementActive && state.selectionStyle.overlayImage) {
+        const overlayDiv = $("selectionImageOverlay");
+        const overlayImg = $("selectionOverlayImg");
+        const rect = getRenderedImageRect(image);
+        if (overlayDiv && overlayImg && rect) {
+          overlayDiv.classList.remove("hidden");
+          if (!template.artwork_area.corners) {
+            const area = template.artwork_area;
+            template.artwork_area.corners = [
+              { x: area.x, y: area.y },
+              { x: area.x + area.width, y: area.y },
+              { x: area.x + area.width, y: area.y + area.height },
+              { x: area.x, y: area.y + area.height }
+            ];
+          }
+          const corners = template.artwork_area.corners;
+          const displayPoints = corners.map(p => {
+            const cx = (p.x / template.canvas_width) * rect.width;
+            const cy = (p.y / template.canvas_height) * rect.height;
+            return { x: cx, y: cy };
+          });
+          const canvasW = template.artwork_area.width;
+          const canvasH = template.artwork_area.height;
+          overlayDiv.style.width = `${canvasW}px`;
+          overlayDiv.style.height = `${canvasH}px`;
+          overlayDiv.style.left = `${rect.left}px`;
+          overlayDiv.style.top = `${rect.top}px`;
+
+          const matrix = getMatrix3d(canvasW, canvasH, displayPoints[0], displayPoints[1], displayPoints[2], displayPoints[3]);
+          overlayDiv.style.transform = `matrix3d(${matrix.join(",")})`;
+
+          overlayImg.src = state.selectionStyle.overlayImage;
+          
+          const fitMode = $("greenFitMode").value || "cover";
+          const artworkScale = Number($("greenArtworkScale").value) / 100;
+          const offsetX = Number($("greenOffsetX").value) / 100;
+          const offsetY = Number($("greenOffsetY").value) / 100;
+          
+          const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
+          const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
+          
+          let baseW = canvasW;
+          let baseH = canvasH;
+          if (fitMode !== "stretch") {
+            const imageRatio = naturalW / naturalH;
+            const containerRatio = canvasW / canvasH;
+            if (fitMode === "contain") {
+              if (imageRatio > containerRatio) {
+                baseW = canvasW;
+                baseH = canvasW / imageRatio;
+              } else {
+                baseH = canvasH;
+                baseW = canvasH * imageRatio;
+              }
+            } else { // cover
+              if (imageRatio > containerRatio) {
+                baseH = canvasH;
+                baseW = canvasH * imageRatio;
+              } else {
+                baseW = canvasW;
+                baseH = canvasW / imageRatio;
+              }
+            }
+          }
+          
+          const scaledW = baseW * artworkScale;
+          const scaledH = baseH * artworkScale;
+          
+          overlayImg.style.position = "absolute";
+          overlayImg.style.width = `${scaledW}px`;
+          overlayImg.style.height = `${scaledH}px`;
+          overlayImg.style.left = `${(canvasW - scaledW) / 2 + offsetX * canvasW / 2}px`;
+          overlayImg.style.top = `${(canvasH - scaledH) / 2 + offsetY * canvasH / 2}px`;
+          overlayImg.style.objectFit = "fill";
+        }
+      } else {
+        $("selectionImageOverlay").classList.add("hidden");
+        if (state.selectionStyle.overlayImage) {
+          if (greenFramePreviewTimeout) clearTimeout(greenFramePreviewTimeout);
+          greenFramePreviewTimeout = setTimeout(() => {
+            refreshGreenFrameMockupPreview();
+          }, 120);
+        } else if ($("selectionRenderedMockup")) {
+          $("selectionRenderedMockup").classList.add("hidden");
+          $("selectionRenderedMockup").src = "";
+        }
       }
       return;
     }
@@ -1547,6 +1819,12 @@
 
       if (!showOverlay) {
         overlayImg.src = "";
+      } else {
+        overlayImg.style.position = "";
+        overlayImg.style.width = "";
+        overlayImg.style.height = "";
+        overlayImg.style.left = "";
+        overlayImg.style.top = "";
       }
 
       if (showOverlay && displayPoints.length >= 4) {
@@ -2546,6 +2824,62 @@
     }
   }
 
+  function initSidebarResize() {
+    const handle = $("sidebarResizeHandle");
+    const sidebar = document.querySelector(".sidebar");
+    if (!handle || !sidebar) return;
+    handle.tabIndex = 0;
+
+    const redrawAfterResize = () => {
+      if (state.selected) {
+        drawSelection();
+      }
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebar.getBoundingClientRect().width;
+      document.body.classList.add("sidebar-resizing");
+      handle.setPointerCapture(event.pointerId);
+
+      const resize = (moveEvent) => {
+        const nextWidth = setSidebarWidth(startWidth + moveEvent.clientX - startX);
+        document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
+        redrawAfterResize();
+      };
+
+      const stop = () => {
+        document.body.classList.remove("sidebar-resizing");
+        handle.removeEventListener("pointermove", resize);
+        handle.removeEventListener("pointerup", stop);
+        handle.removeEventListener("pointercancel", stop);
+        redrawAfterResize();
+      };
+
+      handle.addEventListener("pointermove", resize);
+      handle.addEventListener("pointerup", stop);
+      handle.addEventListener("pointercancel", stop);
+    });
+
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const currentWidth = sidebar.getBoundingClientRect().width;
+      if (event.key === "Home") {
+        setSidebarWidth(MIN_SIDEBAR_WIDTH);
+      } else if (event.key === "End") {
+        setSidebarWidth(MAX_SIDEBAR_WIDTH);
+      } else {
+        const delta = event.shiftKey ? 40 : 16;
+        setSidebarWidth(currentWidth + (event.key === "ArrowRight" ? delta : -delta));
+      }
+      redrawAfterResize();
+    });
+  }
+
+  initSidebarResize();
+
   document.querySelectorAll(".filter-pill").forEach((pill) => {
     pill.onclick = () => {
       if (state.busy) return;
@@ -2562,6 +2896,22 @@
   $("confirmDelete").onclick = deleteTemplate;
   $("deleteModal").onclick = (event) => {
     if (event.target === $("deleteModal")) closeDeleteModal();
+  };
+  $("systemDialogCancel").onclick = () => closeSystemDialog(activeSystemDialog && activeSystemDialog.mode === "prompt" ? null : false);
+  $("systemDialogConfirm").onclick = () => {
+    if (!activeSystemDialog) return;
+    closeSystemDialog(activeSystemDialog.mode === "prompt" ? $("systemDialogInput").value : true);
+  };
+  $("systemDialog").onclick = (event) => {
+    if (event.target === $("systemDialog")) {
+      closeSystemDialog(activeSystemDialog && activeSystemDialog.mode === "prompt" ? null : false);
+    }
+  };
+  $("systemDialogInput").onkeydown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      closeSystemDialog($("systemDialogInput").value);
+    }
   };
   $("createCategory").onclick = async () => {
     try {
@@ -2585,6 +2935,11 @@
   };
 
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && activeSystemDialog) {
+      event.preventDefault();
+      closeSystemDialog(activeSystemDialog.mode === "prompt" ? null : false);
+      return;
+    }
     if (event.key === "Escape" && wizardState.active) {
       event.preventDefault();
       handleWizardEscapeKey();
@@ -3535,6 +3890,121 @@
     };
     placementLayer.addEventListener("pointerup", endPlacementDrag);
     placementLayer.addEventListener("pointercancel", endPlacementDrag);
+  }
+
+  if ($("greenFramePlaceBtn")) {
+    $("greenFramePlaceBtn").onclick = (event) => {
+      event.preventDefault();
+      setGreenFramePlacementActive(!state.greenFramePlacementActive);
+    };
+  }
+
+  const greenFramePlacementLayer = $("greenFramePlacementLayer");
+  if (greenFramePlacementLayer) {
+    greenFramePlacementLayer.addEventListener("pointerdown", (event) => {
+      if (!state.greenFramePlacementActive || !state.selected) return;
+      event.preventDefault();
+      const rect = getRenderedImageRect($("canvasImage"));
+      if (!rect) return;
+      
+      const template = state.selected;
+      const displayW = (template.artwork_area.width / template.canvas_width) * rect.width;
+      const displayH = (template.artwork_area.height / template.canvas_height) * rect.height;
+      
+      state.greenFrameDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startOffsetX: Number($("greenOffsetX").value || 0),
+        startOffsetY: Number($("greenOffsetY").value || 0),
+        displayW,
+        displayH
+      };
+      
+      if ($("selectionRenderedMockup")) $("selectionRenderedMockup").classList.add("hidden");
+      if ($("selectionImageOverlay")) $("selectionImageOverlay").classList.remove("hidden");
+      
+      greenFramePlacementLayer.classList.add("dragging");
+      greenFramePlacementLayer.setPointerCapture(event.pointerId);
+    });
+
+    greenFramePlacementLayer.addEventListener("pointermove", (event) => {
+      const drag = state.greenFrameDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      
+      const dx = (event.clientX - drag.startX) / state.zoom;
+      const dy = (event.clientY - drag.startY) / state.zoom;
+      
+      const deltaPercentX = (200 * dx) / drag.displayW;
+      const deltaPercentY = (200 * dy) / drag.displayH;
+      
+      const nextX = Math.round(Math.max(-100, Math.min(100, drag.startOffsetX + deltaPercentX)));
+      const nextY = Math.round(Math.max(-100, Math.min(100, drag.startOffsetY + deltaPercentY)));
+      
+      $("greenOffsetX").value = nextX;
+      $("greenOffsetY").value = nextY;
+      
+      setGreenFrameLabel("greenOffsetXVal", nextX, "%");
+      setGreenFrameLabel("greenOffsetYVal", nextY, "%");
+      
+      const overlayImg = $("selectionOverlayImg");
+      if (overlayImg && state.selected) {
+        const canvasW = state.selected.artwork_area.width;
+        const canvasH = state.selected.artwork_area.height;
+        const artworkScale = Number($("greenArtworkScale").value) / 100;
+        const fitMode = $("greenFitMode").value || "cover";
+        
+        const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
+        const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
+        
+        let baseW = canvasW;
+        let baseH = canvasH;
+        if (fitMode !== "stretch") {
+          const imageRatio = naturalW / naturalH;
+          const containerRatio = canvasW / canvasH;
+          if (fitMode === "contain") {
+            if (imageRatio > containerRatio) {
+              baseW = canvasW;
+              baseH = canvasW / imageRatio;
+            } else {
+              baseH = canvasH;
+              baseW = canvasH * imageRatio;
+            }
+          } else {
+            if (imageRatio > containerRatio) {
+              baseH = canvasH;
+              baseW = canvasH * imageRatio;
+            } else {
+              baseW = canvasW;
+              baseH = canvasW / imageRatio;
+            }
+          }
+        }
+        
+        const scaledW = baseW * artworkScale;
+        const scaledH = baseH * artworkScale;
+        
+        overlayImg.style.width = `${scaledW}px`;
+        overlayImg.style.height = `${scaledH}px`;
+        overlayImg.style.left = `${(canvasW - scaledW) / 2 + (nextX / 100) * canvasW / 2}px`;
+        overlayImg.style.top = `${(canvasH - scaledH) / 2 + (nextY / 100) * canvasH / 2}px`;
+      }
+    });
+
+    const endGreenFramePlacementDrag = async (event) => {
+      const drag = state.greenFrameDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      state.greenFrameDrag = null;
+      greenFramePlacementLayer.classList.remove("dragging");
+      try {
+        greenFramePlacementLayer.releasePointerCapture(event.pointerId);
+      } catch (_err) { }
+      updateGreenFrameSettingsFromControls();
+    };
+    
+    greenFramePlacementLayer.addEventListener("pointerup", endGreenFramePlacementDrag);
+    greenFramePlacementLayer.addEventListener("pointercancel", endGreenFramePlacementDrag);
   }
 
   // Apply Matte to all button event listener

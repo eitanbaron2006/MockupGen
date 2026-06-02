@@ -147,6 +147,33 @@ def create_admin_category():
     return jsonify({"success": True, "category": category}), 201
 
 
+@admin_routes.patch("/api/admin/categories/<int:category_id>")
+@require_admin_json
+@require_csrf
+def update_admin_category(category_id: int):
+    try:
+        category = catalog().update_category(
+            category_id,
+            str((request.get_json(silent=True) or {}).get("name", "")),
+        )
+    except CatalogError as error:
+        status = 404 if str(error) == "Category not found" else 400
+        return json_error(str(error), status)
+    return jsonify({"success": True, "category": category})
+
+
+@admin_routes.delete("/api/admin/categories/<int:category_id>")
+@require_admin_json
+@require_csrf
+def delete_admin_category(category_id: int):
+    try:
+        catalog().delete_empty_category(category_id)
+    except CatalogError as error:
+        status = 404 if str(error) == "Category not found" else 400
+        return json_error(str(error), status)
+    return jsonify({"success": True, "category_id": category_id})
+
+
 @admin_routes.get("/api/admin/templates")
 @require_admin_json
 def get_admin_templates():

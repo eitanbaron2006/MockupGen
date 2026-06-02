@@ -1,6 +1,6 @@
 {
   "template_id": "template_909fe6f345bf",
-  "name": "ChatGPT Image May 29 2026 04 12 41 PM 4",
+  "name": "ChatGPT Image May 29 2026 08 24 46 PM",
   "product_type": "horizontal-wall-art",
   "canvas_width": 1254,
   "canvas_height": 1254,
@@ -97,8 +97,8 @@
       "inner_shadow_size": 12,
       "inner_shadow_strength": 0.06,
       "mask_build_quality": 3,
-      "offset_x": 0,
-      "offset_y": 0,
+      "offset_x": 0.01,
+      "offset_y": 0.01,
       "use_perspective": true,
       "use_vector_clip": true
     },
