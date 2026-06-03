@@ -99,7 +99,7 @@
       "mask_build_quality": 2,
       "offset_x": 0,
       "offset_y": 0,
-      "use_perspective": false,
+      "use_perspective": true,
       "use_vector_clip": true
     },
     "inner_shadow": {

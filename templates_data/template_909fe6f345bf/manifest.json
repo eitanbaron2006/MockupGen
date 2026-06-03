@@ -87,7 +87,7 @@
     },
     "green_frame_mockups": {
       "aa_scale": 1,
-      "artwork_scale": 1,
+      "artwork_scale": 1.02,
       "contain_bg_color": "#ffffff",
       "edge_aa_radius": 0,
       "edge_expand": 1,
@@ -99,7 +99,7 @@
       "mask_build_quality": 3,
       "offset_x": 0,
       "offset_y": 0,
-      "use_perspective": true,
+      "use_perspective": false,
       "use_vector_clip": true
     },
     "inner_shadow": {
