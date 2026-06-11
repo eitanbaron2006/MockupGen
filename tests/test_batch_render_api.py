@@ -309,6 +309,189 @@ def test_batch_isolates_item_failures(tmp_path):
     assert "not found" in by_id["bad"]["error"].lower()
 
 
+def test_batch_explicit_frame_assignment_overrides_order(tmp_path):
+    client, folders = build_client(tmp_path)
+    folder = write_green_set_template(folders["TEMPLATES_FOLDER"], regions=2)
+    register_green_template(client, "green_set_002", folder / "manifest.json")
+
+    response = post_batch(
+        client,
+        {
+            "items": [
+                {
+                    "id": "swapped",
+                    "artworks": [
+                        {"file": "first", "frame": 2},
+                        {"file": "second", "frame": 1},
+                    ],
+                    "template_id": "green_set_002",
+                    "fit_mode": "stretch",
+                }
+            ]
+        },
+        {
+            "first": (image_bytes((8, 8), (10, 10, 250, 255)), "first.png"),
+            "second": (image_bytes((8, 8), (250, 240, 10, 255)), "second.png"),
+        },
+    )
+
+    assert response.status_code == 200
+    item = response.get_json()["items"][0]
+    assert item["success"] is True
+    assert item["frame_assignment"] == ["second", "first"]
+    generated = folders["OUTPUT_FOLDER"] / Path(item["output_url"]).name
+    with Image.open(generated).convert("RGBA") as output:
+        # Frame 1 (left) shows "second", frame 2 (right) shows "first".
+        assert output.getpixel((8, 8))[:3] == (250, 240, 10)
+        assert output.getpixel((20, 8))[:3] == (10, 10, 250)
+
+
+def test_batch_auto_frame_assignment_matches_aspect_ratio(tmp_path):
+    client, folders = build_client(tmp_path)
+    # Two frames: a wide one (16x8) and a tall one (8x16).
+    template_id = "green_mixed"
+    template_folder = folders["TEMPLATES_FOLDER"] / template_id
+    template_folder.mkdir(parents=True)
+    width, height = 40, 24
+    background = Image.new("RGBA", (width, height), (200, 20, 20, 255))
+    mask = Image.new("L", (width, height), 0)
+    regions = [
+        {"x": 2, "y": 4, "width": 16, "height": 8, "area": 128},
+        {"x": 24, "y": 4, "width": 8, "height": 16, "area": 128},
+    ]
+    for region in regions:
+        for y in range(region["y"], region["y"] + region["height"]):
+            for x in range(region["x"], region["x"] + region["width"]):
+                background.putpixel((x, y), (0, 255, 0, 255))
+                mask.putpixel((x, y), 255)
+    background.save(template_folder / "background.png")
+    background.save(template_folder / "preview.png")
+    mask.save(template_folder / "mask.png")
+    manifest = {
+        "template_id": template_id,
+        "name": "Mixed orientation set",
+        "canvas_width": width,
+        "canvas_height": height,
+        "artwork_area": {"x": 2, "y": 4, "width": 30, "height": 16},
+        "fit_mode": "stretch",
+        "background": "background.png",
+        "mask": "mask.png",
+        "preview": "preview.png",
+        "supported_modes": ["simple"],
+        "output_format": "png",
+        "raw_artwork_area": {"mode": "green_frames_mockups", "regions": regions},
+        "effects": {
+            "green_frame_mockups": {
+                "fit_mode": "stretch",
+                "use_perspective": False,
+                "feather_radius": 0,
+                "edge_aa_radius": 0,
+            }
+        },
+    }
+    (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    register_green_template(client, template_id, template_folder / "manifest.json")
+
+    # Send the tall artwork FIRST: ratio matching must still route the wide
+    # artwork to the wide frame and the tall artwork to the tall frame.
+    response = post_batch(
+        client,
+        {
+            "items": [
+                {
+                    "id": "ratios",
+                    "artworks": ["tall", "wide"],
+                    "template_id": template_id,
+                    "fit_mode": "stretch",
+                }
+            ]
+        },
+        {
+            "tall": (image_bytes((8, 16), (10, 10, 250, 255)), "tall.png"),
+            "wide": (image_bytes((16, 8), (250, 240, 10, 255)), "wide.png"),
+        },
+    )
+
+    assert response.status_code == 200
+    item = response.get_json()["items"][0]
+    assert item["success"] is True
+    assert item["frame_assignment"] == ["wide", "tall"]
+    generated = folders["OUTPUT_FOLDER"] / Path(item["output_url"]).name
+    with Image.open(generated).convert("RGBA") as output:
+        assert output.getpixel((10, 8))[:3] == (250, 240, 10)   # wide frame
+        assert output.getpixel((28, 12))[:3] == (10, 10, 250)   # tall frame
+
+
+def test_batch_rejects_frame_out_of_range_and_duplicates(tmp_path):
+    client, folders = build_client(tmp_path)
+    folder = write_green_set_template(folders["TEMPLATES_FOLDER"], regions=2)
+    register_green_template(client, "green_set_002", folder / "manifest.json")
+
+    out_of_range = post_batch(
+        client,
+        {
+            "items": [
+                {
+                    "id": "bad-frame",
+                    "artworks": [{"file": "a", "frame": 5}, "b"],
+                    "template_id": "green_set_002",
+                }
+            ]
+        },
+        {
+            "a": (image_bytes((8, 8), (10, 10, 250, 255)), "a.png"),
+            "b": (image_bytes((8, 8), (250, 240, 10, 255)), "b.png"),
+        },
+    )
+    duplicate = post_batch(
+        client,
+        {
+            "items": [
+                {
+                    "id": "dup",
+                    "artworks": [{"file": "a", "frame": 1}, {"file": "b", "frame": 1}],
+                    "template_id": "green_set_002",
+                }
+            ]
+        },
+        {
+            "a": (image_bytes((8, 8), (10, 10, 250, 255)), "a.png"),
+            "b": (image_bytes((8, 8), (250, 240, 10, 255)), "b.png"),
+        },
+    )
+
+    assert out_of_range.status_code == 207
+    bad_item = out_of_range.get_json()["items"][0]
+    assert bad_item["success"] is False
+    assert "frame 5" in bad_item["error"]
+    assert duplicate.status_code == 400  # malformed spec, rejected up front
+
+
+def test_template_detail_exposes_numbered_frames(tmp_path):
+    client, folders = build_client(tmp_path)
+    write_template(folders["TEMPLATES_FOLDER"], "template_001")
+    write_green_set_template(folders["TEMPLATES_FOLDER"], regions=3)
+
+    single = client.get("/api/mockups/templates/template_001")
+    multi = client.get("/api/mockups/templates/green_set_002")
+    missing = client.get("/api/mockups/templates/nope")
+
+    assert single.status_code == 200
+    single_frames = single.get_json()["frames"]
+    assert len(single_frames) == 1
+    assert single_frames[0]["frame"] == 1
+
+    assert multi.status_code == 200
+    payload = multi.get_json()
+    frames = payload["frames"]
+    assert [frame["frame"] for frame in frames] == [1, 2, 3]
+    # Canonical order is left-to-right for same-row frames.
+    assert frames[0]["x"] < frames[1]["x"] < frames[2]["x"]
+    assert all({"x", "y", "width", "height", "ratio", "orientation"} <= set(f) for f in frames)
+
+    assert missing.status_code == 404
+
+
 def test_batch_rejects_malformed_spec(tmp_path):
     client, folders = build_client(tmp_path)
     write_template(folders["TEMPLATES_FOLDER"])

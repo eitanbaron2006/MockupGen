@@ -45,10 +45,24 @@ that appear together in one mockup (wall-art sets, multi-device scenes).
 ```
 
 - **`items`** (required, 1–20): each item produces **one mockup**.
-  - `artworks` — one file field name, or a list of them (max 12). A list means
-    the images form a **set** rendered together into one multi-frame template
-    (each detected frame/screen gets the next artwork in order; extra frames
-    repeat the list).
+  - `artworks` — one file field name, or a list (max 12). A list means the
+    images form a **set** rendered together into one multi-frame template.
+    Each entry is either a plain field name, or an object pinning the artwork
+    to a specific numbered frame:
+
+    ```json
+    "artworks": [
+      { "file": "left",  "frame": 2 },
+      { "file": "right", "frame": 1 },
+      "middle"
+    ]
+    ```
+
+    Frame numbers come from `GET /api/mockups/templates/<template_id>` (see
+    below). Artworks without an explicit `frame` are auto-placed on the
+    remaining frames with the **closest aspect ratio**; frames still left
+    over repeat the artwork list. Assigning the same frame twice or a frame
+    number the template does not have is an error.
   - `template_id` — manual template selection. Omit for automatic selection.
   - `selection` — hints for automatic selection (all optional):
     - `product_type` — hard filter on the template's product type/category.
@@ -101,6 +115,35 @@ spec. Item failures never abort sibling items.
   ]
 }
 ```
+
+Successful set items also report `frame_assignment` — the file field name
+rendered into each frame, in frame order (1, 2, 3, …).
+
+## Template frames endpoint
+
+`GET /api/mockups/templates/<template_id>` returns the template's numbered
+artwork frames so a client can show users a frame picker (e.g. draw "1",
+"2", "3" badges over the template preview):
+
+```json
+{
+  "template_id": "green_set_002",
+  "name": "Wall art set of 3",
+  "product_type": "wall-art-set",
+  "orientation": "landscape",
+  "canvas_width": 40,
+  "canvas_height": 16,
+  "preview_url": "/templates/green_set_002/preview.png",
+  "frames": [
+    { "frame": 1, "x": 4,  "y": 4, "width": 8, "height": 8, "ratio": 1.0, "orientation": "square" },
+    { "frame": 2, "x": 16, "y": 4, "width": 8, "height": 8, "ratio": 1.0, "orientation": "square" },
+    { "frame": 3, "x": 28, "y": 4, "width": 8, "height": 8, "ratio": 1.0, "orientation": "square" }
+  ]
+}
+```
+
+Frames are numbered in canonical order — top-to-bottom, then left-to-right —
+matching exactly where the renderer places each artwork.
 
 ## Single render endpoint
 

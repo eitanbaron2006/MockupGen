@@ -56,24 +56,73 @@ def _area_ratio(area: Any) -> float | None:
     return width / height
 
 
-def template_frame_ratios(manifest: dict[str, Any]) -> list[float]:
-    """Aspect ratio of every artwork slot the template offers.
+def _ratio_orientation(ratio: float) -> str:
+    if ratio > 1.15:
+        return "landscape"
+    if ratio < 0.85:
+        return "portrait"
+    return "square"
+
+
+def template_frames(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """Numbered artwork slots in canonical order (top-to-bottom, left-to-right).
 
     Multi-frame (green screen) templates expose one slot per detected region;
-    classic templates have a single slot defined by their artwork area.
+    classic templates have a single slot defined by their artwork area. The
+    ordering matches the renderer's region ordering, so frame numbers shown to
+    users map exactly onto where each artwork lands.
     """
     raw = manifest.get("raw_artwork_area")
-    ratios: list[float] = []
-    if isinstance(raw, dict):
-        for region in raw.get("regions") or []:
+    regions = raw.get("regions") if isinstance(raw, dict) else None
+    slots: list[dict[str, Any]] = []
+    if isinstance(regions, list):
+        usable = []
+        for region in regions:
+            if not isinstance(region, dict):
+                continue
             ratio = _area_ratio(region)
-            if ratio is not None:
-                ratios.append(ratio)
-    if not ratios:
-        ratio = _area_ratio(manifest.get("artwork_area"))
-        if ratio is not None:
-            ratios.append(ratio)
-    return ratios
+            if ratio is None:
+                continue
+            usable.append((region, ratio))
+        usable.sort(
+            key=lambda entry: (
+                round(float(entry[0].get("y", 0)) / 25),
+                float(entry[0].get("x", 0)),
+            )
+        )
+        for region, ratio in usable:
+            slots.append(
+                {
+                    "x": int(region.get("x", 0)),
+                    "y": int(region.get("y", 0)),
+                    "width": int(region.get("width", 0)),
+                    "height": int(region.get("height", 0)),
+                    "ratio": round(ratio, 4),
+                    "orientation": _ratio_orientation(ratio),
+                }
+            )
+    if not slots:
+        area = manifest.get("artwork_area")
+        ratio = _area_ratio(area)
+        if ratio is not None and isinstance(area, dict):
+            slots.append(
+                {
+                    "x": int(area.get("x", 0)),
+                    "y": int(area.get("y", 0)),
+                    "width": int(area.get("width", 0)),
+                    "height": int(area.get("height", 0)),
+                    "ratio": round(ratio, 4),
+                    "orientation": _ratio_orientation(ratio),
+                }
+            )
+    for index, slot in enumerate(slots):
+        slot["frame"] = index + 1
+    return slots
+
+
+def template_frame_ratios(manifest: dict[str, Any]) -> list[float]:
+    """Aspect ratio of every artwork slot the template offers."""
+    return [slot["ratio"] for slot in template_frames(manifest)]
 
 
 def _ratio_distance(a: float, b: float) -> float:

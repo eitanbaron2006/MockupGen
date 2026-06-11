@@ -13,6 +13,7 @@ artworks' aspect ratios and the set size. Failures are isolated per item.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -23,9 +24,14 @@ from services.simple_mockup_service import (
     InvalidTemplateError,
     RenderValidationError,
     TemplateNotFoundError,
+    load_manifest,
     render_simple_mockup,
 )
-from services.template_selection_service import SelectionCriteria, select_best_template
+from services.template_selection_service import (
+    SelectionCriteria,
+    select_best_template,
+    template_frames,
+)
 
 
 MAX_ITEMS_PER_REQUEST = 20
@@ -44,19 +50,119 @@ def _ensure_dict(value: Any, label: str) -> dict:
     return value
 
 
-def _artwork_keys(item: dict, item_id: str) -> list[str]:
+def _artwork_specs(item: dict, item_id: str) -> list[dict]:
+    """Normalize 'artworks' entries to {'file': str, 'frame': int | None}.
+
+    Each entry is either a file field name, or an object that optionally pins
+    the artwork to a numbered template frame: {"file": "left", "frame": 2}.
+    """
     raw = item.get("artworks", item.get("artwork"))
-    if isinstance(raw, str):
+    if isinstance(raw, (str, dict)):
         raw = [raw]
-    if not isinstance(raw, list) or not raw or not all(isinstance(key, str) and key for key in raw):
+    if not isinstance(raw, list) or not raw:
         raise RequestValidationError(
-            f"Item '{item_id}': 'artworks' must be a file field name or a non-empty list of them"
+            f"Item '{item_id}': 'artworks' must be a file field name or a non-empty list"
         )
     if len(raw) > MAX_ARTWORKS_PER_ITEM:
         raise RequestValidationError(
             f"Item '{item_id}': at most {MAX_ARTWORKS_PER_ITEM} artworks per item"
         )
-    return raw
+    specs: list[dict] = []
+    seen_frames: set[int] = set()
+    for entry in raw:
+        if isinstance(entry, str) and entry:
+            specs.append({"file": entry, "frame": None})
+            continue
+        if isinstance(entry, dict):
+            file_key = entry.get("file")
+            frame = entry.get("frame")
+            if isinstance(file_key, str) and file_key:
+                if frame is not None:
+                    try:
+                        frame = int(frame)
+                    except (TypeError, ValueError):
+                        raise RequestValidationError(
+                            f"Item '{item_id}': 'frame' must be a positive integer"
+                        )
+                    if frame < 1:
+                        raise RequestValidationError(
+                            f"Item '{item_id}': 'frame' must be a positive integer"
+                        )
+                    if frame in seen_frames:
+                        raise RequestValidationError(
+                            f"Item '{item_id}': frame {frame} is assigned more than once"
+                        )
+                    seen_frames.add(frame)
+                specs.append({"file": file_key, "frame": frame})
+                continue
+        raise RequestValidationError(
+            f"Item '{item_id}': each artwork must be a file field name or "
+            "an object like {\"file\": \"name\", \"frame\": 1}"
+        )
+    return specs
+
+
+def _align_artworks_to_frames(
+    specs: list[dict],
+    paths: list[Path],
+    frames: list[dict],
+    item_id: str,
+) -> list[Path]:
+    """Order the artworks so index i lands in template frame i+1.
+
+    Explicit 'frame' assignments win; the rest are auto-placed on the open
+    frames with the closest aspect ratio; frames still left over repeat the
+    artwork list (matching the renderer's fill behavior).
+    """
+    frame_count = len(frames)
+    explicit = [spec for spec in specs if spec["frame"] is not None]
+    for spec in explicit:
+        if spec["frame"] > max(1, frame_count):
+            raise RenderValidationError(
+                f"Item '{item_id}': frame {spec['frame']} does not exist "
+                f"(template has {max(1, frame_count)} frame(s))"
+            )
+    if frame_count <= 1 or len(paths) <= 1:
+        return paths
+    if len(paths) > frame_count:
+        raise RenderValidationError(
+            f"Item '{item_id}': {len(paths)} artworks but the template has only {frame_count} frames"
+        )
+
+    slots: list[Path | None] = [None] * frame_count
+    unassigned: list[Path] = []
+    for spec, path in zip(specs, paths):
+        if spec["frame"] is not None:
+            slots[spec["frame"] - 1] = path
+        else:
+            unassigned.append(path)
+
+    open_frames = [index for index in range(frame_count) if slots[index] is None]
+    if unassigned:
+        candidates = []
+        for path_index, path in enumerate(unassigned):
+            artwork_ratio = _artwork_ratio(path)
+            for frame_index in open_frames:
+                frame_ratio = float(frames[frame_index].get("ratio") or 1.0)
+                distance = abs(math.log(max(artwork_ratio, 0.01) / max(frame_ratio, 0.01)))
+                candidates.append((distance, path_index, frame_index))
+        candidates.sort()
+        used_paths: set[int] = set()
+        used_frames: set[int] = set()
+        for _, path_index, frame_index in candidates:
+            if path_index in used_paths or frame_index in used_frames:
+                continue
+            slots[frame_index] = unassigned[path_index]
+            used_paths.add(path_index)
+            used_frames.add(frame_index)
+
+    # Any frames still empty repeat the provided artworks in order.
+    cycle_index = 0
+    for index in range(frame_count):
+        if slots[index] is None:
+            slots[index] = paths[cycle_index % len(paths)]
+            cycle_index += 1
+    return [path for path in slots if path is not None]
 
 
 def _merge_output(defaults: dict, item: dict) -> tuple[str, int | None]:
@@ -129,7 +235,8 @@ def execute_batch_render(
         try:
             item = _ensure_dict(raw_item, f"items[{index}]")
             item_id = str(item.get("id") or f"item_{index + 1}")
-            artwork_keys = _artwork_keys(item, item_id)
+            artwork_specs = _artwork_specs(item, item_id)
+            artwork_keys = [spec["file"] for spec in artwork_specs]
 
             artwork_paths: list[Path] = []
             for key in artwork_keys:
@@ -167,10 +274,19 @@ def execute_batch_render(
             if not fit_mode and record.get("fit_mode"):
                 fit_mode = record.get("fit_mode")
 
+            # Map artworks onto the template's numbered frames: explicit
+            # 'frame' picks win, the rest auto-place by aspect-ratio match.
+            _, manifest = load_manifest(templates_folder, template_id)
+            raw_artwork_area = record.get("raw_artwork_area") or manifest.get("raw_artwork_area")
+            frames = template_frames({**manifest, "raw_artwork_area": raw_artwork_area})
+            ordered_paths = _align_artworks_to_frames(
+                artwork_specs, artwork_paths, frames, item_id
+            )
+
             result = render_simple_mockup(
                 template_id=template_id,
-                artwork_path=artwork_paths[0],
-                artwork_paths=artwork_paths,
+                artwork_path=ordered_paths[0],
+                artwork_paths=ordered_paths,
                 output_format=output_format,
                 templates_folder=templates_folder,
                 output_folder=output_folder,
@@ -179,8 +295,14 @@ def execute_batch_render(
                 quality=quality,
                 effects=record.get("effects"),
                 artwork_area=record.get("artwork_area"),
-                raw_artwork_area=record.get("raw_artwork_area"),
+                raw_artwork_area=raw_artwork_area,
                 mask_name=record.get("mask_name"),
+            )
+            path_to_key = {path: key for key, path in stored_paths.items()}
+            frame_assignment = (
+                [path_to_key.get(path) for path in ordered_paths]
+                if len(artwork_paths) > 1
+                else artwork_keys
             )
             results.append(
                 {
@@ -191,6 +313,7 @@ def execute_batch_render(
                     "width": result.width,
                     "height": result.height,
                     "artworks": artwork_keys,
+                    "frame_assignment": frame_assignment,
                     "selection": selection_meta,
                 }
             )

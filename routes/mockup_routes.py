@@ -80,6 +80,44 @@ def get_templates():
     return jsonify(templates)
 
 
+@mockup_routes.get("/api/mockups/templates/<template_id>")
+def get_template_detail(template_id: str):
+    """Template details including numbered artwork frames, so clients can let
+    users assign each image of a set to a specific frame."""
+    from services.template_selection_service import template_frames
+
+    try:
+        _, manifest = load_manifest(
+            Path(current_app.config["TEMPLATES_FOLDER"]), template_id
+        )
+    except TemplateNotFoundError:
+        return error_response("Template not found", 404)
+    except InvalidTemplateError as error:
+        return error_response(str(error), 500)
+
+    raw_artwork_area = manifest.get("raw_artwork_area")
+    catalog = current_app.extensions.get("catalog_service")
+    if catalog:
+        record = catalog.get_template(template_id)
+        if record and record.get("raw_artwork_area"):
+            raw_artwork_area = record["raw_artwork_area"]
+
+    preview_name = manifest.get("preview", "preview.png")
+    return jsonify(
+        {
+            "template_id": manifest["template_id"],
+            "name": manifest.get("name"),
+            "product_type": manifest.get("product_type"),
+            "orientation": manifest.get("orientation"),
+            "canvas_width": manifest["canvas_width"],
+            "canvas_height": manifest["canvas_height"],
+            "fit_mode": manifest.get("fit_mode"),
+            "preview_url": f"/templates/{template_id}/{preview_name}",
+            "frames": template_frames({**manifest, "raw_artwork_area": raw_artwork_area}),
+        }
+    )
+
+
 @mockup_routes.get("/api/mockups/categories")
 def get_categories():
     catalog = current_app.extensions.get("catalog_service")
