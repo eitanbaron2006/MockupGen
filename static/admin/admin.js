@@ -4625,16 +4625,41 @@
   };
 
   // Lightbox Preview Handlers
-  function showLightbox(src, title) {
-    const overlay = $("lightboxOverlay");
+  // The lightbox holds a gallery of the completed results currently on screen,
+  // so the user can browse between them with arrows without closing it.
+  const lightboxState = { items: [], index: 0 };
+
+  function renderLightboxItem() {
     const img = $("lightboxImage");
     const caption = $("lightboxCaption");
-    if (!overlay || !img) return;
-    
-    img.src = src;
-    if (caption) {
-      caption.textContent = title || "Mockup Preview";
+    const counter = $("lightboxCounter");
+    const item = lightboxState.items[lightboxState.index];
+    if (!img || !item) return;
+    img.src = item.src;
+    if (caption) caption.textContent = item.title || "Mockup Preview";
+    const hasGallery = lightboxState.items.length > 1;
+    if (counter) {
+      counter.classList.toggle("hidden", !hasGallery);
+      counter.textContent = hasGallery ? `${lightboxState.index + 1} / ${lightboxState.items.length}` : "";
     }
+    if ($("lightboxPrevBtn")) $("lightboxPrevBtn").classList.toggle("hidden", !hasGallery);
+    if ($("lightboxNextBtn")) $("lightboxNextBtn").classList.toggle("hidden", !hasGallery);
+  }
+
+  function stepLightbox(delta) {
+    const count = lightboxState.items.length;
+    if (count < 2) return;
+    lightboxState.index = (lightboxState.index + delta + count) % count;
+    renderLightboxItem();
+  }
+
+  function showLightbox(src, title, items) {
+    const overlay = $("lightboxOverlay");
+    if (!overlay || !$("lightboxImage")) return;
+    lightboxState.items = (items && items.length ? items : [{ src, title }]);
+    const startIndex = lightboxState.items.findIndex((item) => item.src === src);
+    lightboxState.index = startIndex === -1 ? 0 : startIndex;
+    renderLightboxItem();
     overlay.classList.remove("hidden");
   }
 
@@ -4645,8 +4670,44 @@
     }
   }
 
+  // All currently visible completed results, in display order (batch grid
+  // cards that succeeded, or the single result preview).
+  function collectLightboxItems() {
+    const items = [];
+    document.querySelectorAll("#testBatchResults .batch-result-card.success .batch-card-img:not(.hidden)").forEach((img) => {
+      if (!img.src) return;
+      const card = img.closest(".batch-result-card");
+      items.push({
+        src: img.src,
+        title: card?.querySelector(".batch-card-title")?.textContent || "Generated Mockup"
+      });
+    });
+    const singleImg = $("testResultImage");
+    const singleVisible = singleImg && singleImg.src && !$("testResultWrapper").classList.contains("hidden");
+    if (singleVisible) {
+      const templateSelect = $("testTemplateSelect");
+      items.push({
+        src: singleImg.src,
+        title: templateSelect ? templateSelect.options[templateSelect.selectedIndex]?.text : "Generated Mockup"
+      });
+    }
+    return items;
+  }
+
   if ($("closeLightboxBtn")) {
     $("closeLightboxBtn").onclick = hideLightbox;
+  }
+  if ($("lightboxPrevBtn")) {
+    $("lightboxPrevBtn").onclick = (e) => {
+      e.stopPropagation();
+      stepLightbox(-1);
+    };
+  }
+  if ($("lightboxNextBtn")) {
+    $("lightboxNextBtn").onclick = (e) => {
+      e.stopPropagation();
+      stepLightbox(1);
+    };
   }
   if ($("lightboxOverlay")) {
     $("lightboxOverlay").onclick = (e) => {
@@ -4655,6 +4716,20 @@
       }
     };
   }
+  document.addEventListener("keydown", (e) => {
+    const overlay = $("lightboxOverlay");
+    if (!overlay || overlay.classList.contains("hidden")) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      stepLightbox(-1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      stepLightbox(1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      hideLightbox();
+    }
+  });
 
   // Hook single preview click
   if ($("testResultImage")) {
@@ -4662,7 +4737,7 @@
       const src = $("testResultImage").src;
       const templateSelect = $("testTemplateSelect");
       const title = templateSelect ? templateSelect.options[templateSelect.selectedIndex]?.text : "Generated Mockup";
-      showLightbox(src, title);
+      showLightbox(src, title, collectLightboxItems());
     };
   }
 
@@ -4674,7 +4749,7 @@
         const src = e.target.src;
         const card = e.target.closest(".batch-result-card");
         const title = card ? card.querySelector(".batch-card-title")?.textContent : "Generated Mockup";
-        showLightbox(src, title);
+        showLightbox(src, title, collectLightboxItems());
       }
     });
   }
