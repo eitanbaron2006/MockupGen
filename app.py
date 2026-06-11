@@ -34,7 +34,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     cors_origins = app.config.get("CORS_ORIGINS")
     if cors_origins:
         origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
-        CORS(app, resources={r"/api/*": {"origins": origins}})
+        # Browser clients fetch rendered outputs and template previews
+        # cross-origin too, so CORS must cover the file routes as well.
+        CORS(app, resources={
+            r"/api/*": {"origins": origins},
+            r"/outputs/*": {"origins": origins},
+            r"/templates/*": {"origins": origins},
+        })
 
     app.register_blueprint(mockup_routes)
     app.register_blueprint(admin_routes)
