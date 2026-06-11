@@ -209,7 +209,10 @@
     files: [],
     activeIndex: -1,
     templates: [],
-    selectedTemplates: new Set()
+    selectedTemplates: new Set(),
+    // Completed renders keyed by artwork+template+engine settings, so
+    // re-generating only renders what was not produced yet.
+    renderCache: new Map()
   };
   const $ = (id) => document.getElementById(id);
   const DEFAULT_EFFECTS = {
@@ -4750,9 +4753,9 @@
 
     renderTestGallery();
 
-    if (testState.activeIndex === -1) {
-      selectTestImage(0);
-    }
+    // A freshly added artwork becomes the active one, which also resets any
+    // previous results so the screen behaves like a first-time generation.
+    selectTestImage(testState.files.length - newFiles.length);
   }
 
   function renderTestGallery() {
@@ -4782,8 +4785,12 @@
   }
 
   function deleteTestImage(index) {
-    URL.revokeObjectURL(testState.files[index].url);
+    const removedUrl = testState.files[index].url;
+    URL.revokeObjectURL(removedUrl);
     testState.files.splice(index, 1);
+    for (const key of Array.from(testState.renderCache.keys())) {
+      if (key.startsWith(`${removedUrl}|`)) testState.renderCache.delete(key);
+    }
 
     if (testState.files.length === 0) {
       testState.activeIndex = -1;
@@ -4977,6 +4984,11 @@
     }
   }
 
+  function testRenderCacheKey(activeFile, templateId, renderMode, aiModel, fitMode) {
+    const variant = renderMode === "ai" ? (aiModel || "") : (fitMode || "");
+    return `${activeFile.url}|${templateId}|${renderMode}|${variant}`;
+  }
+
   $("testGenerateButton").onclick = async () => {
     if (testState.activeIndex === -1 || testState.selectedTemplates.size === 0) return;
 
@@ -4989,6 +5001,24 @@
     // Single Mockup Generation Workflow
     if (selectedIds.length === 1) {
       const templateId = selectedIds[0];
+
+      // Stale batch results from a previous run must not linger below the
+      // single-result area while (or after) generating.
+      $("testBatchResults").classList.add("hidden");
+      $("testBatchResults").innerHTML = "";
+
+      const cacheKey = testRenderCacheKey(activeFile, templateId, renderMode, aiModel, fitMode);
+      const cachedUrl = testState.renderCache.get(cacheKey);
+      if (cachedUrl) {
+        $("testResultImage").src = cachedUrl;
+        $("testResultDownload").href = cachedUrl;
+        $("testResultLoading").classList.add("hidden");
+        $("testResultPlaceholder").classList.add("hidden");
+        $("testResultWrapper").classList.remove("hidden");
+        $("testResultActions").classList.remove("hidden");
+        return;
+      }
+
       $("testGenerateButton").disabled = true;
       $("testGenerateButton").textContent = "Generating...";
 
@@ -5025,6 +5055,7 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Generation failed");
 
+        testState.renderCache.set(cacheKey, data.output_url);
         $("testResultImage").src = data.output_url;
         $("testResultDownload").href = data.output_url;
 
@@ -5082,6 +5113,40 @@
           </div>
         `;
       }).join('');
+
+      const markBatchCardReady = (templateId, outputUrl) => {
+        const cardElement = $(`batch-card-${templateId}`);
+        if (!cardElement) return;
+        cardElement.classList.add("success");
+        const statusElement = $(`batch-status-${templateId}`);
+        if (statusElement) statusElement.textContent = "Ready";
+        const spinnerElement = $(`batch-spinner-${templateId}`);
+        if (spinnerElement) spinnerElement.remove();
+        const imgElement = $(`batch-img-${templateId}`);
+        if (imgElement) {
+          imgElement.src = outputUrl;
+          imgElement.classList.remove("hidden");
+        }
+        const actionsElement = $(`batch-actions-${templateId}`);
+        if (actionsElement) {
+          actionsElement.innerHTML = `<a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="${outputUrl}">Download</a>`;
+          actionsElement.classList.remove("hidden");
+        }
+      };
+
+      // Reuse results that were already generated for this artwork+settings;
+      // only the newly added/missing mockups are actually rendered.
+      const pendingIds = [];
+      selectedIds.forEach(templateId => {
+        const cachedUrl = testState.renderCache.get(
+          testRenderCacheKey(activeFile, templateId, renderMode, aiModel, fitMode)
+        );
+        if (cachedUrl) {
+          markBatchCardReady(templateId, cachedUrl);
+        } else {
+          pendingIds.push(templateId);
+        }
+      });
 
       // Helper function to render a single batch mockup item (with retry support)
       const renderBatchItem = async (templateId, retryCount = 0) => {
@@ -5166,6 +5231,10 @@
             }
 
             // Render success details
+            testState.renderCache.set(
+              testRenderCacheKey(activeFile, templateId, renderMode, aiModel, fitMode),
+              data.output_url
+            );
             cardElement.classList.add("success");
             statusElement.textContent = "Ready";
             if (spinnerElement) spinnerElement.remove();
@@ -5236,12 +5305,12 @@
 
       if (renderMode === "ai") {
         // AI Mode: Process sequentially to completely avoid concurrent rate limits on Vertex AI (QPM limits)
-        for (const templateId of selectedIds) {
+        for (const templateId of pendingIds) {
           await renderBatchItem(templateId);
         }
       } else {
         // Simple Mode: Process concurrently in parallel for maximum local CPU speed
-        const promises = selectedIds.map(templateId => renderBatchItem(templateId));
+        const promises = pendingIds.map(templateId => renderBatchItem(templateId));
         await Promise.allSettled(promises);
       }
 
