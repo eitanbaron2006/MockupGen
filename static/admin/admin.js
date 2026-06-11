@@ -856,6 +856,7 @@
       null;
     renderQueue();
     renderEditor();
+    prefetchGreenFrameRegularRenders();
   }
 
   function filteredTemplates() {
@@ -1657,6 +1658,7 @@
         } else if (state.isPreviewingMockup) {
           refreshPreviewMockup();
         }
+        prefetchGreenFrameRegularRenders();
       };
       img.src = dataUrl;
     } catch (error) {
@@ -1820,7 +1822,18 @@
     if (isGreenFrameTemplate(template)) {
       selectionSvg.classList.add("hidden");
       if (state.selectionStyle.overlayImage) {
-        renderGreenFrameArtworkOverlay(template, image);
+        const rendered = $("selectionRenderedMockup");
+        const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
+        // The CSS overlay is only an interim approximation: show it while
+        // dragging (live feedback) or until the lightweight render arrives.
+        if (state.greenFrameDrag || !hasVisibleRender) {
+          renderGreenFrameArtworkOverlay(template, image);
+        } else {
+          $("selectionImageOverlay").classList.add("hidden");
+        }
+        if (!state.greenFrameDrag) {
+          ensureGreenFrameRegularRender(template);
+        }
       } else {
         $("selectionImageOverlay").classList.add("hidden");
         if ($("selectionRenderedMockup")) {
@@ -3310,20 +3323,23 @@
   let refreshPreviewTimeout = null;
   let greenFramePreviewTimeout = null;
 
-  async function renderMockupPreviewImage() {
-    if (!state.selected) return null;
-    
+  async function renderMockupPreviewImage(options = {}) {
+    const realism = options.realism !== false;
+    const template = options.template || state.selected;
+    if (!template) return null;
+
     // Disable download interactions temporarily to show rendering state
-    if ($("downloadMockupButton")) {
+    // (lightweight non-realism renders must not touch the download links)
+    if (realism && $("downloadMockupButton")) {
       $("downloadMockupButton").style.pointerEvents = "none";
       $("downloadMockupButton").style.opacity = "0.5";
     }
-    if ($("toolbarDownloadButton")) {
+    if (realism && $("toolbarDownloadButton")) {
       $("toolbarDownloadButton").style.pointerEvents = "none";
       $("toolbarDownloadButton").style.opacity = "0.5";
       $("toolbarDownloadButton").setAttribute("title", "Generating high-fidelity download...");
     }
-    
+
     try {
       const overlayImage = state.selectionStyle.overlayImage;
       if (!overlayImage) return;
@@ -3331,18 +3347,18 @@
       const file = dataURLtoFile(overlayImage, state.selectionStyle.overlayImageName || "artwork.png");
       const formData = new FormData();
       formData.append("mode", "simple");
-      formData.append("template_id", state.selected.template_id);
+      formData.append("template_id", template.template_id);
       formData.append("artwork", file);
-      formData.append("realism", "true");
-      
-      let resolvedFitMode = state.selected.fit_mode;
+      formData.append("realism", realism ? "true" : "false");
+
+      let resolvedFitMode = template.fit_mode;
       if (resolvedFitMode === "auto") {
         resolvedFitMode = resolveFitMode(
           "auto",
           state.selectionStyle.overlayImageWidth,
           state.selectionStyle.overlayImageHeight,
-          state.selected.artwork_area.width,
-          state.selected.artwork_area.height
+          template.artwork_area.width,
+          template.artwork_area.height
         );
       }
       formData.append("fit_mode", resolvedFitMode);
@@ -3356,12 +3372,12 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Rendering failed");
 
-      if ($("downloadMockupButton")) {
+      if (realism && $("downloadMockupButton")) {
         $("downloadMockupButton").href = data.output_url;
         $("downloadMockupButton").style.pointerEvents = "auto";
         $("downloadMockupButton").style.opacity = "1";
       }
-      if ($("toolbarDownloadButton")) {
+      if (realism && $("toolbarDownloadButton")) {
         $("toolbarDownloadButton").href = data.output_url;
         $("toolbarDownloadButton").style.pointerEvents = "auto";
         $("toolbarDownloadButton").style.opacity = "1";
@@ -3396,6 +3412,107 @@
         $("selectionRenderedMockup").classList.remove("hidden");
       }
       $("selectionImageOverlay").classList.add("hidden");
+      // This high-fidelity render also satisfies the lightweight regular-mode
+      // render, so cache it and mark its key as fulfilled.
+      if (state.selected) {
+        greenRegularRenderKey = greenRegularRenderCacheKey(state.selected);
+        greenRegularRenderUrlCache.set(greenRegularRenderKey, outputUrl);
+      }
+    }
+  }
+
+  // --- Lightweight regular-mode render for green-frame templates ---
+  // Browsing green templates uses the same server render as Preview Mode for
+  // exact placement/masking, but with realism=false so the effects pipeline
+  // is skipped and the response stays fast. Results are cached per
+  // template+artwork+settings, and all green templates in the queue are
+  // prefetched in the background so switching between them is instant.
+  let greenRegularRenderKey = "";
+  let greenRegularRenderBusy = false;
+  const greenRegularRenderUrlCache = new Map();
+  let greenPrefetchToken = 0;
+  let greenPrefetchRunning = false;
+
+  function greenRegularRenderCacheKey(template) {
+    const style = state.selectionStyle;
+    const green = (template.effects && template.effects.green_frame_mockups) || {};
+    return [
+      template.template_id,
+      template.fit_mode || "",
+      style.overlayImageName || "",
+      style.overlayImage ? style.overlayImage.length : 0,
+      JSON.stringify(green)
+    ].join("|");
+  }
+
+  function showGreenRegularRender(outputUrl) {
+    const rendered = $("selectionRenderedMockup");
+    if (!rendered) return;
+    rendered.src = outputUrl;
+    rendered.classList.remove("hidden");
+    $("selectionImageOverlay").classList.add("hidden");
+  }
+
+  async function ensureGreenFrameRegularRender(template) {
+    if (!isGreenFrameTemplate(template) || state.isPreviewingMockup || state.greenFrameDrag) return;
+    if (!state.selectionStyle.overlayImage) return;
+    const rendered = $("selectionRenderedMockup");
+    const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
+    const key = greenRegularRenderCacheKey(template);
+    const cachedUrl = greenRegularRenderUrlCache.get(key);
+    if (cachedUrl) {
+      if (key !== greenRegularRenderKey || !hasVisibleRender) {
+        greenRegularRenderKey = key;
+        showGreenRegularRender(cachedUrl);
+      }
+      prefetchGreenFrameRegularRenders();
+      return;
+    }
+    if (greenRegularRenderBusy || (key === greenRegularRenderKey && hasVisibleRender)) return;
+    greenRegularRenderBusy = true;
+    let outputUrl = null;
+    try {
+      outputUrl = await renderMockupPreviewImage({ realism: false });
+    } finally {
+      greenRegularRenderBusy = false;
+    }
+    if (outputUrl) greenRegularRenderUrlCache.set(key, outputUrl);
+    if (!state.selected || state.selected.template_id !== template.template_id) return;
+    if (state.isPreviewingMockup || !isGreenFrameTemplate()) return;
+    const desiredKey = greenRegularRenderCacheKey(state.selected);
+    if (desiredKey !== key) {
+      // Settings or artwork changed while rendering; fetch the fresh state.
+      ensureGreenFrameRegularRender(state.selected);
+      return;
+    }
+    greenRegularRenderKey = key;
+    if (outputUrl) showGreenRegularRender(outputUrl);
+    prefetchGreenFrameRegularRenders();
+  }
+
+  async function prefetchGreenFrameRegularRenders() {
+    if (greenPrefetchRunning || !state.selectionStyle.overlayImage) return;
+    const token = ++greenPrefetchToken;
+    const queue = (state.templates || []).filter(
+      (template) => isGreenFrameTemplate(template)
+        && !greenRegularRenderUrlCache.has(greenRegularRenderCacheKey(template))
+    );
+    if (!queue.length) return;
+    greenPrefetchRunning = true;
+    try {
+      for (const template of queue) {
+        if (token !== greenPrefetchToken || !state.selectionStyle.overlayImage) return;
+        const key = greenRegularRenderCacheKey(template);
+        if (greenRegularRenderUrlCache.has(key)) continue;
+        const outputUrl = await renderMockupPreviewImage({ realism: false, template });
+        if (!outputUrl) continue;
+        greenRegularRenderUrlCache.set(key, outputUrl);
+        // Warm the browser image cache so the swap is instantaneous on click.
+        const img = new Image();
+        img.src = outputUrl;
+      }
+    } finally {
+      greenPrefetchRunning = false;
     }
   }
 

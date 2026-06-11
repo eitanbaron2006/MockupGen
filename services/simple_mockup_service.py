@@ -3,6 +3,8 @@ import math
 import random
 import base64
 import re
+import threading
+from collections import OrderedDict
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -458,12 +460,56 @@ def _apply_region_inner_shadow(layer: Image.Image, alpha: Image.Image, options: 
     return Image.alpha_composite(layer, shadow_layer)
 
 
+# Green-frame detection is independent of the artwork, so cache it per template:
+# repeated previews/renders of the same template skip the expensive mask build.
+_GREEN_DETECTION_CACHE: OrderedDict[tuple, Any] = OrderedDict()
+_GREEN_DETECTION_LOCK = threading.Lock()
+_GREEN_DETECTION_CACHE_LIMIT = 12
+
+
+def _file_stamp(path: Path) -> tuple[str, int, int]:
+    try:
+        stat = path.stat()
+        return (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return (str(path), 0, 0)
+
+
+def _green_detection_cache_key(
+    template_folder: Path,
+    mask_name: str,
+    background_name: str,
+    raw_artwork_area: dict | None,
+    effects: dict | None,
+    realism: bool,
+    settings,
+) -> tuple:
+    non_green_effects = (
+        {key: value for key, value in effects.items() if key != "green_frame_mockups"}
+        if isinstance(effects, dict)
+        else None
+    )
+    return (
+        _file_stamp(template_folder / background_name),
+        _file_stamp(template_folder / mask_name),
+        json.dumps(raw_artwork_area, sort_keys=True, default=str),
+        json.dumps(non_green_effects, sort_keys=True, default=str),
+        realism,
+        settings.tolerance,
+        settings.min_area,
+        settings.edge_expand,
+        settings.feather_radius,
+        settings.mask_build_quality,
+    )
+
+
 def _render_green_frame_mockup(
     *,
     background: Image.Image,
     artwork: Image.Image,
     template_folder: Path,
     mask_name: str,
+    background_name: str,
     canvas_size: tuple[int, int],
     area: dict[str, Any],
     raw_artwork_area: dict | None,
@@ -472,17 +518,29 @@ def _render_green_frame_mockup(
     effects: dict | None,
 ) -> Image.Image:
     settings = parse_green_frame_settings(effects, fit_mode)
-    detection = detect_green_frames(background, settings)
-    raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
-    raw_has_perspective = any(
-        isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
-        for region in (raw_regions or [])
+    cache_key = _green_detection_cache_key(
+        template_folder, mask_name, background_name, raw_artwork_area, effects, realism, settings
     )
-    if not detection.regions or (raw_regions and not raw_has_perspective):
-        full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
-        detection = detection_from_mask(full_mask, raw_artwork_area, settings)
-    if not detection.regions:
-        raise InvalidTemplateError("Green frame mask has no usable regions")
+    with _GREEN_DETECTION_LOCK:
+        detection = _GREEN_DETECTION_CACHE.get(cache_key)
+        if detection is not None:
+            _GREEN_DETECTION_CACHE.move_to_end(cache_key)
+    if detection is None:
+        detection = detect_green_frames(background, settings)
+        raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+        raw_has_perspective = any(
+            isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
+            for region in (raw_regions or [])
+        )
+        if not detection.regions or (raw_regions and not raw_has_perspective):
+            full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
+            detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+        if not detection.regions:
+            raise InvalidTemplateError("Green frame mask has no usable regions")
+        with _GREEN_DETECTION_LOCK:
+            _GREEN_DETECTION_CACHE[cache_key] = detection
+            while len(_GREEN_DETECTION_CACHE) > _GREEN_DETECTION_CACHE_LIMIT:
+                _GREEN_DETECTION_CACHE.popitem(last=False)
     composed = render_green_frame_mockup(background, artwork, settings, detection)
     return composed
 
@@ -1196,9 +1254,26 @@ def _apply_edge_feathering_ssaa(
     corners_present: bool = False,
 ) -> Image.Image:
     SS_FACTOR = 3
-    hr_canvas_size = (canvas_size[0] * SS_FACTOR, canvas_size[1] * SS_FACTOR)
     width, height = area["width"], area["height"]
-    
+
+    # Supersample only the artwork footprint (plus a margin for the feather blur)
+    # instead of the whole canvas: the result is identical, but transforms, blur
+    # and the LANCZOS downscale run on a far smaller surface.
+    FEATHER_PAD = 8
+    if corners_present:
+        corner_xs = [float(p["x"]) for p in area["corners"]]
+        corner_ys = [float(p["y"]) for p in area["corners"]]
+    else:
+        corner_xs = [float(area["x"]), float(area["x"] + width)]
+        corner_ys = [float(area["y"]), float(area["y"] + height)]
+    box_x0 = max(0, int(math.floor(min(corner_xs))) - FEATHER_PAD)
+    box_y0 = max(0, int(math.floor(min(corner_ys))) - FEATHER_PAD)
+    box_x1 = min(canvas_size[0], int(math.ceil(max(corner_xs))) + FEATHER_PAD)
+    box_y1 = min(canvas_size[1], int(math.ceil(max(corner_ys))) + FEATHER_PAD)
+    box_w = max(1, box_x1 - box_x0)
+    box_h = max(1, box_y1 - box_y0)
+    hr_box_size = (box_w * SS_FACTOR, box_h * SS_FACTOR)
+
     if corners_present:
         from services.image_utils import get_perspective_coefficients
         src_coords = [
@@ -1207,54 +1282,54 @@ def _apply_edge_feathering_ssaa(
             (float(width), float(height)),
             (0.0, float(height))
         ]
-        # Scale destination corner coordinates by SS_FACTOR
-        hr_dst_coords = [(float(p["x"]) * SS_FACTOR, float(p["y"]) * SS_FACTOR) for p in area["corners"]]
+        # Destination corners shifted into the bounding box and scaled by SS_FACTOR
+        hr_dst_coords = [
+            ((float(p["x"]) - box_x0) * SS_FACTOR, (float(p["y"]) - box_y0) * SS_FACTOR)
+            for p in area["corners"]
+        ]
         hr_coefficients = get_perspective_coefficients(src_coords, hr_dst_coords)
-        
+
         # Warp the artwork quad at 3x supersampled resolution (with BICUBIC for high detail)
         hr_artwork_canvas = artwork_layer.transform(
-            hr_canvas_size,
+            hr_box_size,
             Image.Transform.PERSPECTIVE,
             hr_coefficients,
             Image.Resampling.BICUBIC
         )
-        
+
         # Generate the footprint mask at 3x resolution
         mask_base = Image.new("L", (width, height), 255)
         hr_mask_canvas = mask_base.transform(
-            hr_canvas_size,
+            hr_box_size,
             Image.Transform.PERSPECTIVE,
             hr_coefficients,
             Image.Resampling.BICUBIC
         )
-        
-        # Blur the mask at 3x resolution (radius 3.6 pixels corresponds to 1.2 at 1x)
-        hr_feathered_mask = hr_mask_canvas.filter(ImageFilter.GaussianBlur(radius=3.6))
-        
-        # Multiply high-res alpha with the soft blurred quad mask
-        hr_r, hr_g, hr_b, hr_a = hr_artwork_canvas.split()
-        hr_a_feathered = ImageChops.multiply(hr_a, hr_feathered_mask)
-        hr_artwork_canvas = Image.merge("RGBA", (hr_r, hr_g, hr_b, hr_a_feathered))
-        
-        # Downscale to destination canvas size using LANCZOS (removes all sawtooth aliasing!)
-        return hr_artwork_canvas.resize(canvas_size, Image.Resampling.LANCZOS)
     else:
         # Flat placement anti-aliasing and feathering
         hr_artwork_layer = artwork_layer.resize((width * SS_FACTOR, height * SS_FACTOR), Image.Resampling.LANCZOS)
-        hr_artwork_canvas = Image.new("RGBA", hr_canvas_size, (0, 0, 0, 0))
-        hr_artwork_canvas.alpha_composite(hr_artwork_layer, dest=(area["x"] * SS_FACTOR, area["y"] * SS_FACTOR))
-        
+        hr_artwork_canvas = Image.new("RGBA", hr_box_size, (0, 0, 0, 0))
+        hr_artwork_canvas.alpha_composite(
+            hr_artwork_layer, dest=((area["x"] - box_x0) * SS_FACTOR, (area["y"] - box_y0) * SS_FACTOR)
+        )
+
         mask_base = Image.new("L", (width * SS_FACTOR, height * SS_FACTOR), 255)
-        hr_mask_canvas = Image.new("L", hr_canvas_size, 0)
-        hr_mask_canvas.paste(mask_base, (area["x"] * SS_FACTOR, area["y"] * SS_FACTOR))
-        
-        hr_feathered_mask = hr_mask_canvas.filter(ImageFilter.GaussianBlur(radius=3.6))
-        
-        hr_r, hr_g, hr_b, hr_a = hr_artwork_canvas.split()
-        hr_a_feathered = ImageChops.multiply(hr_a, hr_feathered_mask)
-        hr_artwork_canvas = Image.merge("RGBA", (hr_r, hr_g, hr_b, hr_a_feathered))
-        
-        return hr_artwork_canvas.resize(canvas_size, Image.Resampling.LANCZOS)
+        hr_mask_canvas = Image.new("L", hr_box_size, 0)
+        hr_mask_canvas.paste(mask_base, ((area["x"] - box_x0) * SS_FACTOR, (area["y"] - box_y0) * SS_FACTOR))
+
+    # Blur the mask at 3x resolution (radius 3.6 pixels corresponds to 1.2 at 1x)
+    hr_feathered_mask = hr_mask_canvas.filter(ImageFilter.GaussianBlur(radius=3.6))
+
+    # Multiply high-res alpha with the soft blurred quad mask
+    hr_r, hr_g, hr_b, hr_a = hr_artwork_canvas.split()
+    hr_a_feathered = ImageChops.multiply(hr_a, hr_feathered_mask)
+    hr_artwork_canvas = Image.merge("RGBA", (hr_r, hr_g, hr_b, hr_a_feathered))
+
+    # Downscale to the box size using LANCZOS (removes all sawtooth aliasing!)
+    box_layer = hr_artwork_canvas.resize((box_w, box_h), Image.Resampling.LANCZOS)
+    artwork_canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    artwork_canvas.paste(box_layer, (box_x0, box_y0))
+    return artwork_canvas
 
 
 def render_simple_mockup(
@@ -1328,6 +1403,7 @@ def render_simple_mockup(
             artwork=artwork,
             template_folder=template_folder,
             mask_name=mask_name,
+            background_name=manifest["background"],
             canvas_size=canvas_size,
             area=area,
             raw_artwork_area=raw_artwork_area,
@@ -1345,7 +1421,7 @@ def render_simple_mockup(
         output_folder.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
-        composed.save(output_folder / output_name, format="PNG")
+        composed.save(output_folder / output_name, format="PNG", compress_level=2)
         return RenderResult(
             mode="simple",
             template_id=template_id,
@@ -1412,7 +1488,7 @@ def render_simple_mockup(
     output_folder.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
-    composed.save(output_folder / output_name, format="PNG")
+    composed.save(output_folder / output_name, format="PNG", compress_level=2)
     return RenderResult(
         mode="simple",
         template_id=template_id,

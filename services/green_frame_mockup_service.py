@@ -183,24 +183,32 @@ def _sample_float(field: np.ndarray, x: float, y: float) -> float:
     return float(_sample_grid(field, np.asarray([x], dtype=np.float32), np.asarray([y], dtype=np.float32))[0])
 
 
+def _bilinear_upsample(field: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    h, w = field.shape
+    fx = np.clip(xs, 0.0, w - 1.001)
+    fy = np.clip(ys, 0.0, h - 1.001)
+    x0 = np.floor(fx).astype(np.int32)
+    y0 = np.floor(fy).astype(np.int32)
+    x1 = np.minimum(w - 1, x0 + 1)
+    y1 = np.minimum(h - 1, y0 + 1)
+    dx = (fx - x0).astype(np.float32)[None, :]
+    dy = (fy - y0).astype(np.float32)[:, None]
+    f = field.astype(np.float32)
+    top = f[y0[:, None], x0[None, :]] * (1.0 - dx) + f[y0[:, None], x1[None, :]] * dx
+    bottom = f[y1[:, None], x0[None, :]] * (1.0 - dx) + f[y1[:, None], x1[None, :]] * dx
+    return top * (1.0 - dy) + bottom * dy
+
+
 def _precision_soft_mask(region_mask: np.ndarray, alpha_mask: np.ndarray, settings: GreenFrameSettings) -> np.ndarray:
     q = int(_clamp(settings.mask_build_quality * 2, 2, 8))
     h, w = region_mask.shape
-    hi_h = h * q
-    hi_w = w * q
-    hi = np.zeros((hi_h, hi_w), dtype=np.float32)
-    xs = (np.arange(hi_w, dtype=np.float32) + 0.5) / q - 0.5
-    region_float = region_mask.astype(np.float32)
-
-    for hy in range(hi_h):
-        sy = (hy + 0.5) / q - 0.5
-        ys = np.full(hi_w, sy, dtype=np.float32)
-        region_val = _sample_grid(region_float, xs, ys)
-        alpha_val = _sample_grid(alpha_mask, xs, ys)
-        v = np.clip(alpha_val, 0.0, 1.0)
-        v[(region_val > 0.98) & (v > 0.72)] = 1.0
-        v[region_val <= 0.001] = 0.0
-        hi[hy] = v
+    xs = (np.arange(w * q, dtype=np.float32) + 0.5) / q - 0.5
+    ys = (np.arange(h * q, dtype=np.float32) + 0.5) / q - 0.5
+    region_val = _bilinear_upsample(region_mask.astype(np.float32), xs, ys)
+    alpha_val = _bilinear_upsample(alpha_mask, xs, ys)
+    hi = np.clip(alpha_val, 0.0, 1.0)
+    hi[(region_val > 0.98) & (hi > 0.72)] = 1.0
+    hi[region_val <= 0.001] = 0.0
 
     hi_radius = max(1, round(settings.feather_radius * q * 0.45)) if settings.feather_radius > 0 else 0
     if hi_radius > 0:
@@ -474,16 +482,23 @@ def _blend_pixel(base: np.ndarray, y: int, x: int, sr: float, sg: float, sb: flo
 
 
 def _suppress_green_halo(base: np.ndarray, state: GreenFrameDetection) -> None:
-    ys, xs = np.where(state.clip_mask & (state.soft_mask > 0.001) & (state.soft_mask < 0.999))
-    for y, x in zip(ys, xs):
-        r, g, b = float(base[y, x, 0]), float(base[y, x, 1]), float(base[y, x, 2])
-        if g <= r + 8 and g <= b + 8:
-            continue
-        strength = _clamp((1.0 - float(state.soft_mask[y, x])) * 2.4, 0.0, 1.0)
-        rb_avg = (r + b) / 2.0
-        base[y, x, 0] = round(r * (1 - strength) + rb_avg * strength * 0.22)
-        base[y, x, 1] = round(g * (1 - strength) + min(g, rb_avg + 10) * strength)
-        base[y, x, 2] = round(b * (1 - strength) + rb_avg * strength * 0.22)
+    sel = state.clip_mask & (state.soft_mask > 0.001) & (state.soft_mask < 0.999)
+    if not np.any(sel):
+        return
+    ys, xs = np.where(sel)
+    r = base[ys, xs, 0].astype(np.float32)
+    g = base[ys, xs, 1].astype(np.float32)
+    b = base[ys, xs, 2].astype(np.float32)
+    greenish = (g > r + 8) | (g > b + 8)
+    if not np.any(greenish):
+        return
+    ys, xs = ys[greenish], xs[greenish]
+    r, g, b = r[greenish], g[greenish], b[greenish]
+    strength = np.clip((1.0 - state.soft_mask[ys, xs].astype(np.float32)) * 2.4, 0.0, 1.0)
+    rb_avg = (r + b) / 2.0
+    base[ys, xs, 0] = np.round(r * (1 - strength) + rb_avg * strength * 0.22).astype(np.uint8)
+    base[ys, xs, 1] = np.round(g * (1 - strength) + np.minimum(g, rb_avg + 10) * strength).astype(np.uint8)
+    base[ys, xs, 2] = np.round(b * (1 - strength) + rb_avg * strength * 0.22).astype(np.uint8)
 
 
 def render_green_frame_mockup(
@@ -761,13 +776,16 @@ def _inner_shadow(region: GreenRegion, state: GreenFrameDetection, settings: Gre
     if not settings.enable_inner_shadow or settings.inner_shadow_strength <= 0:
         return None
     w, h = region.w, region.h
-    edge = np.zeros((h, w), dtype=np.float32)
     local = state.clip_mask[region.y : region.y + h, region.x : region.x + w]
-    padded = np.pad(local, 1, mode="constant", constant_values=False)
-    for yy in range(h):
-        for xx in range(w):
-            if local[yy, xx] and not np.all(padded[yy : yy + 3, xx : xx + 3]):
-                edge[yy, xx] = 1.0
+    if ndimage is not None:
+        interior = ndimage.binary_erosion(local, structure=np.ones((3, 3), dtype=bool), border_value=0)
+    else:
+        padded = np.pad(local, 1, mode="constant", constant_values=False)
+        interior = np.ones((h, w), dtype=bool)
+        for dy in range(3):
+            for dx in range(3):
+                interior &= padded[dy : dy + h, dx : dx + w]
+    edge = (local & ~interior).astype(np.float32)
     alpha = np.clip(_blur_float_field(edge, settings.inner_shadow_size) * max(1, settings.inner_shadow_size * 1.2) * (settings.inner_shadow_strength / 100.0), 0, 0.85)
     alpha[~local] = 0
     out = np.zeros((h, w, 4), dtype=np.uint8)
