@@ -28,7 +28,7 @@
       }
     ]
   },
-  "fit_mode": "stretch",
+  "fit_mode": "auto",
   "orientation": "square",
   "background": "background.png",
   "foreground": null,

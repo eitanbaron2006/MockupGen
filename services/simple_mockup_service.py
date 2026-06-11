@@ -86,33 +86,60 @@ def _optional_asset_path(template_folder: Path, asset_name: Any) -> Path | None:
     return asset_path
 
 
+# Parsed manifests cached by file stamp: template listings and renders hit the
+# same manifest files repeatedly, so skip re-reading and re-validating JSON.
+_MANIFEST_CACHE: OrderedDict[str, tuple[tuple[int, int], dict[str, Any]]] = OrderedDict()
+_MANIFEST_CACHE_LOCK = threading.Lock()
+_MANIFEST_CACHE_LIMIT = 512
+
+
 def load_manifest(templates_folder: Path, template_id: str) -> tuple[Path, dict[str, Any]]:
     template_folder = _safe_template_folder(templates_folder, template_id)
     manifest_path = template_folder / "manifest.json"
-    if not manifest_path.is_file():
-        raise TemplateNotFoundError(template_id)
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as error:
-        raise InvalidTemplateError("Invalid template manifest") from error
+        stat = manifest_path.stat()
+    except OSError:
+        raise TemplateNotFoundError(template_id)
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    cache_key = str(manifest_path)
+    with _MANIFEST_CACHE_LOCK:
+        cached = _MANIFEST_CACHE.get(cache_key)
+        if cached and cached[0] == stamp:
+            _MANIFEST_CACHE.move_to_end(cache_key)
+            manifest = cached[1]
+        else:
+            manifest = None
 
-    required_fields = {
-        "template_id",
-        "name",
-        "canvas_width",
-        "canvas_height",
-        "artwork_area",
-        "background",
-        "supported_modes",
-    }
-    if not isinstance(manifest, dict) or not required_fields.issubset(manifest):
-        raise InvalidTemplateError("Invalid template manifest")
-    if manifest["template_id"] != template_id:
-        raise InvalidTemplateError("Template ID does not match its directory")
-    _validated_canvas_and_area(manifest)
+    if manifest is None:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as error:
+            raise InvalidTemplateError("Invalid template manifest") from error
+
+        required_fields = {
+            "template_id",
+            "name",
+            "canvas_width",
+            "canvas_height",
+            "artwork_area",
+            "background",
+            "supported_modes",
+        }
+        if not isinstance(manifest, dict) or not required_fields.issubset(manifest):
+            raise InvalidTemplateError("Invalid template manifest")
+        if manifest["template_id"] != template_id:
+            raise InvalidTemplateError("Template ID does not match its directory")
+        _validated_canvas_and_area(manifest)
+        with _MANIFEST_CACHE_LOCK:
+            _MANIFEST_CACHE[cache_key] = (stamp, manifest)
+            while len(_MANIFEST_CACHE) > _MANIFEST_CACHE_LIMIT:
+                _MANIFEST_CACHE.popitem(last=False)
+
+    # Asset existence is re-checked per call: files may move independently of
+    # the manifest, and the checks are cheap stat calls.
     _safe_asset_path(template_folder, manifest["background"])
     _optional_asset_path(template_folder, manifest.get("foreground"))
-    return template_folder, manifest
+    return template_folder, manifest.copy()
 
 
 def _validated_canvas_and_area(
@@ -1213,8 +1240,10 @@ def _apply_realism_filter(artwork_layer: Image.Image, effects: dict | None = Non
 
     # 3. High-Frequency Fine Paper Grain
     width, height = img.size
-    # Generate a tiny pre-cached 128x128 noise patch with values in [250, 255]
-    noise_bytes = bytes(random.randint(250, 255) for _ in range(128 * 128))
+    # Generate a tiny pre-cached 128x128 noise patch with values in [250, 255].
+    # Seeded so renders are deterministic and reproducible across runs.
+    grain_rng = random.Random(20260611)
+    noise_bytes = bytes(grain_rng.randint(250, 255) for _ in range(128 * 128))
     noise_patch = Image.frombytes("L", (128, 128), noise_bytes)
 
     # Tile the patch to match target size
@@ -1345,6 +1374,38 @@ def _apply_edge_feathering_ssaa(
     return artwork_canvas
 
 
+# Supported output encodings: canonical name -> (PIL format, file extension)
+_OUTPUT_FORMATS = {
+    "png": ("PNG", "png"),
+    "webp": ("WEBP", "webp"),
+    "jpeg": ("JPEG", "jpg"),
+    "jpg": ("JPEG", "jpg"),
+}
+
+
+def _save_output(
+    composed: Image.Image,
+    output_folder: Path,
+    output_format: str,
+    quality: int | None,
+) -> str:
+    pil_format, extension = _OUTPUT_FORMATS[(output_format or "png").lower()]
+    resolved_quality = 90 if quality is None else max(1, min(100, int(quality)))
+    output_folder.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_name = f"mockup_{timestamp}_{uuid4().hex}.{extension}"
+    output_path = output_folder / output_name
+    if pil_format == "PNG":
+        composed.save(output_path, format="PNG", compress_level=2)
+    elif pil_format == "WEBP":
+        composed.save(output_path, format="WEBP", quality=resolved_quality, method=4)
+    else:
+        composed.convert("RGB").save(
+            output_path, format="JPEG", quality=resolved_quality, optimize=True
+        )
+    return output_name
+
+
 def render_simple_mockup(
     *,
     template_id: str,
@@ -1358,9 +1419,13 @@ def render_simple_mockup(
     artwork_area: dict | None = None,
     raw_artwork_area: dict | None = None,
     mask_name: str | None = None,
+    artwork_paths: list[Path] | None = None,
+    quality: int | None = None,
 ) -> RenderResult:
-    if output_format.lower() != "png":
-        raise RenderValidationError("Only png output format is currently supported")
+    if (output_format or "png").lower() not in _OUTPUT_FORMATS:
+        raise RenderValidationError(
+            f"Unsupported output format: {output_format}. Supported: png, webp, jpeg"
+        )
 
     template_folder, manifest = load_manifest(templates_folder, template_id)
     if "simple" not in manifest["supported_modes"]:
@@ -1383,7 +1448,9 @@ def render_simple_mockup(
     if background.size != canvas_size:
         raise InvalidTemplateError("Background must match canvas size")
 
-    artwork = load_rgba(artwork_path)
+    source_paths = list(artwork_paths) if artwork_paths else [artwork_path]
+    artworks = [load_rgba(path) for path in source_paths]
+    artwork = artworks[0]
     final_fit_mode = fit_mode if fit_mode else str(manifest.get("fit_mode", "cover"))
     if final_fit_mode == "auto":
         artwork_width, artwork_height = artwork.size
@@ -1419,7 +1486,7 @@ def render_simple_mockup(
             artwork_filter = lambda img: _apply_realism_filter(img, active_effects)
         composed = _render_green_frame_mockup(
             background=background,
-            artwork=artwork,
+            artwork=artworks if len(artworks) > 1 else artwork,
             template_folder=template_folder,
             mask_name=mask_name,
             background_name=manifest["background"],
@@ -1438,16 +1505,18 @@ def render_simple_mockup(
             composed = Image.alpha_composite(composed, foreground)
         if realism:
             composed = _apply_effects_by_target(composed, active_effects, "all")
-        output_folder.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
-        composed.save(output_folder / output_name, format="PNG", compress_level=2)
+        output_name = _save_output(composed, output_folder, output_format, quality)
         return RenderResult(
             mode="simple",
             template_id=template_id,
             output_url=f"/outputs/{output_name}",
             width=canvas_size[0],
             height=canvas_size[1],
+        )
+
+    if len(artworks) > 1:
+        raise RenderValidationError(
+            "Template renders a single artwork: multi-artwork sets require a multi-frame template"
         )
 
     artwork_layer = fit_artwork(
@@ -1505,10 +1574,7 @@ def render_simple_mockup(
         active_effects = effects if effects is not None else manifest.get("effects")
         composed = _apply_effects_by_target(composed, active_effects, "all")
 
-    output_folder.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    output_name = f"mockup_{timestamp}_{uuid4().hex}.png"
-    composed.save(output_folder / output_name, format="PNG", compress_level=2)
+    output_name = _save_output(composed, output_folder, output_format, quality)
     return RenderResult(
         mode="simple",
         template_id=template_id,

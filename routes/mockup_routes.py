@@ -5,6 +5,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from services.ai_mockup_service import render_ai_mockup
 from services.image_utils import ImageProcessingError, store_uploaded_artwork
+from services.mockup_request_service import RequestValidationError, execute_batch_render
 from services.psd_mockup_service import render_psd_mockup
 from services.simple_mockup_service import (
     InvalidTemplateError,
@@ -85,6 +86,50 @@ def get_categories():
     return jsonify(catalog.list_categories(active_only=True) if catalog else [])
 
 
+@mockup_routes.post("/api/mockups/render/batch")
+def render_mockup_batch():
+    """Flexible multi-item rendering: singles, separate images and wall/device
+    sets in one request, with manual or automatic template selection.
+
+    multipart/form-data:
+      - spec: JSON request specification (see docs/mockup_batch_api.md)
+      - any number of file fields, referenced by name from spec items
+    """
+    if not current_app.config.get("ENABLE_SIMPLE_MODE", False):
+        return error_response("SIMPLE rendering mode is disabled", 503)
+
+    spec_raw = request.form.get("spec", "").strip()
+    if not spec_raw:
+        return error_response("Missing 'spec' JSON form field", 400)
+    try:
+        spec = json.loads(spec_raw)
+    except json.JSONDecodeError as error:
+        return error_response(f"Invalid spec JSON: {error}", 400)
+
+    catalog = current_app.extensions.get("catalog_service")
+
+    def template_record_lookup(template_id: str) -> dict | None:
+        return catalog.get_template(template_id) if catalog else None
+
+    default_realism = not current_app.config.get("TESTING")
+    try:
+        payload = execute_batch_render(
+            spec,
+            request.files,
+            templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+            output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
+            upload_folder=Path(current_app.config["UPLOAD_FOLDER"]),
+            template_record_lookup=template_record_lookup,
+            default_realism=default_realism,
+        )
+    except RequestValidationError as error:
+        return error_response(str(error), 400)
+    except ImageProcessingError as error:
+        return error_response(str(error), 400)
+    status = 200 if payload["success"] else 207
+    return jsonify(payload), status
+
+
 @mockup_routes.post("/api/mockups/render")
 def render_mockup():
     mode = request.form.get("mode", "simple").strip().lower()
@@ -145,10 +190,17 @@ def render_mockup():
                         if draft_folder:
                             render_templates_folder = draft_folder
 
+            quality_raw = request.form.get("quality", "").strip()
+            try:
+                quality = int(quality_raw) if quality_raw else None
+            except ValueError:
+                return error_response("quality must be an integer between 1 and 100", 400)
+
             result = render_simple_mockup(
                 template_id=template_id,
                 artwork_path=artwork_path,
                 output_format=output_format,
+                quality=quality,
                 templates_folder=render_templates_folder,
                 output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
                 fit_mode=db_fit_mode,
