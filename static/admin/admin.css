@@ -976,6 +976,40 @@ body.sidebar-resizing * {
   width: 32px;
 }
 
+.zoom-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.zoom-btn.reset-btn:not(:last-child) {
+  border-radius: 0;
+}
+
+.zoom-btn.lock-btn {
+  margin-left: 4px;
+  border-left: 1px solid rgba(21, 20, 15, 0.08);
+  border-radius: 0;
+  border-top-right-radius: 50%;
+  border-bottom-right-radius: 50%;
+  padding-left: 6px;
+  width: 32px;
+}
+
+.zoom-btn.lock-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.zoom-btn.lock-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.zoom-btn.lock-btn.active:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .workspace-empty {
   color: var(--muted);
   max-width: 300px;

@@ -187,6 +187,8 @@
     zoom: 1,
     pan: { x: 0, y: 0 },
     isPanning: false,
+    canvasLocked: false,
+    lockBeforePlacement: false,
     panStart: { x: 0, y: 0 },
     spacePressed: false,
     lastSelectedTemplateId: null,
@@ -1474,6 +1476,7 @@
   }
 
   function setGlobalOverlayPlacementActive(active) {
+    const wasPlacementActive = state.globalOverlayPlacementActive;
     state.globalOverlayPlacementActive = Boolean(active);
     const button = $("globalOverlayPlaceBtn");
     if (button) {
@@ -1505,9 +1508,41 @@
       }
     }
     renderGlobalOverlayPlacement();
+    applyPlacementCanvasLock(wasPlacementActive, state.globalOverlayPlacementActive);
+  }
+
+  // Canvas lock: freezes zoom & pan so mouse-positioning of overlays cannot
+  // accidentally move the image. Auto-engaged during placement modes.
+  function setCanvasLock(locked) {
+    state.canvasLocked = Boolean(locked);
+    const lockBtn = $("canvasLockBtn");
+    if (lockBtn) {
+      lockBtn.classList.toggle("active", state.canvasLocked);
+      lockBtn.title = state.canvasLocked
+        ? "Canvas locked — zoom & pan disabled (click to unlock)"
+        : "Lock canvas to prevent accidental zoom & pan";
+      const openIcon = lockBtn.querySelector(".lock-icon-open");
+      const closedIcon = lockBtn.querySelector(".lock-icon-closed");
+      if (openIcon) openIcon.classList.toggle("hidden", state.canvasLocked);
+      if (closedIcon) closedIcon.classList.toggle("hidden", !state.canvasLocked);
+    }
+    ["zoomInBtn", "zoomOutBtn", "zoomResetBtn"].forEach((id) => {
+      const btn = $(id);
+      if (btn) btn.disabled = state.canvasLocked;
+    });
+  }
+
+  function applyPlacementCanvasLock(wasActive, isActive) {
+    if (isActive && !wasActive) {
+      state.lockBeforePlacement = state.canvasLocked;
+      setCanvasLock(true);
+    } else if (!isActive && wasActive) {
+      setCanvasLock(Boolean(state.lockBeforePlacement));
+    }
   }
 
   function setGreenFramePlacementActive(active) {
+    const wasPlacementActive = state.greenFramePlacementActive;
     state.greenFramePlacementActive = Boolean(active);
     const button = $("greenFramePlaceBtn");
     if (button) {
@@ -1538,6 +1573,7 @@
       if ($("selectionImageOverlay")) $("selectionImageOverlay").classList.add("hidden");
       drawSelection();
     }
+    applyPlacementCanvasLock(wasPlacementActive, state.greenFramePlacementActive);
   }
 
   function applySelectionStyle() {
@@ -3042,7 +3078,7 @@
       if (!state.spacePressed) {
         state.spacePressed = true;
         const ws = document.querySelector(".canvas-workspace");
-        if (ws) ws.classList.add("panning-mode");
+        if (ws && !state.canvasLocked) ws.classList.add("panning-mode");
       }
     }
   });
@@ -3063,6 +3099,7 @@
     workspace.addEventListener("wheel", (event) => {
       if (!state.selected) return;
       event.preventDefault();
+      if (state.canvasLocked) return;
 
       const rect = workspace.getBoundingClientRect();
       const mouseX = event.clientX - rect.left;
@@ -3097,7 +3134,7 @@
 
     // Pointer down event to begin panning
     workspace.addEventListener("pointerdown", (event) => {
-      if (!state.selected) return;
+      if (!state.selected || state.canvasLocked) return;
 
       const isMiddleClick = event.button === 1;
       const isSpacePan = event.button === 0 && state.spacePressed;
@@ -3144,6 +3181,7 @@
 
     // Double click empty workspace area to reset zoom & pan
     workspace.addEventListener("dblclick", (event) => {
+      if (state.canvasLocked) return;
       if (event.target === workspace || event.target === $("stage") || event.target === $("canvasImage")) {
         resetZoomPan();
       }
@@ -3163,10 +3201,21 @@
 
   $("zoomResetBtn").onclick = (e) => {
     e.stopPropagation();
+    if (state.canvasLocked) return;
     resetZoomPan();
   };
 
+  if ($("canvasLockBtn")) {
+    $("canvasLockBtn").onclick = (e) => {
+      e.stopPropagation();
+      setCanvasLock(!state.canvasLocked);
+      // A manual toggle overrides the placement auto-lock restore state.
+      state.lockBeforePlacement = state.canvasLocked;
+    };
+  }
+
   function zoomIncrementally(direction) {
+    if (state.canvasLocked) return;
     const oldZoom = state.zoom;
     const zoomFactor = 1.3;
     let newZoom = oldZoom;
