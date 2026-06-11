@@ -12,3 +12,5 @@ outputs/*
 logs/*
 !logs/.gitkeep
 sam2.1_l.pt
+
+.claude/settings.local.json
