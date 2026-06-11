@@ -88,18 +88,40 @@ def render_ai_mockup(
                 types.Part.from_bytes(data=background_bytes, mime_type=bg_mime),
                 types.Part.from_bytes(data=artwork_bytes, mime_type=art_mime),
                 prompt
-            ]
+            ],
+            # Image-output models return text only unless IMAGE is explicitly
+            # requested in the response modalities.
+            config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
         )
 
         # 4. Extract generated image from the response parts (select the last inline image part)
         generated_image_bytes = None
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                    generated_image_bytes = part.inline_data.data
+        text_feedback: list[str] = []
+        finish_reason = None
+        for candidate in response.candidates or []:
+            finish_reason = getattr(candidate, "finish_reason", None) or finish_reason
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                inline = getattr(part, "inline_data", None)
+                if inline and (inline.mime_type or "").startswith("image/"):
+                    generated_image_bytes = inline.data
+                elif getattr(part, "text", None):
+                    text_feedback.append(part.text.strip())
 
         if not generated_image_bytes:
-            raise RuntimeError("Vertex AI did not return a generated image in the response.")
+            # Surface why the model returned no image instead of a generic error.
+            details = []
+            if finish_reason:
+                details.append(f"finish_reason={finish_reason}")
+            feedback = getattr(response, "prompt_feedback", None)
+            if feedback and getattr(feedback, "block_reason", None):
+                details.append(f"block_reason={feedback.block_reason}")
+            if text_feedback:
+                details.append("model response: " + " ".join(text_feedback)[:300])
+            suffix = f" ({'; '.join(details)})" if details else ""
+            raise RuntimeError(
+                "Vertex AI did not return a generated image in the response." + suffix
+            )
 
     except Exception as error:
         raise RuntimeError(f"Vertex AI mockup rendering failed: {error}") from error
