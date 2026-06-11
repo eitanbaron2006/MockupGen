@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=17">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=18">
 </head>
 
 <body class="admin-page">
@@ -416,24 +416,6 @@
                   <div class="slider-container-row">
                     <input type="range" id="greenAAScale" min="1" max="8" step="1" value="1">
                     <span id="greenAAScaleVal">1x</span>
-                  </div>
-                </div>
-                <label class="compact-check">
-                  <input id="greenInnerShadowEnabled" type="checkbox">
-                  Inner shadow
-                </label>
-                <div class="slider-row">
-                  <label for="greenInnerShadowStrength">Shadow strength</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenInnerShadowStrength" min="0" max="100" step="1" value="35">
-                    <span id="greenInnerShadowStrengthVal">35%</span>
-                  </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenInnerShadowSize">Shadow size</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenInnerShadowSize" min="1" max="30" step="1" value="10">
-                    <span id="greenInnerShadowSizeVal">10px</span>
                   </div>
                 </div>
                 <div class="select-row">
@@ -1220,7 +1202,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=17"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=18"></script>
 </body>
 
 </html>

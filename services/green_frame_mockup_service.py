@@ -98,7 +98,9 @@ def parse_green_frame_settings(effects: dict | None, fallback_fit_mode: str = "c
         offset_x=_clamp(number("offset_x", 0.0), -1.0, 1.0),
         offset_y=_clamp(number("offset_y", 0.0), -1.0, 1.0),
         contain_bg=_parse_hex_rgb(options.get("contain_bg_color"), (255, 255, 255)),
-        enable_inner_shadow=bool(options.get("enable_inner_shadow", False)),
+        # Legacy green-frame inner shadow is retired: the standard
+        # "Inner Frame Shadow" effect (target IMG) now covers green mockups too.
+        enable_inner_shadow=False,
         inner_shadow_strength=int(_clamp(shadow_strength, 0, 100)),
         inner_shadow_size=int(_clamp(number("inner_shadow_size", 10), 1, 30)),
     )
@@ -506,6 +508,7 @@ def render_green_frame_mockup(
     artwork: Image.Image | list[Image.Image],
     settings: GreenFrameSettings,
     detection: GreenFrameDetection | None = None,
+    artwork_filter: Any = None,
 ) -> Image.Image:
     state = detection or detect_green_frames(background, settings)
     base = np.asarray(background.convert("RGBA")).copy()
@@ -521,13 +524,13 @@ def render_green_frame_mockup(
     for idx, region in enumerate(state.regions):
         region_art = artworks[idx % len(artworks)]
         if settings.use_perspective:
-            overlay_data = _render_perspective_region(region, region_art, state, settings)
+            overlay_data = _render_perspective_region(region, region_art, state, settings, artwork_filter)
             if overlay_data is not None:
                 overlays.append(overlay_data)
             else:
-                _draw_rect(base_after_rect, region, region_art, state, settings)
+                _draw_rect(base_after_rect, region, region_art, state, settings, artwork_filter)
         else:
-            _draw_rect(base_after_rect, region, region_art, state, settings)
+            _draw_rect(base_after_rect, region, region_art, state, settings, artwork_filter)
         shadow = _inner_shadow(region, state, settings)
         if shadow is not None:
             shadows.append((shadow, region))
@@ -540,10 +543,13 @@ def render_green_frame_mockup(
     return result
 
 
-def _draw_rect(base: np.ndarray, region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings) -> None:
+def _draw_rect(base: np.ndarray, region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings, artwork_filter: Any = None) -> None:
     h, w = region.h, region.w
     base_crop = base[region.y : region.y + h, region.x : region.x + w].astype(np.float32)
-    repl = np.asarray(_source_image(art, w, h, settings).convert("RGBA")).astype(np.float32)
+    source = _source_image(art, w, h, settings)
+    if artwork_filter is not None:
+        source = artwork_filter(source)
+    repl = np.asarray(source.convert("RGBA")).astype(np.float32)
     clip_mask = state.clip_mask[region.y : region.y + h, region.x : region.x + w]
     soft_mask = state.soft_mask[region.y : region.y + h, region.x : region.x + w]
     
@@ -672,7 +678,7 @@ def _sample_rgba(src: np.ndarray, x: float, y: float) -> tuple[float, float, flo
     return float(val[0]), float(val[1]), float(val[2]), float(val[3])
 
 
-def _render_perspective_region(region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings) -> Optional[tuple[Image.Image, int, int, int, int]]:
+def _render_perspective_region(region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings, artwork_filter: Any = None) -> Optional[tuple[Image.Image, int, int, int, int]]:
     inner = region.inner_corners or region.corners
     outer = region.outer_corners or region.corners
     if not inner:
@@ -685,6 +691,8 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
     target_w = max(2, round(max(_dist(warp["tl"], warp["tr"]), _dist(warp["bl"], warp["br"]))))
     target_h = max(2, round(max(_dist(warp["tl"], warp["bl"]), _dist(warp["tr"], warp["br"]))))
     src = _source_image(art, target_w, target_h, settings)
+    if artwork_filter is not None:
+        src = artwork_filter(src)
     
     # Pad source image by 4 pixels to prevent edge bleeding/transparency under PIL perspective warp
     pad = 4

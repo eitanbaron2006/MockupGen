@@ -399,8 +399,6 @@
     setGreenFrameLabel("greenFeatherRadiusVal", $("greenFeatherRadius").value, "px");
     setGreenFrameLabel("greenEdgeAARadiusVal", $("greenEdgeAARadius").value, "px");
     setGreenFrameLabel("greenAAScaleVal", $("greenAAScale").value, "x");
-    setGreenFrameLabel("greenInnerShadowStrengthVal", $("greenInnerShadowStrength").value, "%");
-    setGreenFrameLabel("greenInnerShadowSizeVal", $("greenInnerShadowSize").value, "px");
   }
 
   function populateGreenFrameControls(template, effects) {
@@ -419,9 +417,6 @@
     $("greenFeatherRadius").value = settings.feather_radius;
     $("greenEdgeAARadius").value = settings.edge_aa_radius;
     $("greenAAScale").value = settings.aa_scale;
-    $("greenInnerShadowEnabled").checked = settings.enable_inner_shadow;
-    $("greenInnerShadowStrength").value = Math.round(Number(settings.inner_shadow_strength || 0) * 100);
-    $("greenInnerShadowSize").value = settings.inner_shadow_size;
     $("greenContainBgColor").value = settings.contain_bg_color || "#ffffff";
     updateGreenFrameControlLabels();
   }
@@ -439,9 +434,9 @@
       feather_radius: Number($("greenFeatherRadius").value),
       edge_aa_radius: Number($("greenEdgeAARadius").value),
       aa_scale: Number($("greenAAScale").value),
-      enable_inner_shadow: $("greenInnerShadowEnabled").checked,
-      inner_shadow_strength: Number($("greenInnerShadowStrength").value) / 100,
-      inner_shadow_size: Number($("greenInnerShadowSize").value),
+      // Legacy green inner shadow retired — the standard Inner Frame Shadow
+      // effect (target IMG) handles green mockups now.
+      enable_inner_shadow: false,
       contain_bg_color: $("greenContainBgColor").value || "#ffffff"
     };
   }
@@ -3406,9 +3401,6 @@
     "greenFeatherRadius",
     "greenEdgeAARadius",
     "greenAAScale",
-    "greenInnerShadowEnabled",
-    "greenInnerShadowStrength",
-    "greenInnerShadowSize",
     "greenContainBgColor"
   ].forEach((id) => {
     const element = $(id);

@@ -484,11 +484,23 @@ def _green_detection_cache_key(
     realism: bool,
     settings,
 ) -> tuple:
-    non_green_effects = (
-        {key: value for key, value in effects.items() if key != "green_frame_mockups"}
-        if isinstance(effects, dict)
-        else None
-    )
+    # Detection runs on the background after "mockup"-targeted effects only,
+    # so other effects (IMG/ALL targets) must not invalidate the cache.
+    non_green_effects = None
+    if isinstance(effects, dict):
+        non_green_effects = {}
+        for key, value in effects.items():
+            if key == "green_frame_mockups":
+                continue
+            instances = value if isinstance(value, list) else [value]
+            relevant = [
+                instance for instance in instances
+                if isinstance(instance, dict)
+                and instance.get("enabled")
+                and instance.get("target") == "mockup"
+            ]
+            if relevant:
+                non_green_effects[key] = relevant
     return (
         _file_stamp(template_folder / background_name),
         _file_stamp(template_folder / mask_name),
@@ -516,6 +528,7 @@ def _render_green_frame_mockup(
     fit_mode: str,
     realism: bool,
     effects: dict | None,
+    artwork_filter=None,
 ) -> Image.Image:
     settings = parse_green_frame_settings(effects, fit_mode)
     cache_key = _green_detection_cache_key(
@@ -541,7 +554,7 @@ def _render_green_frame_mockup(
             _GREEN_DETECTION_CACHE[cache_key] = detection
             while len(_GREEN_DETECTION_CACHE) > _GREEN_DETECTION_CACHE_LIMIT:
                 _GREEN_DETECTION_CACHE.popitem(last=False)
-    composed = render_green_frame_mockup(background, artwork, settings, detection)
+    composed = render_green_frame_mockup(background, artwork, settings, detection, artwork_filter)
     return composed
 
     options = _green_frame_options(effects, fit_mode)
@@ -1398,6 +1411,12 @@ def render_simple_mockup(
 
     mask_name = manifest.get("mask")
     if mask_name and _is_green_frame_raw(raw_artwork_area):
+        # Apply the artwork-targeted realism pipeline (Inner Frame Shadow,
+        # glass reflection, tint, etc. with target IMG) to each fitted region
+        # source, mirroring the non-green render path.
+        artwork_filter = None
+        if realism:
+            artwork_filter = lambda img: _apply_realism_filter(img, active_effects)
         composed = _render_green_frame_mockup(
             background=background,
             artwork=artwork,
@@ -1410,6 +1429,7 @@ def render_simple_mockup(
             fit_mode=final_fit_mode,
             realism=realism,
             effects=active_effects if realism else effects,
+            artwork_filter=artwork_filter,
         )
         if foreground_path:
             foreground = load_rgba(foreground_path)
