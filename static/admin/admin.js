@@ -1108,6 +1108,12 @@
 
     // Reset zoom and pan if template has changed
     if (state.lastSelectedTemplateId !== template.template_id) {
+      // Mouse-positioning mode belongs to the previous template; leaving it
+      // active while switching corrupts the editor state.
+      if (state.globalOverlayPlacementActive) {
+        state.wasPreviewingMockup = false;
+        setGlobalOverlayPlacementActive(false);
+      }
       state.zoom = 1;
       state.pan = { x: 0, y: 0 };
       state.lastSelectedTemplateId = template.template_id;
@@ -1480,9 +1486,10 @@
       } else {
         state.wasPreviewingMockup = state.isPreviewingMockup;
         state.isPreviewingMockup = false;
-        if ($("selectionRenderedMockup")) $("selectionRenderedMockup").classList.add("hidden");
         $("selectionSvg").classList.add("hidden");
-        $("selectionImageOverlay").classList.add("hidden");
+        // Keep the artwork visible while positioning the overlay; drawSelection
+        // renders the appropriate layer (CSS overlay or lightweight render).
+        drawSelection();
       }
     } else {
       if (state.wasPreviewingMockup) {
@@ -1800,10 +1807,11 @@
 
   function drawSelection() {
     if (state.globalOverlayPlacementActive) {
+      // Hide only the selection chrome: the mockup artwork must stay visible
+      // beneath the draggable PNG overlay so it can be positioned in context.
       $("selectionSvg").classList.add("hidden");
-      $("selectionImageOverlay").classList.add("hidden");
       renderGlobalOverlayPlacement();
-      return;
+      // Fall through to render the artwork (CSS overlay / lightweight render).
     }
     if (state.isPreviewingMockup) {
       $("selectionSvg").classList.add("hidden");
