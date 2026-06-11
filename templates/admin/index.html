@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=18">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=20">
 </head>
 
 <body class="admin-page">
@@ -96,12 +96,14 @@
               <div id="selectionImageOverlay" class="selection-image-overlay hidden">
                 <img id="selectionOverlayImg" src="" alt="Overlay artwork">
               </div>
-              <div id="globalOverlayPlacementLayer" class="global-overlay-placement hidden" aria-label="Drag global PNG overlay">
+              <div id="globalOverlayPlacementLayer" class="global-overlay-placement hidden"
+                aria-label="Drag global PNG overlay">
                 <div id="globalOverlayPlacementItem" class="global-overlay-placement-item">
                   <img id="globalOverlayPlacementImg" src="" alt="Global PNG overlay placement preview">
                 </div>
               </div>
-              <div id="greenFramePlacementLayer" class="global-overlay-placement hidden" aria-label="Drag green frame artwork">
+              <div id="greenFramePlacementLayer" class="global-overlay-placement hidden"
+                aria-label="Drag green frame artwork">
               </div>
               <img id="selectionRenderedMockup" class="selection-rendered-mockup hidden" alt="Rendered mockup">
               <svg id="selectionSvg" class="selection-svg hidden">
@@ -185,15 +187,22 @@
                 aria-label="Crosshair line width" title="Crosshair line width">
                 <span class="style-cross-width-icon"></span>
               </button>
-              <hr class="style-divider" style="width: 100%; border: 0; border-top: 1px solid var(--line-soft); margin: 4px 0;">
-              <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton" aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
-                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; display: block; pointer-events: none;">
+              <hr class="style-divider"
+                style="width: 100%; border: 0; border-top: 1px solid var(--line-soft); margin: 4px 0;">
+              <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton"
+                aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
+                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
-              <a class="style-tool style-download-btn hidden" id="toolbarDownloadButton" download="mockup.png" href="" aria-label="Download mockup" title="Download realistic mockup">
-                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; display: block; pointer-events: none;">
+              <a class="style-tool style-download-btn hidden" id="toolbarDownloadButton" download="mockup.png" href=""
+                aria-label="Download mockup" title="Download realistic mockup">
+                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <polyline points="7 10 12 15 17 10"></polyline>
                   <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -264,13 +273,31 @@
                 title="Reset Zoom & Pan (Double-Click empty space)">⟲</button>
               <button class="zoom-btn lock-btn" id="canvasLockBtn" type="button"
                 title="Lock canvas to prevent accidental zoom &amp; pan">
-                <svg class="lock-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 7.8-1.3"></path></svg>
-                <svg class="lock-icon-closed hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                <svg class="lock-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                  <path d="M8 11V7a4 4 0 0 1 7.8-1.3"></path>
+                </svg>
+                <svg class="lock-icon-closed hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+                </svg>
               </button>
               <button class="zoom-btn lock-btn polygon-lock-btn" id="polygonLockBtn" type="button"
                 title="Lock artwork area to prevent accidental moving">
-                <svg class="lock-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="13" rx="1.5" stroke-dasharray="4 3"></rect><rect x="13" y="15" width="9" height="7" rx="1.5"></rect><path d="M15 15v-2.5a2.5 2.5 0 0 1 4.9-.7"></path></svg>
-                <svg class="lock-icon-closed hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="13" rx="1.5" stroke-dasharray="4 3"></rect><rect x="13" y="15" width="9" height="7" rx="1.5"></rect><path d="M15 15v-2.5a2.5 2.5 0 0 1 5 0V15"></path></svg>
+                <svg class="lock-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="13" height="13" rx="1.5" stroke-dasharray="4 3"></rect>
+                  <rect x="13" y="15" width="9" height="7" rx="1.5"></rect>
+                  <path d="M15 15v-2.5a2.5 2.5 0 0 1 4.9-.7"></path>
+                </svg>
+                <svg class="lock-icon-closed hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="13" height="13" rx="1.5" stroke-dasharray="4 3"></rect>
+                  <rect x="13" y="15" width="9" height="7" rx="1.5"></rect>
+                  <path d="M15 15v-2.5a2.5 2.5 0 0 1 5 0V15"></path>
+                </svg>
               </button>
             </div>
           </div>
@@ -340,93 +367,100 @@
                 </select>
               </div>
               <div class="green-frame-panel hidden" id="greenFramePanel">
-                <div class="label-row">
-                  <label>Green frames controls</label>
+                <div class="label-row" style="margin-bottom: 0px;">
+                  <label class="effect-title-toggle" id="greenFramePanelToggle"
+                    title="Click the panel name to expand or collapse settings">Green frames controls</label>
                   <span class="tip-icon" tabindex="0" aria-label="Green frames controls"
                     data-tooltip="Applies only to Classic green frames mockups. The same artwork is rendered into every detected green frame by default.">i</span>
                 </div>
-                <label class="compact-check">
-                  <input id="greenUsePerspective" type="checkbox">
-                  Perspective warp
-                </label>
-                <label class="compact-check">
-                  <input id="greenUseVectorClip" type="checkbox">
-                  Wide coverage envelope
-                </label>
-                <div class="select-row">
-                  <label for="greenFitMode">Artwork fit</label>
-                  <select id="greenFitMode">
-                    <option value="cover">Cover</option>
-                    <option value="contain">Contain</option>
-                    <option value="stretch">Stretch</option>
-                  </select>
-                </div>
-                <div class="slider-row">
-                  <label for="greenArtworkScale">Artwork scale</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenArtworkScale" min="10" max="300" step="1" value="100">
-                    <span id="greenArtworkScaleVal">100%</span>
+                <div id="greenFramePanelBody">
+                  <label class="compact-check">
+                    <input id="greenUsePerspective" type="checkbox">
+                    Perspective warp
+                  </label>
+                  <label class="compact-check">
+                    <input id="greenUseVectorClip" type="checkbox">
+                    Wide coverage envelope
+                  </label>
+                  <div class="select-row">
+                    <label for="greenFitMode">Artwork fit</label>
+                    <select id="greenFitMode">
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                      <option value="stretch">Stretch</option>
+                    </select>
                   </div>
-                </div>
-                <button type="button" class="btn compact" id="greenFramePlaceBtn" style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with mouse</button>
-                <div class="slider-row">
-                  <label for="greenOffsetX">Offset X</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenOffsetX" min="-100" max="100" step="1" value="0">
-                    <span id="greenOffsetXVal">0%</span>
+                  <div class="slider-row">
+                    <label for="greenArtworkScale">Artwork scale</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenArtworkScale" min="10" max="300" step="1" value="100">
+                      <span id="greenArtworkScaleVal">100%</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenOffsetY">Offset Y</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenOffsetY" min="-100" max="100" step="1" value="0">
-                    <span id="greenOffsetYVal">0%</span>
+                  <button type="button" class="btn compact" id="greenFramePlaceBtn"
+                    style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with
+                    mouse</button>
+                  <div class="slider-row">
+                    <label for="greenOffsetX">Offset X</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenOffsetX" min="-100" max="100" step="1" value="0">
+                      <span id="greenOffsetXVal">0%</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenEdgeExpand">Green edge cleanup</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenEdgeExpand" min="0" max="24" step="1" value="0">
-                    <span id="greenEdgeExpandVal">0px</span>
+                  <div class="slider-row">
+                    <label for="greenOffsetY">Offset Y</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenOffsetY" min="-100" max="100" step="1" value="0">
+                      <span id="greenOffsetYVal">0%</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenMaskBuildQuality">Mask quality</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenMaskBuildQuality" min="1" max="3" step="1" value="2">
-                    <span id="greenMaskBuildQualityVal">2x</span>
+                  <div class="slider-row">
+                    <label for="greenEdgeExpand">Green edge cleanup</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenEdgeExpand" min="0" max="24" step="1" value="0">
+                      <span id="greenEdgeExpandVal">0px</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenFeatherRadius">Mask feather</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenFeatherRadius" min="0" max="12" step="1" value="2">
-                    <span id="greenFeatherRadiusVal">2px</span>
+                  <div class="slider-row">
+                    <label for="greenMaskBuildQuality">Mask quality</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenMaskBuildQuality" min="1" max="3" step="1" value="2">
+                      <span id="greenMaskBuildQualityVal">2x</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenEdgeAARadius">Edge AA</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenEdgeAARadius" min="0" max="6" step="1" value="0">
-                    <span id="greenEdgeAARadiusVal">0px</span>
+                  <div class="slider-row">
+                    <label for="greenFeatherRadius">Mask feather</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenFeatherRadius" min="0" max="12" step="1" value="2">
+                      <span id="greenFeatherRadiusVal">2px</span>
+                    </div>
                   </div>
-                </div>
-                <div class="slider-row">
-                  <label for="greenAAScale">Supersampling</label>
-                  <div class="slider-container-row">
-                    <input type="range" id="greenAAScale" min="1" max="8" step="1" value="1">
-                    <span id="greenAAScaleVal">1x</span>
+                  <div class="slider-row">
+                    <label for="greenEdgeAARadius">Edge AA</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenEdgeAARadius" min="0" max="6" step="1" value="0">
+                      <span id="greenEdgeAARadiusVal">0px</span>
+                    </div>
                   </div>
-                </div>
-                <div class="select-row">
-                  <label for="greenContainBgColor">Contain background</label>
-                  <input type="color" id="greenContainBgColor" value="#ffffff">
+                  <div class="slider-row">
+                    <label for="greenAAScale">Supersampling</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenAAScale" min="1" max="8" step="1" value="1">
+                      <span id="greenAAScaleVal">1x</span>
+                    </div>
+                  </div>
+                  <div class="select-row">
+                    <label for="greenContainBgColor">Contain background</label>
+                    <input type="color" id="greenContainBgColor" value="#ffffff">
+                  </div>
                 </div>
               </div>
               <div class="effects-section">
-                <div class="label-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div class="label-row"
+                  style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                   <label style="margin: 0;">Realism Effects</label>
-                  <button type="button" class="link-button" id="applyEffectsToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                  <button type="button" class="link-button" id="applyEffectsToAllBtn"
+                    style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                 </div>
                 <!-- Inner Shadow Toggle and Details -->
                 <div class="effect-group">
@@ -435,7 +469,8 @@
                       <input type="checkbox" id="innerShadowEnabled">
                       Inner Frame Shadow
                     </label>
-                    <button type="button" class="link-button" id="applyShadowToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyShadowToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="innerShadowControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -460,7 +495,7 @@
                         <span id="shadowBlurVal">15px</span>
                       </div>
                     </div>
-                    
+
                     <div class="shadow-sides-grid">
                       <div class="slider-row">
                         <label for="shadowTop">Top</label>
@@ -491,14 +526,18 @@
                         </div>
                       </div>
                     </div>
-                    
+
                     <button type="button" class="link-sides-button" id="linkShadowSides">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" style="width: 12px; height: 12px;">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
                       Link all sides
                     </button>
                   </div>
                 </div>
-                
+
                 <!-- Glass Reflection Toggle and Details -->
                 <div class="effect-group">
                   <div class="effect-header" style="justify-content: space-between; width: 100%;">
@@ -506,7 +545,8 @@
                       <input type="checkbox" id="glassReflectionEnabled">
                       Glass Reflection Cover
                     </label>
-                    <button type="button" class="link-button" id="applyReflectionToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyReflectionToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="glassReflectionControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -541,7 +581,8 @@
                       <input type="checkbox" id="matteFinishEnabled">
                       Faded Matte Paper
                     </label>
-                    <button type="button" class="link-button" id="applyMatteToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyMatteToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="matteFinishControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -576,7 +617,8 @@
                       <input type="checkbox" id="colorTintEnabled">
                       Ambient Light Warmth
                     </label>
-                    <button type="button" class="link-button" id="applyTintToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyTintToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="colorTintControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -611,7 +653,8 @@
                       <input type="checkbox" id="goboShadowEnabled">
                       Sunlight Blinds Shadow
                     </label>
-                    <button type="button" class="link-button" id="applyGoboToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyGoboToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="goboShadowControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -646,7 +689,8 @@
                       <input type="checkbox" id="photoshopAdjustmentsEnabled">
                       Photoshop Color Filters
                     </label>
-                    <button type="button" class="link-button" id="applyPhotoshopToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyPhotoshopToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="photoshopAdjustmentsControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -699,7 +743,8 @@
                       <input type="checkbox" id="globalReflectionsEnabled">
                       Global Scene Reflections & Rays
                     </label>
-                    <button type="button" class="link-button" id="applyGlobalReflectionsToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyGlobalReflectionsToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="globalReflectionsControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -766,7 +811,8 @@
                       <input type="checkbox" id="globalPngOverlayEnabled">
                       Global Custom PNG Overlay
                     </label>
-                    <button type="button" class="link-button" id="applyGlobalOverlayToAllBtn" style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
+                    <button type="button" class="link-button" id="applyGlobalOverlayToAllBtn"
+                      style="font-size: 9px; letter-spacing: 0.05em; padding: 0;">apply to all</button>
                   </div>
                   <div id="globalPngOverlayControls" class="effect-controls hidden">
                     <div class="target-segment-row">
@@ -780,13 +826,20 @@
                     <div class="slider-row" style="align-items: center; margin-bottom: 12px; flex-direction: column;">
                       <label style="align-self: flex-start; margin-bottom: 4px;">Overlay File</label>
                       <div style="display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%;">
-                        <button type="button" class="btn compact" id="globalOverlayUploadBtn" style="flex: 1; height: 28px; font-size: 9px; padding: 0 8px;">Upload PNG</button>
+                        <button type="button" class="btn compact" id="globalOverlayUploadBtn"
+                          style="flex: 1; height: 28px; font-size: 9px; padding: 0 8px;">Upload PNG</button>
                         <input type="file" id="globalOverlayUploadInput" accept="image/png" style="display: none;">
-                        <span id="globalOverlayName" class="file-title" style="margin: 0; flex: 1.5; font-size: 11px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="No file uploaded">No file</span>
-                        <button type="button" class="queue-delete" id="clearGlobalOverlayBtn" style="height: 24px; width: 24px; padding: 0; flex-shrink: 0;" title="Clear overlay">×</button>
+                        <span id="globalOverlayName" class="file-title"
+                          style="margin: 0; flex: 1.5; font-size: 11px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                          title="No file uploaded">No file</span>
+                        <button type="button" class="queue-delete" id="clearGlobalOverlayBtn"
+                          style="height: 24px; width: 24px; padding: 0; flex-shrink: 0;"
+                          title="Clear overlay">×</button>
                       </div>
                     </div>
-                    <button type="button" class="btn compact" id="globalOverlayPlaceBtn" style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with mouse</button>
+                    <button type="button" class="btn compact" id="globalOverlayPlaceBtn"
+                      style="width: 100%; height: 30px; font-size: 10px; margin-bottom: 10px;">Position with
+                      mouse</button>
                     <div class="slider-row">
                       <label for="globalOverlayOpacity">Overlay Opacity</label>
                       <div class="slider-container-row">
@@ -1189,10 +1242,16 @@
   <div id="lightboxOverlay" class="lightbox-overlay hidden" aria-label="Mockup Preview" role="dialog" aria-modal="true">
     <button class="lightbox-close" id="closeLightboxBtn" aria-label="Close preview">&times;</button>
     <button class="lightbox-nav lightbox-nav-prev hidden" id="lightboxPrevBtn" aria-label="Previous mockup">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+        stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
     </button>
     <button class="lightbox-nav lightbox-nav-next hidden" id="lightboxNextBtn" aria-label="Next mockup">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+        stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
     </button>
     <div class="lightbox-content">
       <img id="lightboxImage" src="" alt="Mockup Preview">
@@ -1202,7 +1261,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=18"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=20"></script>
 </body>
 
 </html>

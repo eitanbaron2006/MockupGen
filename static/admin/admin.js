@@ -3409,6 +3409,31 @@
     element.addEventListener("change", updateGreenFrameSettingsFromControls);
   });
 
+  // Collapsible Green frames controls panel (same UX as the effect panels),
+  // with the collapsed state remembered across sessions.
+  const GREEN_PANEL_COLLAPSED_KEY = "mockupStudio.greenPanelCollapsed";
+  if ($("greenFramePanelToggle") && $("greenFramePanelBody")) {
+    let greenPanelCollapsed = false;
+    try {
+      greenPanelCollapsed = localStorage.getItem(GREEN_PANEL_COLLAPSED_KEY) === "true";
+    } catch (_error) {
+      // Persistence is non-critical UI state.
+    }
+    const applyGreenPanelCollapsed = () => {
+      $("greenFramePanelBody").classList.toggle("hidden", greenPanelCollapsed);
+    };
+    applyGreenPanelCollapsed();
+    $("greenFramePanelToggle").onclick = () => {
+      greenPanelCollapsed = !greenPanelCollapsed;
+      applyGreenPanelCollapsed();
+      try {
+        localStorage.setItem(GREEN_PANEL_COLLAPSED_KEY, String(greenPanelCollapsed));
+      } catch (_error) {
+        // Persistence is non-critical UI state.
+      }
+    };
+  }
+
   // Realism Effects Event Listeners & Live Preview Updates
   let refreshPreviewTimeout = null;
   let greenFramePreviewTimeout = null;

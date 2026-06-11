@@ -1524,6 +1524,12 @@ body.sidebar-resizing * {
   padding: 14px;
 }
 
+/* The collapsible body wrapper must keep the original control spacing */
+#greenFramePanelBody {
+  display: grid;
+  gap: 12px;
+}
+
 .compact-check {
   align-items: center;
   color: var(--ink);
