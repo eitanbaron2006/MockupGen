@@ -886,7 +886,7 @@
         </button>
       </div>
     `).join("") || '<div class="empty">No templates match this filter.</div>';
-    document.querySelectorAll(".queue-select").forEach((button) => {
+    $("queue").querySelectorAll(".queue-select").forEach((button) => {
       button.onclick = () => {
         autoSaveCurrent();
         state.selected = state.templates.find((template) => template.template_id === button.dataset.template);
@@ -894,7 +894,7 @@
         renderEditor();
       };
     });
-    document.querySelectorAll(".queue-checkbox").forEach((box) => {
+    $("queue").querySelectorAll(".queue-checkbox").forEach((box) => {
       box.onchange = (e) => {
         if (e.target.checked) {
           state.selectedForBatch.add(e.target.dataset.template);
@@ -904,7 +904,9 @@
         updateBatchControls();
       };
     });
-    document.querySelectorAll(".queue-delete").forEach((button) => {
+    // Scope to the queue list: other UI elements reuse the .queue-delete class
+    // (e.g. the Global PNG Overlay clear button) and must keep their handlers.
+    $("queue").querySelectorAll(".queue-delete").forEach((button) => {
       button.onclick = () => {
         const template = state.templates.find((item) => item.template_id === button.dataset.template);
         openDeleteModal(template);
