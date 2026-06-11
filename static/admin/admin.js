@@ -189,6 +189,8 @@
     isPanning: false,
     canvasLocked: false,
     lockBeforePlacement: false,
+    polygonLocked: false,
+    polygonLockBeforePlacement: false,
     panStart: { x: 0, y: 0 },
     spacePressed: false,
     lastSelectedTemplateId: null,
@@ -1532,12 +1534,36 @@
     });
   }
 
+  // Artwork-polygon lock: freezes the selection quad (corner handles + whole
+  // area drag) so positioning an overlay never moves the artwork by mistake.
+  function setPolygonLock(locked) {
+    state.polygonLocked = Boolean(locked);
+    const lockBtn = $("polygonLockBtn");
+    if (lockBtn) {
+      lockBtn.classList.toggle("active", state.polygonLocked);
+      lockBtn.title = state.polygonLocked
+        ? "Artwork area locked — corners & moving disabled (click to unlock)"
+        : "Lock artwork area to prevent accidental moving";
+      const openIcon = lockBtn.querySelector(".lock-icon-open");
+      const closedIcon = lockBtn.querySelector(".lock-icon-closed");
+      if (openIcon) openIcon.classList.toggle("hidden", state.polygonLocked);
+      if (closedIcon) closedIcon.classList.toggle("hidden", !state.polygonLocked);
+    }
+    const selectionSvg = $("selectionSvg");
+    if (selectionSvg) selectionSvg.classList.toggle("polygon-locked", state.polygonLocked);
+  }
+
   function applyPlacementCanvasLock(wasActive, isActive) {
     if (isActive && !wasActive) {
       state.lockBeforePlacement = state.canvasLocked;
       setCanvasLock(true);
+      // Lock the artwork polygon by default during mouse positioning; the
+      // user can still unlock it manually from the HUD if needed.
+      state.polygonLockBeforePlacement = state.polygonLocked;
+      setPolygonLock(true);
     } else if (!isActive && wasActive) {
       setCanvasLock(Boolean(state.lockBeforePlacement));
+      setPolygonLock(Boolean(state.polygonLockBeforePlacement));
     }
   }
 
@@ -2089,6 +2115,7 @@
 
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
+    if (state.polygonLocked) return;
     if (isGreenFrameTemplate()) return;
     event.preventDefault();
 
@@ -3211,6 +3238,15 @@
       setCanvasLock(!state.canvasLocked);
       // A manual toggle overrides the placement auto-lock restore state.
       state.lockBeforePlacement = state.canvasLocked;
+    };
+  }
+
+  if ($("polygonLockBtn")) {
+    $("polygonLockBtn").onclick = (e) => {
+      e.stopPropagation();
+      setPolygonLock(!state.polygonLocked);
+      // A manual toggle overrides the placement auto-lock restore state.
+      state.polygonLockBeforePlacement = state.polygonLocked;
     };
   }
 

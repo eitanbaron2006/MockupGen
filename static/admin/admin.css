@@ -1000,6 +1000,10 @@ body.sidebar-resizing * {
   height: 14px;
 }
 
+.zoom-btn.lock-btn:not(:last-child) {
+  border-radius: 0;
+}
+
 .zoom-btn.lock-btn.active {
   background: var(--accent);
   color: #fff;
@@ -1008,6 +1012,17 @@ body.sidebar-resizing * {
 .zoom-btn.lock-btn.active:hover {
   background: var(--accent);
   color: #fff;
+}
+
+/* Locked artwork polygon: handles and area dragging are inert */
+.selection-svg.polygon-locked .svg-handle,
+.selection-svg.polygon-locked #selectionPolygon {
+  pointer-events: none;
+  cursor: default;
+}
+
+.selection-svg.polygon-locked .handle-group {
+  opacity: 0.45;
 }
 
 .workspace-empty {
