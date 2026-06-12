@@ -39,19 +39,75 @@
   ],
   "output_format": "png",
   "effects": {
-    "glass_reflection": {
-      "enabled": false,
-      "opacity": 0.15,
-      "type": "diagonal"
-    },
     "inner_shadow": {
-      "blur": 15,
-      "bottom": 10,
       "enabled": true,
+      "top": 10,
+      "right": 0,
+      "bottom": 0,
       "left": 10,
-      "opacity": 0.4,
-      "right": 10,
-      "top": 10
+      "opacity": 0.35,
+      "blur": 21,
+      "target": "artwork"
+    },
+    "glass_reflection": {
+      "enabled": true,
+      "type": "double_glare",
+      "opacity": 0.25,
+      "target": "artwork"
+    },
+    "matte_finish": {
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "contrast": -0.14,
+      "target": "artwork"
+    },
+    "color_tint": {
+      "enabled": false,
+      "temperature": 25,
+      "intensity": 0.2,
+      "target": "artwork"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "enabled": false,
+      "brightness": 0,
+      "contrast": 0,
+      "saturation": 0,
+      "color_filter": "none",
+      "target": "all"
+    },
+    "global_png_overlay": {
+      "enabled": false,
+      "image": "",
+      "opacity": 0.5,
+      "scale": 1,
+      "position_x": 0,
+      "position_y": 0,
+      "rotation": 0,
+      "anchor": "center",
+      "blend_mode": "normal",
+      "tint_color": "#ffffff",
+      "tint_strength": 0,
+      "blur": 0,
+      "flip_x": false,
+      "flip_y": false,
+      "repeat": false,
+      "target": "all"
+    },
+    "global_reflections": {
+      "enabled": false,
+      "window_type": "none",
+      "window_opacity": 0.2,
+      "window_blur": 20,
+      "rays_type": "none",
+      "rays_opacity": 0.2,
+      "rays_angle": 0,
+      "target": "all"
     }
   },
   "raw_artwork_area": null
