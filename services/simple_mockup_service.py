@@ -206,6 +206,12 @@ def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
                 int(manifest["artwork_area"]["height"])
             )
             
+        # Number of artwork frames (multi-frame green-screen templates expose
+        # one region per frame; classic templates have a single slot)
+        raw_area = manifest.get("raw_artwork_area")
+        regions = raw_area.get("regions") if isinstance(raw_area, dict) else None
+        frame_count = len(regions) if isinstance(regions, list) and regions else 1
+
         templates.append(
             {
                 "template_id": manifest["template_id"],
@@ -214,6 +220,7 @@ def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
                 "supported_modes": manifest["supported_modes"],
                 "orientation": orientation,
                 "product_type": manifest.get("product_type"),
+                "frame_count": frame_count,
             }
         )
     return templates

@@ -64,19 +64,31 @@ def health_check():
 @mockup_routes.get("/api/mockups/templates")
 def get_templates():
     templates = list_templates(Path(current_app.config["TEMPLATES_FOLDER"]))
+
+    # The catalog DB is the source of truth for admin-managed fields
+    # (category/product_type, orientation, detected frame regions) — the
+    # on-disk manifests can lag behind admin edits.
+    catalog = current_app.extensions.get("catalog_service")
+    if catalog:
+        for template in templates:
+            record = catalog.get_template(template["template_id"])
+            if not record:
+                continue
+            if record.get("product_type"):
+                template["product_type"] = record["product_type"]
+            if record.get("orientation"):
+                template["orientation"] = record["orientation"]
+            raw_area = record.get("raw_artwork_area")
+            regions = raw_area.get("regions") if isinstance(raw_area, dict) else None
+            if isinstance(regions, list) and regions:
+                template["frame_count"] = len(regions)
+
     product_type = request.args.get("product_type", "").strip().lower()
     if product_type:
-        filtered = []
-        for template in templates:
-            try:
-                _, manifest = load_manifest(
-                    Path(current_app.config["TEMPLATES_FOLDER"]), template["template_id"]
-                )
-            except (TemplateNotFoundError, InvalidTemplateError):
-                continue
-            if str(manifest.get("product_type", "")).lower() == product_type:
-                filtered.append(template)
-        templates = filtered
+        templates = [
+            template for template in templates
+            if str(template.get("product_type", "")).lower() == product_type
+        ]
     return jsonify(templates)
 
 
