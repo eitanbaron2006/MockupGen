@@ -1092,6 +1092,7 @@
 
     // Reset preview mode on template switch/re-render
     state.isPreviewingMockup = false;
+    if (maskDetectState.active) closeMaskDetectionHud();
     setGreenFramePlacementActive(false);
     if ($("selectionRenderedMockup")) {
       $("selectionRenderedMockup").classList.add("hidden");
@@ -2377,16 +2378,21 @@
       return;
     }
 
+    // Always save state and clear overlays before any detection flow
+    saveDetectionPreState();
+    clearDetectionOverlays();
+
     // If classic detection is active, run the selected internal classic mode.
     if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
       if ((state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups") {
         await runClassicGreenFramesDetection();
         return;
       }
-      await startDetectionWizard();
+      showDetectionMethodPicker();
       return;
     }
 
+    // Vertex AI / Local AI providers
     setBusy(true);
     const engineName = providerTitle(state.settings.DETECTION_PROVIDER || "classic");
     $("analysisLabel").textContent = `${engineName} is analyzing the frame`;
@@ -2395,27 +2401,15 @@
     $("detectionResult").className = "rule result-rule";
     try {
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, { method: "POST" });
-      state.selected = payload.template;
-      if (payload.proposal && payload.proposal.raw_artwork_area) {
-        state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
-      }
-      const confidence = payload.proposal.confidence == null ? "" : ` (${Math.round(payload.proposal.confidence * 100)}%)`;
-      $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
-      $("detectionResult").classList.add("success");
-      $("detectionResult").textContent = `${payload.proposal.provider}: ${payload.proposal.reason || "Artwork area proposed."}${confidence}`;
-      $("proposalState").textContent = "Detection proposal displayed. Drag handles to refine it, then approve.";
-      updateTemplateInQueue(state.selected);
-      renderEditor();
-      toast("Detection proposal ready for review");
-      setStatus("Detection proposal ready. Review before approving.");
+      setBusy(false);
+      showDetectionReview(payload, { mode: "ai" });
     } catch (error) {
+      setBusy(false);
       $("detectionResult").classList.add("error");
       $("detectionResult").textContent = error.message;
       $("proposalState").textContent = "Detection failed. Open detection settings or retry.";
       toast(error.message);
       setStatus("Detection failed", true);
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -2424,36 +2418,460 @@
     $("analysisLabel").textContent = "Classic green frames is analyzing the mockup";
     if ($("analysisSub")) $("analysisSub").textContent = "Building a green-screen mask and perspective corners.";
     setStatus("Detecting green frame mockup area...");
-    $("proposalState").textContent = "Analyzing green frame mask...";
     $("detectionResult").className = "rule result-rule";
     try {
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
         method: "POST",
         body: JSON.stringify({ mode: "green_frames_mockups" })
       });
-      state.selected = payload.template;
-      if (payload.proposal && payload.proposal.raw_artwork_area) {
-        state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
-      }
-      const confidence = payload.proposal.confidence == null ? "" : ` (${Math.round(payload.proposal.confidence * 100)}%)`;
-      $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
-      $("detectionResult").classList.add("success");
-      $("detectionResult").textContent = `${payload.proposal.provider}: ${payload.proposal.reason || "Green frame area proposed."}${confidence}`;
-      $("proposalState").textContent = "Green frame detection proposal displayed. Drag handles to refine it, then approve.";
-      updateTemplateInQueue(state.selected);
-      renderEditor();
-      toast("Green frame detection proposal ready");
-      setStatus("Green frame proposal ready. Review before approving.");
+      setBusy(false);
+      showDetectionReview(payload, { mode: "green_frames_mockups" });
     } catch (error) {
+      setBusy(false);
       $("detectionResult").classList.add("error");
       $("detectionResult").textContent = error.message;
       $("proposalState").textContent = "Green frame detection failed. Try the standard classic mode or review manually.";
       toast(error.message);
       setStatus("Green frame detection failed", true);
     } finally {
-      setBusy(false);
       if ($("analysisSub")) $("analysisSub").textContent = "This can take several seconds.";
     }
+  }
+
+  // --- DETECTION SHARED INFRASTRUCTURE ---
+
+  // Saved state for cancel/restore across ALL detection modes.
+  const detectionReviewState = {
+    active: false,
+    prevTemplate: null,      // JSON snapshot before detection started
+    pendingPayload: null,    // API response waiting for Accept/Retry/Cancel
+    params: null,            // {mode, color, points, tolerance} for retry
+    wizardApproved: false,   // set true when wizard accepts so closeWizard won't restore
+  };
+
+  function saveDetectionPreState() {
+    detectionReviewState.prevTemplate = state.selected
+      ? JSON.parse(JSON.stringify(state.selected))
+      : null;
+    detectionReviewState.wizardApproved = false;
+  }
+
+  /** Hide every overlay so only the bare mockup image is visible. */
+  function clearDetectionOverlays() {
+    if (state.greenFramePlacementActive) setGreenFramePlacementActive(false);
+    if (state.globalOverlayPlacementActive) setGlobalOverlayPlacementActive(false);
+
+    const svg = $("selectionSvg");
+    if (svg) svg.classList.add("hidden");
+
+    const rendered = $("selectionRenderedMockup");
+    if (rendered) rendered.classList.add("hidden");
+
+    const imageOverlay = $("selectionImageOverlay");
+    if (imageOverlay) imageOverlay.classList.add("hidden");
+
+    const greenLayer = $("greenFramePlacementLayer");
+    if (greenLayer) greenLayer.classList.add("hidden");
+
+    const globalLayer = $("globalOverlayPlacementLayer");
+    if (globalLayer) globalLayer.classList.add("hidden");
+  }
+
+  /**
+   * Show the detection result as a provisional preview.
+   * The user must explicitly Accept before anything is committed.
+   */
+  function showDetectionReview(payload, params) {
+    detectionReviewState.active = true;
+    detectionReviewState.pendingPayload = payload;
+    detectionReviewState.params = params;
+
+    // Temporarily apply the result so the user can see it on the canvas.
+    state.selected = { ...payload.template };
+    if (payload.proposal?.raw_artwork_area) {
+      state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
+    }
+    updateTemplateInQueue(state.selected);
+    renderEditor();
+
+    const regions = Array.isArray(payload.proposal?.raw_artwork_area?.regions)
+      ? payload.proposal.raw_artwork_area.regions
+      : [];
+    const regionCount = regions.length || 1;
+    const mode = params.mode;
+
+    // Tolerance slider — show for color/point modes, hide for green auto
+    const tolRow = $("maskDetectToleranceRow");
+    if (tolRow) {
+      const showTol = mode === "color_pick" || mode === "frame_points";
+      tolRow.classList.toggle("hidden", !showTol);
+      if (showTol) {
+        const tol = params.tolerance || 40;
+        const tolInput = $("maskDetectTolerance");
+        if (tolInput) tolInput.value = tol;
+        const tolVal = $("maskDetectToleranceVal");
+        if (tolVal) tolVal.textContent = String(tol);
+      }
+    }
+
+    // Color swatch — only for color_pick
+    if (mode === "color_pick" && params.color) {
+      const [r, g, b] = params.color;
+      const hex = `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
+      $("maskDetectColorBox").style.background = hex;
+      $("maskDetectColorLabel").textContent = `rgb(${r}, ${g}, ${b})`;
+      $("maskDetectColorSwatch").classList.remove("hidden");
+    } else {
+      $("maskDetectColorSwatch").classList.add("hidden");
+    }
+
+    const actions = [
+      { text: "Accept", class: "primary", onclick: () => acceptDetectionResult() },
+      { text: "Retry", class: "secondary", onclick: () => retryDetection() },
+    ];
+    if (mode === "color_pick") {
+      actions.push({ text: "New Color", class: "secondary", onclick: () => { cancelDetection(); runColorPickMode(); } });
+    } else if (mode === "frame_points") {
+      actions.push({ text: "Edit Points", class: "secondary", onclick: () => { cancelDetection(); runFramePointsMode(); } });
+    }
+    actions.push({ text: "Cancel", class: "danger", onclick: () => cancelDetection() });
+
+    $("maskDetectionHud").classList.remove("hidden");
+    $("proposalState").classList.add("hidden");
+
+    updateMaskDetectUI(
+      "REVIEW",
+      `${regionCount} frame${regionCount !== 1 ? "s" : ""} detected`,
+      "Review the highlighted frames. Accept to confirm or adjust settings and retry.",
+      actions
+    );
+  }
+
+  function acceptDetectionResult() {
+    if (!detectionReviewState.pendingPayload) { closeMaskDetectionHud(); return; }
+    const payload = detectionReviewState.pendingPayload;
+    detectionReviewState.active = false;
+    detectionReviewState.prevTemplate = null;
+    detectionReviewState.pendingPayload = null;
+    detectionReviewState.params = null;
+
+    // state.selected already has the new detection — just update the display
+    if (payload.proposal) {
+      $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
+      $("detectionResult").className = "rule result-rule success";
+      $("detectionResult").textContent = `classic: ${payload.proposal.reason || "Detection accepted."}`;
+    }
+    closeMaskDetectionHud();
+    renderEditor();
+    toast("Detection accepted");
+    setStatus("Detection confirmed. Fine-tune handles then approve.");
+  }
+
+  async function retryDetection() {
+    if (!detectionReviewState.params) return;
+    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || "40", 10);
+    const params = { ...detectionReviewState.params, tolerance };
+
+    // Restore visual to clean state while re-detecting
+    if (detectionReviewState.prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+      updateTemplateInQueue(state.selected);
+    }
+    detectionReviewState.active = false;
+    closeMaskDetectionHud();
+    clearDetectionOverlays();
+
+    if (params.mode === "color_pick" || params.mode === "frame_points") {
+      await submitMaskDetection(params.mode, params);
+    } else if (params.mode === "green_frames_mockups") {
+      await runClassicGreenFramesDetection();
+    }
+  }
+
+  function cancelDetection() {
+    const prevTemplate = detectionReviewState.prevTemplate;
+    detectionReviewState.active = false;
+    detectionReviewState.prevTemplate = null;
+    detectionReviewState.pendingPayload = null;
+    detectionReviewState.params = null;
+
+    closeMaskDetectionHud();
+
+    if (prevTemplate) {
+      state.selected = prevTemplate;
+      updateTemplateInQueue(state.selected);
+      renderEditor();
+    }
+
+    $("proposalState").textContent = "Detection cancelled.";
+    toast("Detection cancelled");
+  }
+
+  // --- MASK DETECTION (COLOR PICK / FRAME POINTS) ---
+
+  const maskDetectState = {
+    active: false,
+    mode: null,
+    sampledColor: null,
+    points: [],
+    clickListener: null,
+  };
+
+  function showDetectionMethodPicker() {
+    maskDetectState.active = true;
+    maskDetectState.mode = null;
+    maskDetectState.sampledColor = null;
+    maskDetectState.points = [];
+    clearMaskDetectDots();
+
+    $("proposalState").classList.add("hidden");
+    $("maskDetectionHud").classList.remove("hidden");
+    $("maskDetectColorSwatch").classList.add("hidden");
+    $("maskDetectToleranceRow").classList.add("hidden");
+
+    updateMaskDetectUI("DETECT", "Detection Method", "Choose how to find frame areas in this mockup:", [
+      { text: "Auto Detect", class: "secondary", onclick: () => { closeMaskDetectionHud(); startDetectionWizard(); } },
+      { text: "Color Pick", class: "secondary", onclick: () => runColorPickMode() },
+      { text: "Frame Points", class: "secondary", onclick: () => runFramePointsMode() },
+      { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+    ]);
+  }
+
+  function runColorPickMode() {
+    maskDetectState.mode = "color_pick";
+    maskDetectState.sampledColor = null;
+
+    $("maskDetectColorSwatch").classList.add("hidden");
+    $("maskDetectToleranceRow").classList.remove("hidden");
+
+    updateMaskDetectUI("COLOR PICK", "Sample Frame Color", "Click anywhere in the frame area to pick its color.", [
+      { text: "Run Detection", class: "primary", disabled: true, id: "maskColorPickRunBtn", onclick: () => submitMaskDetection("color_pick") },
+      { text: "Back", class: "secondary", onclick: () => showDetectionMethodPicker() },
+      { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+    ]);
+
+    $("stage").classList.add("stage-cursor-crosshair");
+    disableMaskDetectClickListener();
+
+    maskDetectState.clickListener = (e) => {
+      const image = $("canvasImage");
+      const rect = image.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) return;
+
+      const naturalX = Math.round((clickX / rect.width) * image.naturalWidth);
+      const naturalY = Math.round((clickY / rect.height) * image.naturalHeight);
+
+      const tmpCanvas = document.createElement("canvas");
+      tmpCanvas.width = image.naturalWidth;
+      tmpCanvas.height = image.naturalHeight;
+      const ctx = tmpCanvas.getContext("2d");
+      try {
+        ctx.drawImage(image, 0, 0);
+        const px = ctx.getImageData(naturalX, naturalY, 1, 1).data;
+        maskDetectState.sampledColor = [px[0], px[1], px[2]];
+      } catch (_err) {
+        toast("Could not sample color from this image.");
+        return;
+      }
+
+      const [r, g, b] = maskDetectState.sampledColor;
+      const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+      $("maskDetectColorBox").style.background = hex;
+      $("maskDetectColorLabel").textContent = `rgb(${r}, ${g}, ${b})`;
+      $("maskDetectColorSwatch").classList.remove("hidden");
+
+      updateMaskDetectUI("COLOR PICK", "Sample Frame Color", `Color sampled: rgb(${r}, ${g}, ${b}). Adjust tolerance or click to re-pick.`, [
+        { text: "Run Detection", class: "primary", id: "maskColorPickRunBtn", onclick: () => submitMaskDetection("color_pick") },
+        { text: "Re-pick", class: "secondary", onclick: () => { maskDetectState.sampledColor = null; $("maskDetectColorSwatch").classList.add("hidden"); runColorPickMode(); } },
+        { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+      ]);
+    };
+    $("canvasImage").addEventListener("click", maskDetectState.clickListener);
+  }
+
+  function runFramePointsMode() {
+    maskDetectState.mode = "frame_points";
+    maskDetectState.points = [];
+    clearMaskDetectDots();
+
+    $("maskDetectColorSwatch").classList.add("hidden");
+    $("maskDetectToleranceRow").classList.remove("hidden");
+
+    updateMaskDetectUI("FRAME POINTS", "Mark Frame Centers", "Click inside each frame you want to detect. Each click places a numbered marker.", [
+      { text: "Done", class: "primary", disabled: true, id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
+      { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
+      { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+    ]);
+
+    $("stage").classList.add("stage-cursor-crosshair");
+    disableMaskDetectClickListener();
+
+    maskDetectState.clickListener = (e) => {
+      const image = $("canvasImage");
+      const rect = image.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) return;
+
+      const naturalX = Math.round((clickX / rect.width) * image.naturalWidth);
+      const naturalY = Math.round((clickY / rect.height) * image.naturalHeight);
+
+      maskDetectState.points.push({ x: naturalX, y: naturalY });
+      addMaskDetectDot(maskDetectState.points.length, clickX, clickY);
+
+      const count = maskDetectState.points.length;
+      updateMaskDetectUI("FRAME POINTS", "Mark Frame Centers", `${count} point(s) placed. Add more or click Done to detect.`, [
+        { text: "Done", class: "primary", id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
+        { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
+        { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+      ]);
+    };
+    $("canvasImage").addEventListener("click", maskDetectState.clickListener);
+  }
+
+  function undoLastFramePoint() {
+    if (!maskDetectState.points.length) return;
+    maskDetectState.points.pop();
+    redrawMaskDetectDots();
+    const count = maskDetectState.points.length;
+    updateMaskDetectUI("FRAME POINTS", "Mark Frame Centers",
+      count ? `${count} point(s) placed. Add more or click Done to detect.` : "Click inside each frame you want to detect.",
+      [
+        { text: "Done", class: "primary", disabled: !count, id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
+        { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
+        { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+      ]
+    );
+  }
+
+  function addMaskDetectDot(number, displayX, displayY) {
+    const layer = $("maskDetectionDotsLayer");
+    if (!layer) return;
+    layer.classList.remove("hidden");
+
+    const stage = $("stage");
+    const stageRect = stage.getBoundingClientRect();
+    const imageRect = $("canvasImage").getBoundingClientRect();
+    const left = imageRect.left - stageRect.left + displayX;
+    const top = imageRect.top - stageRect.top + displayY;
+
+    const dot = document.createElement("div");
+    dot.className = "mask-detect-dot";
+    dot.dataset.index = number - 1;
+    dot.textContent = String(number);
+    dot.style.left = `${left}px`;
+    dot.style.top = `${top}px`;
+    layer.appendChild(dot);
+  }
+
+  function clearMaskDetectDots() {
+    const layer = $("maskDetectionDotsLayer");
+    if (!layer) return;
+    layer.innerHTML = "";
+    layer.classList.add("hidden");
+  }
+
+  function redrawMaskDetectDots() {
+    clearMaskDetectDots();
+    if (!maskDetectState.points.length) return;
+    const image = $("canvasImage");
+    const imageRect = image.getBoundingClientRect();
+    maskDetectState.points.forEach((pt, idx) => {
+      const displayX = (pt.x / image.naturalWidth) * imageRect.width;
+      const displayY = (pt.y / image.naturalHeight) * imageRect.height;
+      addMaskDetectDot(idx + 1, displayX, displayY);
+    });
+  }
+
+  async function submitMaskDetection(mode, overrideParams) {
+    disableMaskDetectClickListener();
+    $("stage").classList.remove("stage-cursor-crosshair");
+    clearMaskDetectDots();
+
+    // Show "detecting" state inside the existing HUD while waiting
+    $("maskDetectionHud").classList.remove("hidden");
+    $("proposalState").classList.add("hidden");
+    $("maskDetectColorSwatch").classList.add("hidden");
+    $("maskDetectToleranceRow").classList.add("hidden");
+    updateMaskDetectUI("DETECTING", "Detecting…", "Please wait.", []);
+
+    setBusy(true);
+    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || "40", 10);
+
+    const params = overrideParams || {
+      mode,
+      tolerance,
+      color: maskDetectState.sampledColor,
+      points: (maskDetectState.points || []).map(p => ({ x: p.x, y: p.y })),
+    };
+
+    const body = { mode: params.mode, tolerance: params.tolerance };
+    if (params.mode === "color_pick") {
+      body.color = params.color;
+    } else {
+      body.points = params.points || [];
+    }
+
+    $("analysisLabel").textContent = params.mode === "color_pick"
+      ? "Detecting regions by sampled color…"
+      : "Detecting regions from seed points…";
+
+    try {
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setBusy(false);
+      showDetectionReview(payload, params);
+    } catch (error) {
+      setBusy(false);
+      closeMaskDetectionHud();
+      $("detectionResult").className = "rule result-rule error";
+      $("detectionResult").textContent = error.message;
+      $("proposalState").textContent = "Detection failed. Adjust tolerance or pick different areas.";
+      toast(error.message);
+      setStatus("Detection failed", true);
+    }
+  }
+
+  function disableMaskDetectClickListener() {
+    if (maskDetectState.clickListener) {
+      const img = $("canvasImage");
+      if (img) img.removeEventListener("click", maskDetectState.clickListener);
+      maskDetectState.clickListener = null;
+    }
+  }
+
+  function closeMaskDetectionHud() {
+    disableMaskDetectClickListener();
+    clearMaskDetectDots();
+    $("stage").classList.remove("stage-cursor-crosshair");
+    maskDetectState.active = false;
+    maskDetectState.mode = null;
+    const hud = $("maskDetectionHud");
+    if (hud) hud.classList.add("hidden");
+    const ps = $("proposalState");
+    if (ps) ps.classList.remove("hidden");
+  }
+
+  function updateMaskDetectUI(badge, title, instruction, actions) {
+    $("maskDetectBadge").textContent = badge;
+    $("maskDetectTitle").textContent = title;
+    $("maskDetectInstruction").textContent = instruction;
+    const container = $("maskDetectActions");
+    container.innerHTML = "";
+    actions.forEach(act => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `wizard-btn ${act.class || ""}`;
+      btn.textContent = act.text;
+      if (act.disabled) btn.disabled = true;
+      if (act.id) btn.id = act.id;
+      btn.onclick = act.onclick;
+      container.appendChild(btn);
+    });
   }
 
   // --- PREMIUM 4-STAGE GUIDED DETECTION WIZARD ---
@@ -2462,6 +2880,11 @@
       toast("Select a mockup before running detection.");
       return;
     }
+    // Save state (may already be saved from detectFrame, but wizard can also be called
+    // from the method picker "Auto Detect" after prevTemplate was cleared)
+    if (!detectionReviewState.prevTemplate) saveDetectionPreState();
+    clearDetectionOverlays();
+
     wizardState.active = true;
     wizardState.step = 1;
     wizardState.layers = [];
@@ -2534,7 +2957,33 @@
       { text: "Skip", class: "danger", onclick: () => runStage2SamCenter() }
     ];
 
-    const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[2]];
+    if (wizardState.layers.length > 1) {
+      actions.splice(1, 0, {
+        text: "Use All as Frames",
+        class: "secondary",
+        onclick: () => {
+          // Compute center of each layer and send as frame_points for multi-frame detection.
+          const centers = wizardState.layers.map(corners => {
+            const xs = corners.map(c => c.x);
+            const ys = corners.map(c => c.y);
+            const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2);
+            const cy = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
+            return { x: cx, y: cy };
+          });
+          // Prevent closeWizard from restoring state (we're going into mask-detect flow).
+          detectionReviewState.wizardApproved = true;
+          wizardState.active = false;
+          $("detectionWizardHud").classList.add("hidden");
+          submitMaskDetection("frame_points", {
+            mode: "frame_points",
+            points: centers,
+            tolerance: 40,
+          });
+        }
+      });
+    }
+
+    const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[actions.length - 1]];
 
     updateWizardUI(
       "STAGE 1",
@@ -2709,6 +3158,7 @@
 
   async function approveWizardSelection() {
     setBusy(true);
+    detectionReviewState.wizardApproved = true;
     closeWizard();
 
     try {
@@ -2734,6 +3184,14 @@
     disableCanvasClickListener();
     wizardState.active = false;
     $("detectionWizardHud").classList.add("hidden");
+
+    // If user cancelled without approving, restore the pre-detection state.
+    if (!detectionReviewState.wizardApproved && detectionReviewState.prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+      detectionReviewState.prevTemplate = null;
+      renderEditor();
+    }
+
     $("proposalState").classList.remove("hidden");
   }
 
@@ -4687,6 +5145,13 @@
 
   applySelectionStyle();
   $("detectButton").onclick = detectFrame;
+
+  if ($("maskDetectTolerance")) {
+    $("maskDetectTolerance").oninput = () => {
+      const val = $("maskDetectTolerance").value;
+      if ($("maskDetectToleranceVal")) $("maskDetectToleranceVal").textContent = val;
+    };
+  }
   $("saveButton").onclick = async () => {
     try {
       await saveTemplate();

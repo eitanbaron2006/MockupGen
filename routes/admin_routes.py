@@ -21,6 +21,13 @@ from flask import (
 from services.catalog_service import CatalogError, CatalogService, orientation_for_size
 from services.classic_detection_service import ClassicDetectionProvider
 from services.detection_service import DetectionError, build_provider, validate_proposal
+from services.green_frame_mockup_service import (
+    GreenFrameSettings,
+    detect_frames_by_color,
+    detect_frames_from_points,
+    green_detection_raw,
+    green_mask_image,
+)
 from services.local_detection_service import discover_local_models
 from services.vertex_model_service import (
     FALLBACK_VERTEX_DETECTION_MODELS,
@@ -51,6 +58,68 @@ SETTINGS_KEYS = {
     "CLASSIC_INTERNAL_MODE",
     "CLASSIC_GREEN_EDGE_EXPAND",
 }
+
+
+def _run_mask_detection(
+    background: Path, mode: str, payload: dict
+) -> tuple:
+    """Handle color_pick / frame_points detection modes.
+
+    Returns (DetectionProposal, mask_Image) using the same raw_artwork_area
+    format as green-frame detection so the existing rendering pipeline applies.
+    """
+    from PIL import Image as _PILImage
+
+    img = _PILImage.open(background).convert("RGBA")
+    w, h = img.size
+    tolerance = max(5, min(220, int(payload.get("tolerance", 40))))
+    settings = GreenFrameSettings(tolerance=tolerance, min_area=80)
+
+    if mode == "color_pick":
+        color_raw = payload.get("color") or [0, 255, 0]
+        target = tuple(int(c) for c in list(color_raw)[:3])
+        state = detect_frames_by_color(img, target, tolerance, settings)
+        reason = "Color pick: frame regions detected from sampled color."
+    else:
+        points = payload.get("points") or []
+        if not points:
+            raise DetectionError("At least one seed point is required for Frame Points mode.")
+        state = detect_frames_from_points(img, points, tolerance, settings)
+        reason = f"Frame points: {len(state.regions)} region(s) flood-filled from {len(points)} seed point(s)."
+
+    if not state.regions:
+        raise DetectionError(
+            "No regions found. Try adjusting the tolerance or selecting a different area."
+        )
+
+    raw = green_detection_raw(state, 0)
+    mask = green_mask_image(state)
+
+    regions = raw.get("regions", [])
+    all_xs = [r["x"] for r in regions] + [r["x"] + r["width"] for r in regions]
+    all_ys = [r["y"] for r in regions] + [r["y"] + r["height"] for r in regions]
+    first_corners = regions[0].get("corners") if regions else []
+    artwork_area: dict = {
+        "x": min(all_xs),
+        "y": min(all_ys),
+        "width": max(all_xs) - min(all_xs),
+        "height": max(all_ys) - min(all_ys),
+    }
+    if first_corners:
+        artwork_area["corners"] = first_corners
+
+    proposal = validate_proposal(
+        {
+            "artwork_area": artwork_area,
+            "confidence": 0.85,
+            "reason": reason,
+            "raw_artwork_area": raw,
+        },
+        image_width=w,
+        image_height=h,
+        provider="classic",
+    )
+    return proposal, mask
 
 
 def save_green_frame_mask_if_needed(provider: Any, background: Path, mode: str) -> str | None:
@@ -347,12 +416,18 @@ def detect_admin_template(template_id: str):
         mode = payload.get("mode", "auto")
         point = payload.get("point")
 
-        provider = build_provider(catalog().get_settings(), current_app.config)
-        if provider.__class__.__name__ == "ClassicDetectionProvider":
-            proposal = getattr(provider, "detect")(background, mode=mode, point=point)
+        if mode in ("color_pick", "frame_points"):
+            proposal, mask_img = _run_mask_detection(background, mode, payload)
+            mask_path = background.parent / "mask.png"
+            mask_img.save(str(mask_path))
+            mask_name = "mask.png"
         else:
-            proposal = provider.detect(background)
-        mask_name = save_green_frame_mask_if_needed(provider, background, mode)
+            provider = build_provider(catalog().get_settings(), current_app.config)
+            if provider.__class__.__name__ == "ClassicDetectionProvider":
+                proposal = getattr(provider, "detect")(background, mode=mode, point=point)
+            else:
+                proposal = provider.detect(background)
+            mask_name = save_green_frame_mask_if_needed(provider, background, mode)
 
         if template.get("status") == "draft":
             changes = {

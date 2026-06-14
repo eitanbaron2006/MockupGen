@@ -404,6 +404,120 @@ def detection_from_mask(
     return GreenFrameDetection(mask.width, mask.height, regions, raw_mask, detect_mask, union, soft_mask, alpha.astype(np.float32), int(raw_mask.sum()))
 
 
+def detect_frames_by_color(
+    mockup: Image.Image,
+    target_color: tuple[int, int, int],
+    tolerance: int = 40,
+    settings: GreenFrameSettings | None = None,
+) -> GreenFrameDetection:
+    """Detect frame regions matching any target color (no green-specific bias)."""
+    settings = settings or GreenFrameSettings(target_color=target_color, tolerance=tolerance)
+    rgba = np.asarray(mockup.convert("RGBA"))
+    rgb = rgba[:, :, :3]
+    h, w = rgb.shape[:2]
+
+    dist = _color_distance(rgb, target_color)
+    score = np.maximum(0.0, 1.0 - (dist / max(1, tolerance))).astype(np.float32)
+    alpha = score.copy()
+    alpha[dist <= tolerance * 0.5] = 1.0
+
+    raw_mask = alpha >= 0.3
+    detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
+    corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
+    min_area = max(80, min(settings.min_area, int(w * h * 0.5)))
+    regions = _connected_regions(detect_mask, min_area)
+    if not regions:
+        regions = _connected_regions(detect_mask, max(8, int(w * h * 0.0001)))
+
+    union = np.zeros((h, w), dtype=bool)
+    for region in regions:
+        union[region.y : region.y + region.h, region.x : region.x + region.w] |= detect_mask[
+            region.y : region.y + region.h, region.x : region.x + region.w
+        ]
+    soft_mask = _soft_mask_for_regions(union, alpha, regions, settings)
+    for region in regions:
+        region.inner_corners = _find_corners(corner_mask, region)
+        region.outer_corners = _find_corners(detect_mask, region)
+        region.corners = region.inner_corners
+    return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, alpha, int(raw_mask.sum()))
+
+
+def detect_frames_from_points(
+    mockup: Image.Image,
+    seed_points: list[dict[str, int]],
+    tolerance: int = 40,
+    settings: GreenFrameSettings | None = None,
+) -> GreenFrameDetection:
+    """Detect frame regions by flood-filling from user-supplied seed points.
+
+    Each point selects the connected region of similar-colored pixels at that
+    location.  One region is produced per valid seed point; overlapping regions
+    are merged in the returned union mask.
+    """
+    settings = settings or GreenFrameSettings()
+    rgba = np.asarray(mockup.convert("RGBA"))
+    rgb = rgba[:, :, :3]
+    h, w = rgb.shape[:2]
+
+    combined_mask = np.zeros((h, w), dtype=bool)
+    detected_regions: list[GreenRegion] = []
+
+    for point in seed_points:
+        px = int(point.get("x", 0))
+        py = int(point.get("y", 0))
+        if not (0 <= px < w and 0 <= py < h):
+            continue
+
+        seed_color = tuple(int(c) for c in rgb[py, px])
+        dist = _color_distance(rgb, seed_color)
+        similar = dist <= tolerance
+
+        if ndimage is not None:
+            labeled, _ = ndimage.label(similar, structure=np.ones((3, 3), dtype=np.uint8))
+            seed_label = int(labeled[py, px])
+            if seed_label == 0:
+                continue
+            region_mask = labeled == seed_label
+        else:
+            from collections import deque as _deque
+            region_mask = np.zeros((h, w), dtype=bool)
+            visited = np.zeros((h, w), dtype=bool)
+            q = _deque([(px, py)])
+            visited[py, px] = True
+            while q:
+                cx, cy = q.popleft()
+                if similar[cy, cx]:
+                    region_mask[cy, cx] = True
+                    for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                        if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx]:
+                            visited[ny, nx] = True
+                            q.append((nx, ny))
+
+        if not np.any(region_mask):
+            continue
+
+        ys_r, xs_r = np.where(region_mask)
+        area = int(np.count_nonzero(region_mask))
+        if area < 80:
+            continue
+        x0, x1 = int(xs_r.min()), int(xs_r.max())
+        y0, y1 = int(ys_r.min()), int(ys_r.max())
+        combined_mask |= region_mask
+        detected_regions.append(GreenRegion(x0, y0, x1 - x0 + 1, y1 - y0 + 1, area))
+
+    detected_regions = sorted(detected_regions, key=lambda r: (round(r.y / 25), r.x))
+    detect_mask = _dilate_mask(combined_mask, settings.edge_expand)
+    corner_mask = _dilate_mask(combined_mask, min(1, settings.edge_expand))
+    alpha = combined_mask.astype(np.float32)
+    union = detect_mask.copy()
+    soft_mask = _soft_mask_for_regions(union, alpha, detected_regions, settings)
+    for region in detected_regions:
+        region.inner_corners = _find_corners(corner_mask, region)
+        region.outer_corners = _find_corners(detect_mask, region)
+        region.corners = region.inner_corners
+    return GreenFrameDetection(w, h, detected_regions, combined_mask, detect_mask, union, soft_mask, alpha, int(combined_mask.sum()))
+
+
 def _list_to_corners(points: Any) -> Optional[dict[str, dict[str, float]]]:
     if not isinstance(points, list) or len(points) != 4:
         return None

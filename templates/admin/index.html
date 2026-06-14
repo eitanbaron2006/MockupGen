@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=20">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=22">
 </head>
 
 <body class="admin-page">
@@ -157,6 +157,8 @@
                 <strong>Applying effect changes</strong>
                 <small>Updating the mockup preview.</small>
               </div>
+              <!-- Mask Detection: floating dots layer for Frame Points mode -->
+              <div id="maskDetectionDotsLayer" class="mask-detection-dots-layer hidden" aria-hidden="true"></div>
             </div>
             <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
               <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode"
@@ -307,6 +309,23 @@
               <span>Y <strong id="coordY">-</strong></span>
               <span>W <strong id="coordW">-</strong></span>
               <span>H <strong id="coordH">-</strong></span>
+            </div>
+
+            <!-- Mask Detection HUD (Color Pick / Frame Points) -->
+            <div class="detection-wizard-foot hidden" id="maskDetectionHud">
+              <span class="wizard-badge" id="maskDetectBadge">DETECT</span>
+              <strong class="wizard-title" id="maskDetectTitle">Mask Detection</strong>
+              <span class="wizard-instruction" id="maskDetectInstruction">Choose a detection method.</span>
+              <div class="mask-detect-color-swatch hidden" id="maskDetectColorSwatch">
+                <span id="maskDetectColorBox"></span>
+                <span id="maskDetectColorLabel">rgb(0,0,0)</span>
+              </div>
+              <label class="mask-detect-tolerance hidden" id="maskDetectToleranceRow">
+                Tolerance:
+                <input type="range" id="maskDetectTolerance" min="5" max="180" step="1" value="40">
+                <span id="maskDetectToleranceVal">40</span>
+              </label>
+              <div class="wizard-actions" id="maskDetectActions"></div>
             </div>
 
             <!-- Embedded Premium Detection Wizard HUD -->
@@ -1261,7 +1280,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=20"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=22"></script>
 </body>
 
 </html>

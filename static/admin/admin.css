@@ -3776,4 +3776,88 @@ input[type="checkbox"]:disabled {
   color: #ffffff !important;
 }
 
+/* ===== Mask Detection (Color Pick / Frame Points) ===== */
+
+/* Floating numbered dots layer inside #stage */
+.mask-detection-dots-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.mask-detect-dot {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform 0.15s ease;
+}
+
+/* Color swatch in HUD */
+.mask-detect-color-swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--paper);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+#maskDetectColorBox {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+#maskDetectColorLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+
+/* Tolerance slider row */
+.mask-detect-tolerance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 4px;
+}
+
+.mask-detect-tolerance input[type="range"] {
+  flex: 1;
+}
+
+#maskDetectToleranceVal {
+  min-width: 24px;
+  text-align: right;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Crosshair cursor while user is sampling or clicking points */
+.stage-cursor-crosshair #canvasImage,
+.stage-cursor-crosshair {
+  cursor: crosshair !important;
+}
 

@@ -1,35 +1,35 @@
 {
-  "template_id": "template_b21728667dd9",
-  "name": "ChatGPT Image May 29 2026 08 24 46 PM",
-  "product_type": "horizontal-wall-art",
-  "canvas_width": 1254,
-  "canvas_height": 1254,
+  "template_id": "template_a7e7380a6412",
+  "name": "meg5tar a singular vertical wooden picture frame is displayed fc0677d1-adf9-41e3-8204-fd667804bcc2 0 1",
+  "product_type": "vertival-wall-art-frame",
+  "canvas_width": 1968,
+  "canvas_height": 2464,
   "artwork_area": {
-    "x": 341,
-    "y": 190,
-    "width": 795,
-    "height": 494,
+    "x": 594,
+    "y": 690,
+    "width": 785,
+    "height": 1151,
     "corners": [
       {
-        "x": 342,
-        "y": 234
+        "x": 598,
+        "y": 690
       },
       {
-        "x": 1135,
-        "y": 190
+        "x": 1378,
+        "y": 691
       },
       {
-        "x": 1136,
-        "y": 684
+        "x": 1379,
+        "y": 1840
       },
       {
-        "x": 341,
-        "y": 683
+        "x": 594,
+        "y": 1841
       }
     ]
   },
   "fit_mode": "stretch",
-  "orientation": "landscape",
+  "orientation": "portrait",
   "background": "background.png",
   "foreground": null,
   "mask": "mask.png",
@@ -103,7 +103,7 @@
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
-      "enabled": false,
+      "enabled": true,
       "left": 10,
       "opacity": 0.4,
       "right": 10,
@@ -124,91 +124,5 @@
       "saturation": 0,
       "target": "all"
     }
-  },
-  "raw_artwork_area": {
-    "edge_expand": 11,
-    "green_pixels": 373847,
-    "mode": "green_frames_mockups",
-    "original_corners": [
-      {
-        "x": 342,
-        "y": 234
-      },
-      {
-        "x": 1135,
-        "y": 190
-      },
-      {
-        "x": 1136,
-        "y": 684
-      },
-      {
-        "x": 341,
-        "y": 683
-      }
-    ],
-    "regions": [
-      {
-        "area": 402809,
-        "corners": [
-          {
-            "x": 342,
-            "y": 234
-          },
-          {
-            "x": 1135,
-            "y": 190
-          },
-          {
-            "x": 1136,
-            "y": 684
-          },
-          {
-            "x": 341,
-            "y": 683
-          }
-        ],
-        "height": 516,
-        "inner_corners": [
-          {
-            "x": 342,
-            "y": 234
-          },
-          {
-            "x": 1135,
-            "y": 190
-          },
-          {
-            "x": 1136,
-            "y": 684
-          },
-          {
-            "x": 341,
-            "y": 683
-          }
-        ],
-        "outer_corners": [
-          {
-            "x": 332,
-            "y": 224
-          },
-          {
-            "x": 1145,
-            "y": 180
-          },
-          {
-            "x": 1146,
-            "y": 694
-          },
-          {
-            "x": 331,
-            "y": 693
-          }
-        ],
-        "width": 816,
-        "x": 331,
-        "y": 180
-      }
-    ]
   }
 }
