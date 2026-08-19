@@ -72,6 +72,19 @@
     }
   },
   "raw_artwork_area": {
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
+    ],
     "edge_expand": 11,
     "green_pixels": 261206,
     "mode": "green_frames_mockups",
@@ -154,19 +167,6 @@
         "width": 615,
         "x": 378,
         "y": 196
-      }
-    ],
-    "corners": [
-      {},
-      {
-        "x": null
-      },
-      {
-        "x": null,
-        "y": null
-      },
-      {
-        "y": null
       }
     ]
   },

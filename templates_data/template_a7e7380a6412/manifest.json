@@ -158,5 +158,7 @@
         "y": 1843
       }
     ]
-  }
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.9
 }

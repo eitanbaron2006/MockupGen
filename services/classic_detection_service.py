@@ -48,7 +48,7 @@ class ClassicDetectionProvider:
         return green_mask_image(state)
 
     def _green_settings(self) -> GreenFrameSettings:
-        return GreenFrameSettings(edge_expand=self.green_edge_expand, min_area=80)
+        return GreenFrameSettings(edge_expand=self.green_edge_expand, min_area=2500)
 
     def _detect_green_frame(self, img: np.ndarray) -> tuple[np.ndarray | None, dict | None]:
         image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).convert("RGBA")

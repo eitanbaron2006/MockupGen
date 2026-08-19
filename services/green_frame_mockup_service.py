@@ -146,17 +146,26 @@ def _color_distance(rgb: np.ndarray, target: tuple[int, int, int]) -> np.ndarray
 
 def _green_confidence(rgb: np.ndarray, target: tuple[int, int, int], tolerance: int) -> np.ndarray:
     dist = _color_distance(rgb, target)
-    return np.clip(1.0 - (dist / max(1, tolerance * 1.5)), 0.0, 1.0)
+    similarity = np.maximum(0.0, 1.0 - (dist / max(1, tolerance)))
+    r = rgb[:, :, 0].astype(np.float32)
+    g = rgb[:, :, 1].astype(np.float32)
+    b = rgb[:, :, 2].astype(np.float32)
+    total = r + g + b + 1e-5
+    green_ratio = g / total
+    is_chroma_green = (green_ratio > 0.42) & (g > 60) & (g > r * 1.15) & (g > b * 1.15)
+    chroma_score = np.where(is_chroma_green, np.clip((green_ratio - 0.38) / 0.22, 0.5, 1.0), 0.0)
+    return np.maximum(similarity, chroma_score)
 
 
 def _target_pixels(rgb: np.ndarray, target: tuple[int, int, int], tolerance: int) -> np.ndarray:
     dist = _color_distance(rgb, target)
-    r = rgb[:, :, 0].astype(np.int32)
-    g = rgb[:, :, 1].astype(np.int32)
-    b = rgb[:, :, 2].astype(np.int32)
-    is_target_near = dist <= tolerance
-    is_mostly_green = (g > r * 1.15) & (g > b * 1.15) & (g > 70)
-    return is_target_near | (is_mostly_green & (dist <= tolerance * 1.35))
+    r = rgb[:, :, 0].astype(np.float32)
+    g = rgb[:, :, 1].astype(np.float32)
+    b = rgb[:, :, 2].astype(np.float32)
+    total = r + g + b + 1e-5
+    green_ratio = g / total
+    is_chroma_green = (green_ratio > 0.42) & (g > 60) & (g > r * 1.15) & (g > b * 1.15)
+    return (dist <= tolerance) | is_chroma_green
 
 
 def _sample_grid(field: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
@@ -251,8 +260,10 @@ def _connected_regions(mask: np.ndarray, min_pixels: int) -> list[GreenRegion]:
                 while q:
                     cx, cy = q.popleft()
                     count += 1
-                    min_x, max_x = min(min_x, cx), max(max_x, cx)
-                    min_y, max_y = min(min_y, cy), max(max_y, cy)
+                    min_x = min(min_x, cx)
+                    max_x = max(max_x, cx)
+                    min_y = min(min_y, cy)
+                    max_y = max(max_y, cy)
                     for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
                         if 0 <= nx < w and 0 <= ny < h and mask[ny, nx] and not visited[ny, nx]:
                             visited[ny, nx] = True
@@ -261,10 +272,9 @@ def _connected_regions(mask: np.ndarray, min_pixels: int) -> list[GreenRegion]:
                     regions.append(GreenRegion(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1, count))
         return sorted(regions, key=lambda r: (round(r.y / 25), r.x))
 
-    labels, count = ndimage.label(mask, structure=np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8))
-    objects = ndimage.find_objects(labels)
-    regions: list[GreenRegion] = []
-    for label_id, slices in enumerate(objects, start=1):
+    labels, num = ndimage.label(mask, structure=np.ones((3, 3), dtype=np.uint8))
+    regions = []
+    for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
         if slices is None:
             continue
         ys, xs = slices
@@ -285,10 +295,8 @@ def detect_green_frames(mockup: Image.Image, settings: GreenFrameSettings | None
     raw_mask = alpha >= 0.06
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
-    min_area = max(80, min(settings.min_area, int(w * h * 0.5)))
+    min_area = max(80, min(settings.min_area, max(80, int(w * h * 0.005))))
     regions = _connected_regions(detect_mask, min_area)
-    if not regions:
-        regions = _connected_regions(detect_mask, max(8, int(w * h * 0.0001)))
 
     union = np.zeros((h, w), dtype=bool)
     for region in regions:
