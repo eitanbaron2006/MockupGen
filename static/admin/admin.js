@@ -369,13 +369,16 @@
   };
 
   function isGreenFrameTemplate(template = state.selected) {
-    return Boolean(
-      template
-      && template.raw_artwork_area
-      && template.raw_artwork_area.mode === "green_frames_mockups"
-      && (template.mask_name === "mask.png" || template.mask === "mask.png")
-    );
+    if (!template) return false;
+    const raw = template.raw_artwork_area;
+    if (raw && typeof raw === "object") {
+      if (Array.isArray(raw.regions) && raw.regions.length > 1) return true;
+      if (raw.mode === "green_frames_mockups") return true;
+    }
+    return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
   }
+
+
 
   function greenFrameSettings(effects) {
     return {
@@ -1828,12 +1831,13 @@
     overlayImg.classList.add("hidden");
     overlayImg.src = state.selectionStyle.overlayImage;
 
-    const fitMode = $("greenFitMode").value || "cover";
-    const artworkScale = Number($("greenArtworkScale").value) / 100;
-    const offsetX = Number($("greenOffsetX").value) / 100;
-    const offsetY = Number($("greenOffsetY").value) / 100;
+    const fitMode = ($("greenFitMode") && $("greenFitMode").value) || template.fit_mode || "cover";
+    const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
+    const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
+    const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;
     const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
     const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
+
 
     greenFrameOverlayRegions(template).forEach((region) => {
       const corners = region.corners;
@@ -2514,13 +2518,26 @@
     detectionReviewState.pendingPayload = payload;
     detectionReviewState.params = params;
 
+    if ($("selectionRenderedMockup")) {
+      $("selectionRenderedMockup").classList.add("hidden");
+      $("selectionRenderedMockup").src = "";
+    }
+    greenRegularRenderUrlCache.clear();
+
     // Temporarily apply the result so the user can see it on the canvas.
     state.selected = { ...payload.template };
     if (payload.proposal?.raw_artwork_area) {
       state.selected.raw_artwork_area = payload.proposal.raw_artwork_area;
     }
+    if (payload.proposal?.artwork_area) {
+      state.selected.artwork_area = payload.proposal.artwork_area;
+    }
+    if (payload.template?.mask_name) {
+      state.selected.mask_name = payload.template.mask_name;
+    }
     updateTemplateInQueue(state.selected);
     renderEditor();
+
 
     const regions = Array.isArray(payload.proposal?.raw_artwork_area?.regions)
       ? payload.proposal.raw_artwork_area.regions
@@ -2613,6 +2630,8 @@
       await submitMaskDetection(params.mode, params);
     } else if (params.mode === "green_frames_mockups") {
       await runClassicGreenFramesDetection();
+    } else if (params.mode === "ai") {
+      await runDetection();
     }
   }
 

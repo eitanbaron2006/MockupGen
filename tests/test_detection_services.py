@@ -516,3 +516,76 @@ def test_global_frame_detect_uniformity_bonus_preserves_correct_frame_detection(
     assert 60 <= result["y"] <= 260, f"y={result['y']} outside expected range"
     assert result["width"] > 200, "Frame width should be substantial"
     assert result["height"] > 200, "Frame height should be substantial"
+
+
+def test_vertex_provider_detects_multiple_frames_and_builds_mask(tmp_path: Path):
+    background = tmp_path / "background.png"
+    Image.new("RGB", (1000, 1000), (240, 240, 240)).save(background)
+
+    class FakeMultiFrameModels:
+        def generate_content(self, **kwargs):
+            payload = [
+                {
+                    "corners": [
+                        {"x": 100, "y": 200},
+                        {"x": 450, "y": 200},
+                        {"x": 450, "y": 800},
+                        {"x": 100, "y": 800},
+                    ],
+                    "label": "Left Frame 1",
+                },
+                {
+                    "corners": [
+                        {"x": 550, "y": 200},
+                        {"x": 900, "y": 200},
+                        {"x": 900, "y": 800},
+                        {"x": 550, "y": 800},
+                    ],
+                    "label": "Right Frame 2",
+                },
+            ]
+            return type("Response", (), {"text": json.dumps(payload)})()
+
+    class FakeMultiClient:
+        def __init__(self):
+            self.models = FakeMultiFrameModels()
+
+    client = FakeMultiClient()
+    provider = VertexDetectionProvider(
+        project_id="vertextai-project-497513",
+        location="global",
+        model="gemini-2.5-flash",
+        client=client,
+        refine=False,
+    )
+
+    proposal = provider.detect(background)
+
+    assert proposal.confidence == 0.95
+    assert "Detected 2 artwork frames" in proposal.reason
+    raw = proposal.raw_artwork_area
+    assert raw is not None
+    assert raw["mode"] == "green_frames_mockups"
+    assert raw["frame_count"] == 2
+    assert len(raw["regions"]) == 2
+
+    # Frame 1
+    assert raw["regions"][0]["x"] == 100
+    assert raw["regions"][0]["y"] == 200
+    assert raw["regions"][0]["width"] == 350
+    assert raw["regions"][0]["height"] == 600
+
+    # Frame 2
+    assert raw["regions"][1]["x"] == 550
+    assert raw["regions"][1]["y"] == 200
+    assert raw["regions"][1]["width"] == 350
+    assert raw["regions"][1]["height"] == 600
+
+    # Test mask generation
+    mask = provider.build_green_frame_mask(background, regions=raw["regions"])
+    assert mask.size == (1000, 1000)
+    # Check pixels inside frame 1 & frame 2 are 255 (white)
+    assert mask.getpixel((200, 400)) == 255
+    assert mask.getpixel((700, 400)) == 255
+    # Check pixel between frames is 0 (black)
+    assert mask.getpixel((500, 400)) == 0

@@ -9,16 +9,18 @@ from services.detection_service import DetectionError, DetectionProposal, valida
 from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
 
 
-PROMPT = """Find the exact inner artwork replacement area in this product mockup.
-Detect the exact 4 inner corners of the frame opening (excluding wood border/mat/shadows) in clockwise order starting from the top-left corner:
+PROMPT = """Find ALL inner artwork replacement areas in this product mockup.
+For EACH separate picture frame, poster opening, canvas, or artwork slot in the mockup (whether 1 single frame, a diptych of 2 frames, a triptych of 3 frames, or a multi-frame gallery wall):
+Detect the exact 4 inner corners of the frame opening (excluding the wooden frame border, matting, or external cast shadows) in clockwise order starting from the top-left corner:
 1. Top-Left corner [x, y]
 2. Top-Right corner [x, y]
 3. Bottom-Right corner [x, y]
 4. Bottom-Left corner [x, y]
-Return these 4 corners as an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (x represents horizontal percentage, y represents vertical percentage).
-A gray dashed placeholder rectangle (often around words like YOUR ARTWORK HERE or ART HERE) is the strongest signal.
+Return an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (where x is horizontal percentage 0-1000, y is vertical percentage 0-1000).
+A gray dashed placeholder rectangle (often containing text like YOUR ARTWORK HERE, ART HERE, or 1/2/3) is the strongest signal.
 Even if the frame is a flat, non-rotated 2D rectangle, you MUST return the exact 4 corners under the 'corners' key. Do NOT return a 2D bounding box (box_2d).
-Ignore overlapping decorations and shadows. Do not infer shape from the words themselves."""
+Ignore overlapping decorations and shadows.
+Return an entry in the array for EACH detected frame, ordered from left to right / top to bottom."""
 
 
 def _safe_refinement(
@@ -159,6 +161,30 @@ class VertexDetectionProvider:
             http_options=types.HttpOptions(httpx_client=http_client),
         )
 
+    def build_green_frame_mask(
+        self, background_path: Path, regions: list[dict[str, Any]] | None = None
+    ) -> Image.Image:
+        from PIL import ImageDraw
+
+        with Image.open(background_path) as img:
+            w, h = img.size
+        mask = Image.new("L", (w, h), 0)
+        draw = ImageDraw.Draw(mask)
+        if not regions:
+            proposal = self.detect(background_path)
+            raw = proposal.raw_artwork_area or {}
+            regions = raw.get("regions") or []
+        for region in regions:
+            corners = region.get("corners")
+            if corners and len(corners) >= 3:
+                pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
+                draw.polygon(pts, fill=255)
+            else:
+                rx, ry = int(region["x"]), int(region["y"])
+                rw, rh = int(region["width"]), int(region["height"])
+                draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
+        return mask
+
     def detect(self, background_path: Path) -> DetectionProposal:
         try:
             from google.genai import types
@@ -212,122 +238,204 @@ class VertexDetectionProvider:
             if payload and hasattr(payload[0], "model_dump"):
                 payload = [box.model_dump() for box in payload]
             
-            box_data = payload[0]
-            refined = False
-            refinement_rejected = False
-            raw_artwork_area = None
-            
+            if not payload or not isinstance(payload, list):
+                raise DetectionError("Vertex AI did not return any detected frames")
+
             logger = logging.getLogger("vertex_detection")
             logger.info("=== VERTEX DETECTION DEBUG ===")
-            logger.info("Image dimensions: %dx%d", width, height)
-            logger.info("Raw AI payload box_data: %s", json.dumps(box_data, default=str))
-            
-            if "box_2d" in box_data and box_data["box_2d"] and len(box_data["box_2d"]) == 4:
-                box = box_data["box_2d"]
-                raw_area = {
-                    "x": round(int(box[1]) * width / 1000),
-                    "y": round(int(box[0]) * height / 1000),
-                    "width": round((int(box[3]) - int(box[1])) * width / 1000),
-                    "height": round((int(box[2]) - int(box[0])) * height / 1000),
-                }
-                raw_artwork_area = raw_area
-                if self.refine:
-                    candidate_area = refine_artwork_area(background_path, raw_area)
-                    proposal_area = _safe_refinement(raw_area, candidate_area) or raw_area
-                    refinement_rejected = proposal_area == raw_area and candidate_area != raw_area
-                else:
-                    proposal_area = raw_area
-                refined = proposal_area != raw_area
-                
+            logger.info("Image dimensions: %dx%d, Total boxes detected: %d", width, height, len(payload))
 
-            elif "corners" in box_data and box_data["corners"] and len(box_data["corners"]) == 4:
-                corners = box_data["corners"]
-                logger.info("Raw AI corners (0-1000 normalized): %s", json.dumps(corners, default=str))
-                normalized_corners = []
-                for i, p in enumerate(corners):
-                    px = round(int(p["x"]) * width / 1000)
-                    py = round(int(p["y"]) * height / 1000)
-                    logger.info("  Corner %d: AI(%s,%s) -> pixel(%d,%d)", i, p["x"], p["y"], px, py)
-                    normalized_corners.append({"x": px, "y": py})
-                
-                # Sort normalized corners in clockwise order starting from top-left to avoid any model ordering issues
-                from services.detection_service import sort_clockwise
-                normalized_corners = sort_clockwise(normalized_corners)
-                
-                logger.info("Normalized pixel corners: %s", json.dumps(normalized_corners))
-                logger.info("Refinement enabled: %s", self.refine)
-                
-                # Capture raw corners before edge refinement
-                import copy
-                raw_corners = copy.deepcopy(normalized_corners)
-                xs_raw = [p["x"] for p in raw_corners]
-                ys_raw = [p["y"] for p in raw_corners]
-                raw_artwork_area = {
-                    "x": min(xs_raw),
-                    "y": min(ys_raw),
-                    "width": max(xs_raw) - min(xs_raw),
-                    "height": max(ys_raw) - min(ys_raw),
-                    "corners": raw_corners
-                }
-                
-                # Apply local edge refinement to all 4 corners!
-                if self.refine:
-                    refined_corners = refine_perspective_corners(background_path, normalized_corners, search_radius=self.search_radius)
-                    refined = refined_corners != normalized_corners
-                    logger.info("Refined corners: %s", json.dumps(refined_corners))
-                    logger.info("Refinement changed corners: %s", refined)
-                    for i, (orig, ref) in enumerate(zip(normalized_corners, refined_corners)):
-                        dx = ref["x"] - orig["x"]
-                        dy = ref["y"] - orig["y"]
-                        if dx or dy:
-                            logger.info("  Corner %d shifted: dx=%d, dy=%d", i, dx, dy)
-                    normalized_corners = refined_corners
+            from services.detection_service import sort_clockwise
+
+            regions = []
+            any_refined = False
+            refinement_rejected = False
+
+            for idx, box_data in enumerate(payload):
+                if not isinstance(box_data, dict):
+                    continue
+
+                corners = box_data.get("corners")
+                box_2d = box_data.get("box_2d")
+
+                if corners and len(corners) == 4:
+                    normalized_corners = []
+                    for p in corners:
+                        px = round(int(p["x"]) * width / 1000)
+                        py = round(int(p["y"]) * height / 1000)
+                        normalized_corners.append({"x": px, "y": py})
+
+                    normalized_corners = sort_clockwise(normalized_corners)
+
+                    if self.refine:
+                        refined_corners = refine_perspective_corners(
+                            background_path, normalized_corners, search_radius=self.search_radius
+                        )
+                        if refined_corners != normalized_corners:
+                            any_refined = True
+                        final_corners = refined_corners
+                    else:
+                        final_corners = normalized_corners
+
+                    xs = [p["x"] for p in final_corners]
+                    ys = [p["y"] for p in final_corners]
+                    min_x, max_x = min(xs), max(xs)
+                    min_y, max_y = min(ys), max(ys)
+
+                    regions.append({
+                        "x": min_x,
+                        "y": min_y,
+                        "width": max_x - min_x,
+                        "height": max_y - min_y,
+                        "area": (max_x - min_x) * (max_y - min_y),
+                        "corners": final_corners,
+                        "label": box_data.get("label", f"Frame {idx + 1}"),
+                        "has_perspective": True,
+                    })
+
+                elif box_2d and len(box_2d) == 4:
+                    raw_area = {
+                        "x": round(int(box_2d[1]) * width / 1000),
+                        "y": round(int(box_2d[0]) * height / 1000),
+                        "width": round((int(box_2d[3]) - int(box_2d[1])) * width / 1000),
+                        "height": round((int(box_2d[2]) - int(box_2d[0])) * height / 1000),
+                    }
+                    if self.refine:
+                        candidate_area = refine_artwork_area(background_path, raw_area)
+                        proposal_area = _safe_refinement(raw_area, candidate_area) or raw_area
+                        if proposal_area != raw_area:
+                            any_refined = True
+                        elif candidate_area != raw_area:
+                            refinement_rejected = True
+                    else:
+                        proposal_area = raw_area
+
+                    corners = [
+                        {"x": proposal_area["x"], "y": proposal_area["y"]},
+                        {"x": proposal_area["x"] + proposal_area["width"], "y": proposal_area["y"]},
+                        {"x": proposal_area["x"] + proposal_area["width"], "y": proposal_area["y"] + proposal_area["height"]},
+                        {"x": proposal_area["x"], "y": proposal_area["y"] + proposal_area["height"]},
+                    ]
+                    regions.append({
+                        "x": proposal_area["x"],
+                        "y": proposal_area["y"],
+                        "width": proposal_area["width"],
+                        "height": proposal_area["height"],
+                        "area": proposal_area["width"] * proposal_area["height"],
+                        "corners": corners,
+                        "label": box_data.get("label", f"Frame {idx + 1}"),
+                        "has_perspective": False,
+                        "raw_box": raw_area,
+                    })
+
+            if not regions:
+                raise DetectionError("Vertex did not return valid perspective corners or bounding boxes for any frames")
+
+            # Canonical ordering (top-to-bottom, left-to-right)
+            regions.sort(key=lambda r: (round(float(r["y"]) / 25), float(r["x"])))
+
+            if len(regions) == 1:
+                first = regions[0]
+                has_perspective = first.get("has_perspective", True)
+                if has_perspective:
+                    proposal_area = {
+                        "x": first["x"],
+                        "y": first["y"],
+                        "width": first["width"],
+                        "height": first["height"],
+                        "corners": first["corners"],
+                    }
+                    raw_artwork_area = {
+                        "x": first["x"],
+                        "y": first["y"],
+                        "width": first["width"],
+                        "height": first["height"],
+                        "corners": first["corners"],
+                        "regions": [
+                            {
+                                "x": first["x"],
+                                "y": first["y"],
+                                "width": first["width"],
+                                "height": first["height"],
+                                "area": first["area"],
+                                "corners": first["corners"],
+                            }
+                        ],
+                    }
+                    reason = str(first.get("label", "inner artwork area")) + "; custom 3D perspective corners detected"
+                    if any_refined:
+                        reason += " (snapped to visible edges)"
                 else:
-                    refined = False
-                
-                xs = [p["x"] for p in normalized_corners]
-                xs_sorted = sorted(xs)
-                ys = [p["y"] for p in normalized_corners]
-                ys_sorted = sorted(ys)
-                min_x, max_x = xs_sorted[0], xs_sorted[-1]
-                min_y, max_y = ys_sorted[0], ys_sorted[-1]
-                proposal_area = {
-                    "x": min_x,
-                    "y": min_y,
-                    "width": max_x - min_x,
-                    "height": max_y - min_y,
-                    "corners": normalized_corners
+                    proposal_area = {
+                        "x": first["x"],
+                        "y": first["y"],
+                        "width": first["width"],
+                        "height": first["height"],
+                    }
+                    raw_artwork_area = first.get("raw_box", proposal_area)
+                    reason = str(first.get("label", "inner artwork area"))
+                    if any_refined:
+                        reason += "; boundary refinement snapped the proposal to visible edges"
+                    elif refinement_rejected:
+                        reason += "; boundary refinement ignored because it distorted the AI box"
+
+                proposal_payload = {
+                    "artwork_area": proposal_area,
+                    "confidence": 0.95 if has_perspective else (0.9 if any_refined else 0.75),
+                    "reason": reason,
+                    "raw_artwork_area": raw_artwork_area,
                 }
-                logger.info("Final proposal_area: x=%d y=%d w=%d h=%d corners=%s",
-                    proposal_area["x"], proposal_area["y"],
-                    proposal_area["width"], proposal_area["height"],
-                    json.dumps(proposal_area["corners"]))
             else:
-                raise DetectionError("Vertex did not return perspective corners or a 2D bounding box")
+                all_xs = [p["x"] for r in regions for p in r["corners"]]
+                all_ys = [p["y"] for r in regions for p in r["corners"]]
+                min_all_x, max_all_x = min(all_xs), max(all_xs)
+                min_all_y, max_all_y = min(all_ys), max(all_ys)
 
-            reason = str(box_data.get("label", "inner artwork area"))
-            if "corners" in box_data:
-                reason = f"{reason}; custom 3D perspective corners detected"
-                if refined:
-                    reason = f"{reason} (snapped to visible edges)"
-            elif refined:
-                reason = f"{reason}; boundary refinement snapped the proposal to visible edges"
-            elif refinement_rejected:
-                reason = f"{reason}; boundary refinement ignored because it distorted the AI box"
+                clean_regions = []
+                for r in regions:
+                    clean_regions.append({
+                        "x": r["x"],
+                        "y": r["y"],
+                        "width": r["width"],
+                        "height": r["height"],
+                        "area": r["area"],
+                        "corners": r["corners"],
+                    })
 
-            proposal_payload = {
-                "artwork_area": proposal_area,
-                "confidence": 0.95 if "corners" in box_data else (0.9 if refined else 0.75),
-                "reason": reason,
-                "raw_artwork_area": raw_artwork_area,
-            }
+                first = regions[0]
+                proposal_area = {
+                    "x": min_all_x,
+                    "y": min_all_y,
+                    "width": max_all_x - min_all_x,
+                    "height": max_all_y - min_all_y,
+                    "corners": first["corners"],
+                }
+                raw_artwork_area = {
+                    "mode": "green_frames_mockups",
+                    "regions": clean_regions,
+                    "original_corners": first["corners"],
+                    "frame_count": len(clean_regions),
+                }
+                reason = f"Detected {len(clean_regions)} artwork frames in mockup"
+                if any_refined:
+                    reason += " (snapped to visible edges)"
+
+                proposal_payload = {
+                    "artwork_area": proposal_area,
+                    "confidence": 0.95,
+                    "reason": reason,
+                    "raw_artwork_area": raw_artwork_area,
+                }
+
         except DetectionError:
             raise
         except Exception as error:
             raise DetectionError(f"Vertex detection failed: {error}") from error
+
         return validate_proposal(
             proposal_payload,
             image_width=width,
             image_height=height,
-            provider="vertex+edges" if refined else "vertex",
+            provider="vertex+edges" if any_refined else "vertex",
         )
+

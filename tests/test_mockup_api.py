@@ -136,8 +136,10 @@ def test_templates_list_returns_valid_manifests_only(tmp_path):
             "supported_modes": ["simple"],
             "orientation": "square",
             "product_type": None,
+            "frame_count": 1,
         }
     ]
+
 
 
 def test_template_static_files_cannot_escape_templates_folder(tmp_path):

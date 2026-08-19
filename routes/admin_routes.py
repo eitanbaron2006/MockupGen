@@ -122,13 +122,39 @@ def _run_mask_detection(
     return proposal, mask
 
 
-def save_green_frame_mask_if_needed(provider: Any, background: Path, mode: str) -> str | None:
-    if mode != "green_frames_mockups" or not hasattr(provider, "build_green_frame_mask"):
-        return None
-    mask = provider.build_green_frame_mask(background)
-    mask_path = background.parent / "mask.png"
-    mask.save(mask_path)
-    return "mask.png"
+def save_green_frame_mask_if_needed(
+    provider: Any, background: Path, mode: str, proposal: Any = None
+) -> str | None:
+    if mode == "green_frames_mockups" and hasattr(provider, "build_green_frame_mask"):
+        mask = provider.build_green_frame_mask(background)
+        mask_path = background.parent / "mask.png"
+        mask.save(mask_path)
+        return "mask.png"
+    if proposal and proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area.get("regions"), list):
+        regions = proposal.raw_artwork_area["regions"]
+        if len(regions) > 1:
+            if hasattr(provider, "build_green_frame_mask"):
+                mask = provider.build_green_frame_mask(background, regions=regions)
+            else:
+                from PIL import Image, ImageDraw
+                with Image.open(background) as img:
+                    w, h = img.size
+                mask = Image.new("L", (w, h), 0)
+                draw = ImageDraw.Draw(mask)
+                for region in regions:
+                    corners = region.get("corners")
+                    if corners and len(corners) >= 3:
+                        pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
+                        draw.polygon(pts, fill=255)
+                    else:
+                        rx, ry = int(region["x"]), int(region["y"])
+                        rw, rh = int(region["width"]), int(region["height"])
+                        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
+            mask_path = background.parent / "mask.png"
+            mask.save(mask_path)
+            return "mask.png"
+    return None
+
 def catalog() -> CatalogService:
     return current_app.extensions["catalog_service"]
 
@@ -427,7 +453,7 @@ def detect_admin_template(template_id: str):
                 proposal = getattr(provider, "detect")(background, mode=mode, point=point)
             else:
                 proposal = provider.detect(background)
-            mask_name = save_green_frame_mask_if_needed(provider, background, mode)
+            mask_name = save_green_frame_mask_if_needed(provider, background, mode, proposal)
 
         if template.get("status") == "draft":
             changes = {
@@ -505,17 +531,19 @@ def batch_detect_admin_templates():
 
         try:
             proposal = provider.detect(background)
-            preview = cat.update_template(
-                template_id,
-                {
-                    "artwork_area": proposal.artwork_area,
-                    "orientation": orientation_for_size(
-                        proposal.artwork_area["width"], proposal.artwork_area["height"]
-                    ),
-                    "detection_provider": proposal.provider,
-                    "detection_confidence": proposal.confidence,
-                }
-            )
+            mask_name = save_green_frame_mask_if_needed(provider, background, "auto", proposal)
+            changes = {
+                "artwork_area": proposal.artwork_area,
+                "orientation": orientation_for_size(
+                    proposal.artwork_area["width"], proposal.artwork_area["height"]
+                ),
+                "detection_provider": proposal.provider,
+                "detection_confidence": proposal.confidence,
+                "raw_artwork_area": proposal.raw_artwork_area,
+            }
+            if mask_name:
+                changes["mask_name"] = mask_name
+            preview = cat.update_template(template_id, changes)
             return {
                 "template_id": template_id,
                 "success": True,
@@ -525,6 +553,7 @@ def batch_detect_admin_templates():
                     "confidence": proposal.confidence,
                     "reason": proposal.reason,
                     "provider": proposal.provider,
+                    "raw_artwork_area": proposal.raw_artwork_area,
                 },
             }
         except DetectionError as error:
@@ -539,6 +568,7 @@ def batch_detect_admin_templates():
             results.append(result)
 
     return jsonify({"success": True, "results": results})
+
 
 
 def background_for_template(template_id: str) -> Path:
