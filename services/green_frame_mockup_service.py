@@ -88,7 +88,7 @@ def parse_green_frame_settings(effects: dict | None, fallback_fit_mode: str = "c
         wide_coverage_envelope=bool(options.get("use_vector_clip", options.get("wide_coverage_envelope", True))),
         tolerance=int(_clamp(number("tolerance", 95), 10, 220)),
         min_area=int(_clamp(number("min_area", 2500), 80, 200000)),
-        edge_expand=int(_clamp(number("edge_expand", 0), 0, 24)),
+        edge_expand=int(_clamp(number("edge_expand", 0), 0, 255)),
         feather_radius=int(_clamp(number("feather_radius", 2), 0, 12)),
         mask_build_quality=int(_clamp(number("mask_build_quality", 2), 1, 3)),
         aa_scale=int(_clamp(number("aa_scale", 1), 1, 8)),
@@ -855,45 +855,53 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
         
     coefficients = inv[:8]
     
-    # Define padded crop bounding box to prevent edge bleeding on subsequent resize
-    crop_pad = max(12, settings.feather_radius + settings.edge_expand + 6) if state.width >= 100 else 0
-    cx0 = max(0, region.x - crop_pad)
-    cy0 = max(0, region.y - crop_pad)
-    cx1 = min(state.width, region.x + region.w + crop_pad)
-    cy1 = min(state.height, region.y + region.h + crop_pad)
-    cw, ch = cx1 - cx0, cy1 - cy0
-    
-    out_w, out_h = max(1, round(cw * ss)), max(1, round(ch * ss))
-    
-    # Warp the source image to the scaled canvas size using compiled C code
+    # Warp the source image to full canvas scale with Super-Sample Anti-Aliasing (SSAA)
     warped_full = src.transform(
         (state.width * ss, state.height * ss),
         Image.Transform.PERSPECTIVE,
         coefficients,
         Image.Resampling.BICUBIC,
     )
-    
-    # Crop to the scaled region bounding box (with padding)
-    rx0, ry0 = round(cx0 * ss), round(cy0 * ss)
-    warped_region = warped_full.crop((rx0, ry0, rx0 + out_w, ry0 + out_h))
-    
-    # Downscale the warped region to target size (cw, ch) BEFORE applying soft mask and un-padding
     if ss > 1:
-        warped_region = warped_region.resize((cw, ch), Image.Resampling.BICUBIC)
-        
-    # Apply the soft mask at target scale (no resize needed for the mask!)
-    soft_mask_np = state.soft_mask[cy0:cy1, cx0:cx1]
-    soft_mask_uint8 = np.clip(soft_mask_np * 255.0, 0, 255).astype(np.uint8)
-    soft_mask_region_img = Image.fromarray(soft_mask_uint8, mode="L")
-    
+        warped_full = warped_full.resize((state.width, state.height), Image.Resampling.BICUBIC)
+
+    # Build exact polygon clip mask for this perspective region
+    from PIL import ImageDraw
+    region_poly_mask = Image.new("L", (state.width, state.height), 0)
+    draw = ImageDraw.Draw(region_poly_mask)
+    pts = [(int(round(p["x"])), int(round(p["y"]))) for p in dst_pts]
+    draw.polygon(pts, fill=255)
+
+    combined_mask = region_poly_mask
+
+    if state.clip_mask is not None and not np.all(state.clip_mask):
+        clip_uint8 = (state.clip_mask.astype(np.uint8)) * 255
+        clip_img = Image.fromarray(clip_uint8, mode="L")
+        combined_mask = ImageChops.multiply(combined_mask, clip_img)
+
+    # Combine with state soft mask if available (e.g. for classic chroma key blending)
+    if state.soft_mask is not None and not np.all(state.soft_mask == 1.0):
+        soft_uint8 = np.clip(state.soft_mask * 255.0, 0, 255).astype(np.uint8)
+        soft_img = Image.fromarray(soft_uint8, mode="L")
+        combined_mask = ImageChops.multiply(combined_mask, soft_img)
+
+
     blur_radius = round(settings.edge_aa_radius)
     if blur_radius > 0:
-        soft_mask_region_img = soft_mask_region_img.filter(ImageFilter.BoxBlur(blur_radius))
-        
-    final_alpha = ImageChops.multiply(warped_region.getchannel("A"), soft_mask_region_img)
-    warped_region.putalpha(final_alpha)
-    
-    return warped_region, cx0, cy0, cw, ch
+        combined_mask = combined_mask.filter(ImageFilter.BoxBlur(blur_radius))
+
+    final_alpha = ImageChops.multiply(warped_full.getchannel("A"), combined_mask)
+    warped_full.putalpha(final_alpha)
+
+    # Crop to active bounding box with safety margin for memory efficiency
+    bx0 = max(0, min(p[0] for p in pts) - 4)
+    by0 = max(0, min(p[1] for p in pts) - 4)
+    bx1 = min(state.width, max(p[0] for p in pts) + 4)
+    by1 = min(state.height, max(p[1] for p in pts) + 4)
+    cropped_overlay = warped_full.crop((bx0, by0, bx1, by1))
+
+    return cropped_overlay, bx0, by0, bx1 - bx0, by1 - by0
+
 
 
 def _inner_shadow(region: GreenRegion, state: GreenFrameDetection, settings: GreenFrameSettings) -> Optional[Image.Image]:

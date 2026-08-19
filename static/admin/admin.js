@@ -368,6 +368,12 @@
     contain_bg_color: "#ffffff"
   };
 
+  function isMultiRegionTemplate(template = state.selected) {
+    if (!template) return false;
+    const raw = template.raw_artwork_area;
+    return Boolean(raw && typeof raw === "object" && Array.isArray(raw.regions) && raw.regions.length > 1);
+  }
+
   function isGreenFrameTemplate(template = state.selected) {
     if (!template) return false;
     const raw = template.raw_artwork_area;
@@ -377,6 +383,7 @@
     }
     return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
   }
+
 
 
 
@@ -1893,11 +1900,8 @@
 
   function drawSelection() {
     if (state.globalOverlayPlacementActive) {
-      // Hide only the selection chrome: the mockup artwork must stay visible
-      // beneath the draggable PNG overlay so it can be positioned in context.
       $("selectionSvg").classList.add("hidden");
       renderGlobalOverlayPlacement();
-      // Fall through to render the artwork (CSS overlay / lightweight render).
     }
     if (state.isPreviewingMockup) {
       $("selectionSvg").classList.add("hidden");
@@ -1913,19 +1917,142 @@
       return;
     }
 
-    if (isGreenFrameTemplate(template)) {
+    const rect = getRenderedImageRect(image);
+    if (!rect) {
       selectionSvg.classList.add("hidden");
+      return;
+    }
+
+    // Align SVG overlay exactly with the rendered pixels of the background image
+    selectionSvg.style.left = `${rect.left}px`;
+    selectionSvg.style.top = `${rect.top}px`;
+    selectionSvg.style.width = `${rect.width}px`;
+    selectionSvg.style.height = `${rect.height}px`;
+    selectionSvg.style.setProperty("--zoom", state.zoom);
+    applySelectionStyle();
+
+    const multiGroup = $("multiRegionSvgGroup");
+
+    if (isGreenFrameTemplate(template)) {
+      if (isMultiRegionTemplate(template)) {
+        selectionSvg.classList.remove("hidden");
+        $("selectionPolygon").classList.add("hidden");
+        for (let i = 0; i < 4; i++) {
+          const hg = $(`handle_group_${i}`);
+          if (hg) hg.classList.add("hidden");
+          const rh = $(`raw_handle_${i}`);
+          if (rh) rh.classList.add("hidden");
+        }
+        if ($("svgZoneTag")) $("svgZoneTag").classList.add("hidden");
+        if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
+        if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
+
+        if (multiGroup) {
+          multiGroup.classList.remove("hidden");
+          multiGroup.innerHTML = "";
+
+          const style = state.selectionStyle;
+          const strokeColor = style.polygonColor || "#ed6f5c";
+          const strokeWidth = style.polygonWidth || 2;
+          const fillColor = style.polygonColor || "#ed6f5c";
+          const fillOpacity = (style.polygonOpacity || 15) / 100;
+          const crossColor = style.crossColor || "#ed6f5c";
+          const crossStrokeWidth = style.crossWidth || 1.5;
+          const crossOpacity = (style.crossOpacity || 100) / 100;
+          const halfSize = 12 / state.zoom;
+          const hitboxR = 14 / state.zoom;
+
+          template.raw_artwork_area.regions.forEach((region, rIdx) => {
+            const corners = region.corners || region.inner_corners || areaCorners(region);
+            if (!region.corners) region.corners = corners;
+
+            const displayPoints = corners.map(p => ({
+              x: (p.x / template.canvas_width) * rect.width,
+              y: (p.y / template.canvas_height) * rect.height
+            }));
+            const pointsStr = displayPoints.map(p => `${p.x},${p.y}`).join(" ");
+
+            const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+            poly.setAttribute("points", pointsStr);
+            poly.setAttribute("class", "multi-region-polygon");
+            poly.dataset.regionIndex = String(rIdx);
+            poly.style.fill = fillColor;
+            poly.style.fillOpacity = String(fillOpacity);
+            poly.style.stroke = strokeColor;
+            poly.style.strokeWidth = `${strokeWidth}px`;
+            poly.style.cursor = "move";
+            multiGroup.appendChild(poly);
+
+            corners.forEach((p, cIdx) => {
+              const cx = (p.x / template.canvas_width) * rect.width;
+              const cy = (p.y / template.canvas_height) * rect.height;
+
+              const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+              g.setAttribute("class", "handle-group");
+              g.dataset.regionIndex = String(rIdx);
+              g.dataset.cornerIndex = String(cIdx);
+
+              const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+              hLine.setAttribute("class", "cross-line h-line");
+              hLine.setAttribute("x1", cx - halfSize);
+              hLine.setAttribute("x2", cx + halfSize);
+              hLine.setAttribute("y1", cy);
+              hLine.setAttribute("y2", cy);
+              hLine.style.stroke = crossColor;
+              hLine.style.strokeWidth = `${crossStrokeWidth}px`;
+              hLine.style.opacity = String(crossOpacity);
+              hLine.style.pointerEvents = "none";
+
+              const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+              vLine.setAttribute("class", "cross-line v-line");
+              vLine.setAttribute("x1", cx);
+              vLine.setAttribute("x2", cx);
+              vLine.setAttribute("y1", cy - halfSize);
+              vLine.setAttribute("y2", cy + halfSize);
+              vLine.style.stroke = crossColor;
+              vLine.style.strokeWidth = `${crossStrokeWidth}px`;
+              vLine.style.opacity = String(crossOpacity);
+              vLine.style.pointerEvents = "none";
+
+              const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              circle.setAttribute("class", "svg-handle handle-hitbox");
+              circle.setAttribute("cx", cx);
+              circle.setAttribute("cy", cy);
+              circle.setAttribute("r", hitboxR);
+              circle.dataset.regionIndex = String(rIdx);
+              circle.dataset.cornerIndex = String(cIdx);
+              circle.style.cursor = "crosshair";
+              circle.style.fill = "transparent";
+
+              g.appendChild(hLine);
+              g.appendChild(vLine);
+              g.appendChild(circle);
+              multiGroup.appendChild(g);
+            });
+
+            if (displayPoints.length > 0) {
+              const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+              tag.setAttribute("class", "svg-zone-tag");
+              tag.setAttribute("x", displayPoints[0].x);
+              tag.setAttribute("y", displayPoints[0].y - 8);
+              tag.textContent = `Frame ${rIdx + 1}`;
+              multiGroup.appendChild(tag);
+            }
+          });
+        }
+      } else {
+        selectionSvg.classList.add("hidden");
+      }
+
       if (state.selectionStyle.overlayImage) {
         const rendered = $("selectionRenderedMockup");
         const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
-        // The CSS overlay is only an interim approximation: show it while
-        // dragging (live feedback) or until the lightweight render arrives.
-        if (state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
+        if (state.drag || state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
           renderGreenFrameArtworkOverlay(template, image);
         } else {
           $("selectionImageOverlay").classList.add("hidden");
         }
-        if (!state.greenFrameDrag && !detectionReviewState.active) {
+        if (!state.drag && !state.greenFrameDrag && !detectionReviewState.active) {
           ensureGreenFrameRegularRender(template);
         }
       } else {
@@ -1939,11 +2066,21 @@
     }
 
 
+    if (multiGroup) {
+      multiGroup.innerHTML = "";
+      multiGroup.classList.add("hidden");
+    }
+    $("selectionPolygon").classList.remove("hidden");
+    for (let i = 0; i < 4; i++) {
+      const hg = $(`handle_group_${i}`);
+      if (hg) hg.classList.remove("hidden");
+    }
+    if ($("svgZoneTag")) $("svgZoneTag").classList.remove("hidden");
+
     if ($("selectionRenderedMockup")) {
       $("selectionRenderedMockup").classList.add("hidden");
     }
 
-    // Ensure template.artwork_area has corners. If not, generate them on the fly!
     if (!template.artwork_area.corners) {
       const area = template.artwork_area;
       template.artwork_area.corners = [
@@ -1955,23 +2092,6 @@
     }
 
     const corners = template.artwork_area.corners;
-    const rect = getRenderedImageRect(image);
-    if (!rect) {
-      selectionSvg.classList.add("hidden");
-      return;
-    }
-
-    // Align SVG overlay exactly with the rendered pixels of the background image
-    selectionSvg.style.left = `${rect.left}px`;
-    selectionSvg.style.top = `${rect.top}px`;
-    selectionSvg.style.width = `${rect.width}px`;
-    selectionSvg.style.height = `${rect.height}px`;
-
-    // Inject the current zoom factor as a CSS custom property for non-scaling stroke effect calculations
-    selectionSvg.style.setProperty("--zoom", state.zoom);
-    applySelectionStyle();
-
-    // Map canvas coordinates to client display coordinates inside the rendered rect
     const displayPoints = corners.map(p => {
       const cx = (p.x / template.canvas_width) * rect.width;
       const cy = (p.y / template.canvas_height) * rect.height;
@@ -2035,12 +2155,11 @@
         } else if (resolvedFitMode === "cover") {
           overlayImg.style.objectFit = "cover";
         } else {
-          overlayImg.style.objectFit = "fill"; // stretch
+          overlayImg.style.objectFit = "fill";
         }
       }
     }
 
-    // Position handles (crosshairs)
     corners.forEach((p, idx) => {
       const cx = (p.x / template.canvas_width) * rect.width;
       const cy = (p.y / template.canvas_height) * rect.height;
@@ -2048,15 +2167,13 @@
       if (handle) {
         handle.setAttribute("cx", cx);
         handle.setAttribute("cy", cy);
-        handle.setAttribute("r", 14 / state.zoom); // Dynamic interactive hitbox radius
+        handle.setAttribute("r", 14 / state.zoom);
       }
 
-      // Draw crosshair lines centered at (cx, cy)
       const hLine = $(`h_line_${idx}`);
       const vLine = $(`v_line_${idx}`);
       if (hLine && vLine) {
-        const halfSize = 12 / state.zoom; // Crosshair size on screen will always be 24px
-
+        const halfSize = 12 / state.zoom;
         hLine.setAttribute("x1", cx - halfSize);
         hLine.setAttribute("x2", cx + halfSize);
         hLine.setAttribute("y1", cy);
@@ -2069,7 +2186,6 @@
       }
     });
 
-    // Map raw_artwork_area canvas coordinates to client display coordinates inside the rendered rect
     const rawPolygon = $("rawSelectionPolygon");
     const rawTag = $("svgRawZoneTag");
     if (template.raw_artwork_area && rawPolygon) {
@@ -2093,13 +2209,12 @@
 
       if (rawTag && rawCorners.length > 0) {
         const tRawX = (rawCorners[0].x / template.canvas_width) * rect.width;
-        const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25; // slightly above the main tag
+        const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25;
         rawTag.setAttribute("x", tRawX);
         rawTag.setAttribute("y", tRawY);
         rawTag.classList.remove("hidden");
       }
 
-      // Position and show raw handles
       rawCorners.forEach((p, idx) => {
         const cx = (p.x / template.canvas_width) * rect.width;
         const cy = (p.y / template.canvas_height) * rect.height;
@@ -2119,7 +2234,6 @@
       }
     }
 
-    // Position the text tag slightly above or near the first corner
     if (corners.length > 0) {
       const tX = (corners[0].x / template.canvas_width) * rect.width;
       const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
@@ -2136,10 +2250,33 @@
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
     if (state.polygonLocked) return;
-    if (isGreenFrameTemplate()) return;
-    event.preventDefault();
 
     const target = event.target;
+    const template = state.selected;
+
+    // Check if dragging a multi-region frame
+    if (target.dataset && target.dataset.regionIndex !== undefined) {
+      event.preventDefault();
+      const rIdx = Number(target.dataset.regionIndex);
+      const isCorner = target.classList.contains("svg-handle");
+      const cIdx = isCorner ? Number(target.dataset.cornerIndex) : -1;
+      const region = template.raw_artwork_area?.regions?.[rIdx];
+      if (!region) return;
+      if (!region.corners) region.corners = areaCorners(region);
+
+      target.setPointerCapture(event.pointerId);
+      state.drag = {
+        isMulti: true,
+        regionIndex: rIdx,
+        handle: isCorner ? "corner" : "move",
+        cornerIndex: cIdx,
+        startX: event.clientX,
+        startY: event.clientY,
+        corners: region.corners.map(c => ({ ...c }))
+      };
+      return;
+    }
+
     let handle = "move";
     let index = -1;
 
@@ -2147,13 +2284,12 @@
       handle = "corner";
       index = Number(target.dataset.index);
     } else if (target.id !== "selectionPolygon") {
-      // Don't drag if it's clicking outside
       return;
     }
 
+    event.preventDefault();
     target.setPointerCapture(event.pointerId);
 
-    // Ensure corners are populated
     if (!state.selected.artwork_area.corners) {
       const area = state.selected.artwork_area;
       state.selected.artwork_area.corners = [
@@ -2165,6 +2301,7 @@
     }
 
     state.drag = {
+      isMulti: false,
       startX: event.clientX,
       startY: event.clientY,
       corners: state.selected.artwork_area.corners.map(c => ({ ...c })),
@@ -2182,10 +2319,46 @@
     const dx = Math.round(((event.clientX - state.drag.startX) / state.zoom) * template.canvas_width / rect.width);
     const dy = Math.round(((event.clientY - state.drag.startY) / state.zoom) * template.canvas_height / rect.height);
 
+    if (state.drag.isMulti) {
+      const rIdx = state.drag.regionIndex;
+      const region = template.raw_artwork_area.regions[rIdx];
+      let nextCorners = state.drag.corners.map(c => ({ ...c }));
+
+      if (state.drag.handle === "move") {
+        nextCorners.forEach(p => {
+          p.x = Math.max(0, Math.min(template.canvas_width, p.x + dx));
+          p.y = Math.max(0, Math.min(template.canvas_height, p.y + dy));
+        });
+      } else if (state.drag.handle === "corner") {
+        const cIdx = state.drag.cornerIndex;
+        nextCorners[cIdx].x = Math.max(0, Math.min(template.canvas_width, state.drag.corners[cIdx].x + dx));
+        nextCorners[cIdx].y = Math.max(0, Math.min(template.canvas_height, state.drag.corners[cIdx].y + dy));
+      }
+
+      region.corners = nextCorners;
+      const xs = nextCorners.map(c => c.x);
+      const ys = nextCorners.map(c => c.y);
+      region.x = Math.min(...xs);
+      region.y = Math.min(...ys);
+      region.width = Math.max(...xs) - region.x;
+      region.height = Math.max(...ys) - region.y;
+
+      const allXs = template.raw_artwork_area.regions.flatMap(r => (r.corners || areaCorners(r)).map(c => c.x));
+      const allYs = template.raw_artwork_area.regions.flatMap(r => (r.corners || areaCorners(r)).map(c => c.y));
+      template.artwork_area.x = Math.min(...allXs);
+      template.artwork_area.y = Math.min(...allYs);
+      template.artwork_area.width = Math.max(...allXs) - template.artwork_area.x;
+      template.artwork_area.height = Math.max(...allYs) - template.artwork_area.y;
+
+      updateCoordinateLabels();
+      drawSelection();
+      $("proposalState").textContent = `Adjusted Frame ${rIdx + 1} locally. Save draft or approve to keep.`;
+      return;
+    }
+
     let nextCorners = state.drag.corners.map(c => ({ ...c }));
 
     if (state.drag.handle === "move") {
-      // Move all corners by dx, dy, ensuring they remain inside the canvas bounds
       let canMove = true;
       for (const p of nextCorners) {
         const nx = p.x + dx;
@@ -2209,10 +2382,8 @@
       nextCorners[idx].y = ny;
     }
 
-    // Update active area and template details
     template.artwork_area.corners = nextCorners;
 
-    // Update bbox x, y, width, height for backward-compatible rendering/labels
     const xs = nextCorners.map(c => c.x);
     const ys = nextCorners.map(c => c.y);
     const minX = Math.min(...xs);
@@ -2230,8 +2401,13 @@
   }
 
   function endDrag() {
+    if (state.drag && state.selected) {
+      greenRegularRenderUrlCache.clear();
+      persistTemplateState(state.selected);
+    }
     state.drag = null;
   }
+
 
   function setBusy(active) {
     state.busy = active;
@@ -2241,9 +2417,11 @@
     $("saveButton").disabled = active;
     $("approveButton").disabled = active;
     $("publishButton").disabled = active;
+    if ($("resetDetectionButton")) $("resetDetectionButton").disabled = active || !state.selected;
     updateDetectionModeSwitch();
     renderQueue();
   }
+
 
   async function importFiles(files) {
     if (!files.length) return;
@@ -5308,6 +5486,38 @@
       if ($("maskDetectToleranceVal")) $("maskDetectToleranceVal").textContent = val;
     };
   }
+  async function resetTemplateDetection() {
+    if (!state.selected || state.busy) return;
+    const templateName = state.selected.name || "this template";
+    if (!confirm(`Are you sure you want to reset detection for "${templateName}"?\n\nThis will remove all custom masks, raw AI detection points, and reset the artwork area.`)) {
+      return;
+    }
+    try {
+      setBusy(true);
+      setStatus("Resetting detection...");
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/reset-detection`, { method: "POST" });
+      state.selected = payload.template;
+      greenRegularRenderUrlCache.clear();
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
+      }
+      await loadCategories(state.selected.category_id);
+      await loadTemplates(state.selected.template_id);
+      toast("Mockup detection reset successfully");
+      setStatus("Detection reset");
+    } catch (err) {
+      toast(err.message || "Failed to reset detection");
+      setStatus("Reset failed", true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if ($("resetDetectionButton")) {
+    $("resetDetectionButton").onclick = resetTemplateDetection;
+  }
+
   $("saveButton").onclick = async () => {
     try {
       await saveTemplate();
@@ -5318,6 +5528,7 @@
   };
   $("approveButton").onclick = approveTemplate;
   $("publishButton").onclick = approveTemplate;
+
   $("openGuide").onclick = () => {
     if (state.busy) return;
     $("guideDrawer").classList.add("open");

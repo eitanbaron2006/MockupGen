@@ -315,7 +315,7 @@ def _green_frame_options(effects: dict | None, fallback_fit_mode: str) -> dict[s
         "artwork_scale": min(3.0, max(0.1, float(options.get("artwork_scale", 1.0)))),
         "offset_x": min(1.0, max(-1.0, float(options.get("offset_x", 0.0)))),
         "offset_y": min(1.0, max(-1.0, float(options.get("offset_y", 0.0)))),
-        "edge_expand": min(24, max(0, int(options.get("edge_expand", 1)))),
+        "edge_expand": min(255, max(0, int(options.get("edge_expand", 1)))),
         "mask_build_quality": min(3, max(1, int(options.get("mask_build_quality", 2)))),
         "feather_radius": min(12.0, max(0.0, float(options.get("feather_radius", 2.0)))),
         "edge_aa_radius": min(6.0, max(0.0, float(options.get("edge_aa_radius", 2.0)))),

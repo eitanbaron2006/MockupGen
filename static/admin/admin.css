@@ -3861,3 +3861,37 @@ input[type="checkbox"]:disabled {
   cursor: crosshair !important;
 }
 
+.inspector-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.inspector-actions .btn {
+  flex: 1;
+}
+
+#resetDetectionButton {
+  background: rgba(220, 53, 69, 0.12);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.35);
+  font-size: 11px;
+  padding: 0 10px;
+}
+
+#resetDetectionButton:hover:not(:disabled) {
+  background: #dc3545;
+  color: #fff;
+}
+
+.multi-region-polygon {
+  stroke-linejoin: round;
+  transition: stroke-width 0.1s ease, fill-opacity 0.1s ease;
+}
+
+.multi-region-polygon:hover {
+  stroke-width: 3px !important;
+  fill-opacity: 0.3 !important;
+}
+

@@ -568,3 +568,45 @@ def test_draft_ai_detection_is_saved_immediately(tmp_path: Path, monkeypatch):
     assert detection.status_code == 200
     assert detection.get_json()["template"]["artwork_area"] == proposed_area
     assert stored["artwork_area"] == proposed_area
+
+
+def test_reset_admin_template_detection(tmp_path: Path):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    template_id = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "frame.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]["template_id"]
+
+    mask_file = tmp_path / "draft_templates" / template_id / "mask.png"
+    mask_file.write_text("dummy mask", encoding="utf-8")
+    assert mask_file.is_file()
+
+    client.patch(
+        f"/api/admin/templates/{template_id}",
+        json={
+            "raw_artwork_area": {"regions": [{"x": 10, "y": 10, "width": 50, "height": 50}]},
+            "mask_name": "mask.png",
+            "detection_provider": "vertex",
+            "detection_confidence": 0.95,
+        },
+        headers=headers,
+    )
+
+    res = client.post(f"/api/admin/templates/{template_id}/reset-detection", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    tpl = data["template"]
+    assert tpl["raw_artwork_area"] is None
+    assert tpl["mask_name"] is None
+    assert tpl["detection_provider"] is None
+    assert not mask_file.is_file()
+

@@ -422,7 +422,62 @@ def delete_admin_template(template_id: str):
     except (CatalogError, TemplateImportError) as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template_id": template_id})
+@admin_routes.post("/api/admin/templates/<template_id>/reset-detection")
+@require_admin_json
+@require_csrf
+def reset_admin_template_detection(template_id: str):
+    template = catalog().get_template(template_id)
+    if not template:
+        return json_error("Template not found", 404)
+    try:
+        draft_mask = Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]) / template_id / "mask.png"
+        if draft_mask.is_file():
+            draft_mask.unlink(missing_ok=True)
+        pub_mask = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "mask.png"
+        if pub_mask.is_file():
+            pub_mask.unlink(missing_ok=True)
 
+        w = template["canvas_width"]
+        h = template["canvas_height"]
+        default_area = {
+            "x": round(w * 0.25),
+            "y": round(h * 0.25),
+            "width": round(w * 0.5),
+            "height": round(h * 0.5),
+            "corners": [
+                {"x": round(w * 0.25), "y": round(h * 0.25)},
+                {"x": round(w * 0.75), "y": round(h * 0.25)},
+                {"x": round(w * 0.75), "y": round(h * 0.75)},
+                {"x": round(w * 0.25), "y": round(h * 0.75)},
+            ]
+        }
+        changes = {
+            "artwork_area": default_area,
+            "orientation": orientation_for_size(default_area["width"], default_area["height"]),
+            "raw_artwork_area": None,
+            "mask_name": None,
+            "detection_provider": None,
+            "detection_confidence": None,
+        }
+        updated = catalog().update_template(template_id, changes)
+
+        if updated.get("status") == "active":
+            templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
+            manifest_path = templates_folder / template_id / "manifest.json"
+            if manifest_path.is_file():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["artwork_area"] = default_area
+                manifest["orientation"] = updated["orientation"]
+                manifest["mask"] = None
+                manifest["raw_artwork_area"] = None
+                manifest["detection_provider"] = None
+                manifest["detection_confidence"] = None
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+    except Exception as error:
+        return json_error(str(error), 400)
+    return jsonify({"success": True, "template": updated})
 
 @admin_routes.post("/api/admin/templates/<template_id>/detect")
 @require_admin_json
@@ -655,8 +710,8 @@ def update_detection_settings():
             edge_expand = int(settings["CLASSIC_GREEN_EDGE_EXPAND"])
         except ValueError:
             return json_error("Green frame edge expansion must be a number", 400)
-        if edge_expand < 0 or edge_expand > 24:
-            return json_error("Green frame edge expansion must be between 0 and 24", 400)
+        if edge_expand < 0 or edge_expand > 255:
+            return json_error("Green frame edge expansion must be between 0 and 255", 400)
     catalog().set_settings(settings)
     return jsonify({"success": True, "settings": settings})
 
