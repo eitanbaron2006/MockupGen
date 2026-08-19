@@ -605,8 +605,10 @@ def test_reset_admin_template_detection(tmp_path: Path):
     data = res.get_json()
     assert data["success"] is True
     tpl = data["template"]
-    assert tpl["raw_artwork_area"] is None
+    assert tpl["raw_artwork_area"] != {"regions": [{"x": 10, "y": 10, "width": 50, "height": 50}]}
     assert tpl["mask_name"] is None
-    assert tpl["detection_provider"] is None
+    assert tpl["detection_provider"] == "classic"
     assert not mask_file.is_file()
+
+
 

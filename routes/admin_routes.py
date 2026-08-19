@@ -437,27 +437,25 @@ def reset_admin_template_detection(template_id: str):
         if pub_mask.is_file():
             pub_mask.unlink(missing_ok=True)
 
-        w = template["canvas_width"]
-        h = template["canvas_height"]
-        default_area = {
-            "x": round(w * 0.25),
-            "y": round(h * 0.25),
-            "width": round(w * 0.5),
-            "height": round(h * 0.5),
-            "corners": [
-                {"x": round(w * 0.25), "y": round(h * 0.25)},
-                {"x": round(w * 0.75), "y": round(h * 0.25)},
-                {"x": round(w * 0.75), "y": round(h * 0.75)},
-                {"x": round(w * 0.25), "y": round(h * 0.75)},
-            ]
-        }
+        detector = ClassicDetectionProvider()
+        bg_path = draft_asset_path(Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]), template_id, "background.png")
+        if not bg_path.is_file():
+            bg_path = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "background.png"
+
+        proposal = detector.detect(bg_path)
+        mode = "green_frames_mockups" if (proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area, dict) and proposal.raw_artwork_area.get("mode") == "green_frames_mockups") else "auto"
+        mask_name = save_green_frame_mask_if_needed(detector, bg_path, mode, proposal)
+
         changes = {
-            "artwork_area": default_area,
-            "orientation": orientation_for_size(default_area["width"], default_area["height"]),
-            "raw_artwork_area": None,
-            "mask_name": None,
-            "detection_provider": None,
-            "detection_confidence": None,
+            "artwork_area": proposal.artwork_area,
+            "orientation": orientation_for_size(
+                proposal.artwork_area["width"],
+                proposal.artwork_area["height"],
+            ),
+            "raw_artwork_area": proposal.raw_artwork_area,
+            "mask_name": mask_name,
+            "detection_provider": proposal.provider,
+            "detection_confidence": proposal.confidence,
         }
         updated = catalog().update_template(template_id, changes)
 
@@ -466,18 +464,19 @@ def reset_admin_template_detection(template_id: str):
             manifest_path = templates_folder / template_id / "manifest.json"
             if manifest_path.is_file():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest["artwork_area"] = default_area
+                manifest["artwork_area"] = proposal.artwork_area
                 manifest["orientation"] = updated["orientation"]
-                manifest["mask"] = None
-                manifest["raw_artwork_area"] = None
-                manifest["detection_provider"] = None
-                manifest["detection_confidence"] = None
+                manifest["mask"] = mask_name
+                manifest["raw_artwork_area"] = proposal.raw_artwork_area
+                manifest["detection_provider"] = proposal.provider
+                manifest["detection_confidence"] = proposal.confidence
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
     except Exception as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template": updated})
+
 
 @admin_routes.post("/api/admin/templates/<template_id>/detect")
 @require_admin_json

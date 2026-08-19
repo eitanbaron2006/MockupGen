@@ -966,12 +966,14 @@
                     <span id="engineModel">Gemini / Global</span>
                   </div>
                 </div>
-                <button class="link-button" id="editEngine">Change detector</button>
+                <div class="engine-summary-actions">
+                  <button class="link-button" id="editEngine">Change detector</button>
+                  <button class="link-button danger-link" id="resetDetectionButton" type="button" title="Reset detection and restore initial imported state">Reset detection</button>
+                </div>
               </div>
               <div class="rule result-rule hidden" id="detectionResult"></div>
             </div>
             <div class="inspector-actions">
-              <button class="btn danger" id="resetDetectionButton" type="button" title="Reset detection and remove custom masks">Reset detection</button>
               <button class="btn" id="saveButton">Save draft</button>
               <button class="btn primary" id="approveButton">Approve <span class="button-tip"
                   data-tooltip="Detection proposes an artwork rectangle. It is not published until you approve it.">i</span></button>
@@ -1286,7 +1288,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=36"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=38"></script>
 </body>
 
 </html>

@@ -2529,6 +2529,116 @@
   }
 
 
+  function showSystemDialog({
+    title = "Confirm action",
+    message = "",
+    confirmText = "OK",
+    cancelText = "Cancel",
+    isDanger = false,
+    showCancel = true,
+    inputPlaceholder = null,
+    defaultValue = ""
+  } = {}) {
+    return new Promise((resolve) => {
+      const dialog = $("systemDialog");
+      const titleEl = $("systemDialogTitle");
+      const messageEl = $("systemDialogMessage");
+      const inputEl = $("systemDialogInput");
+      const cancelBtn = $("systemDialogCancel");
+      const confirmBtn = $("systemDialogConfirm");
+
+      if (!dialog || !titleEl || !messageEl || !confirmBtn) {
+        resolve(false);
+        return;
+      }
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      confirmBtn.textContent = confirmText;
+      confirmBtn.className = isDanger ? "btn danger" : "btn primary";
+
+      if (cancelBtn) {
+        cancelBtn.textContent = cancelText;
+        cancelBtn.classList.toggle("hidden", !showCancel);
+      }
+
+      const isPrompt = inputPlaceholder !== null;
+      if (inputEl) {
+        inputEl.classList.toggle("hidden", !isPrompt);
+        if (isPrompt) {
+          inputEl.placeholder = inputPlaceholder || "";
+          inputEl.value = defaultValue || "";
+        }
+      }
+
+      dialog.classList.add("open");
+      if (isPrompt && inputEl) {
+        setTimeout(() => inputEl.focus(), 50);
+      } else {
+        setTimeout(() => confirmBtn.focus(), 50);
+      }
+
+      function cleanup() {
+        dialog.classList.remove("open");
+        confirmBtn.onclick = null;
+        if (cancelBtn) cancelBtn.onclick = null;
+        dialog.onclick = null;
+        document.removeEventListener("keydown", handleKeydown);
+      }
+
+      function handleConfirm() {
+        cleanup();
+        if (isPrompt && inputEl) {
+          resolve(inputEl.value.trim());
+        } else {
+          resolve(true);
+        }
+      }
+
+      function handleCancel() {
+        cleanup();
+        resolve(isPrompt ? null : false);
+      }
+
+      function handleKeydown(e) {
+        if (e.key === "Escape" && showCancel) {
+          e.preventDefault();
+          handleCancel();
+        } else if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleConfirm();
+        }
+      }
+
+      confirmBtn.onclick = handleConfirm;
+      if (cancelBtn) cancelBtn.onclick = handleCancel;
+      dialog.onclick = (e) => {
+        if (e.target === dialog && showCancel) handleCancel();
+      };
+      document.addEventListener("keydown", handleKeydown);
+    });
+  }
+
+  function appConfirm(message, title = "Confirm action", isDanger = false, confirmText = "Confirm") {
+    return showSystemDialog({
+      title,
+      message,
+      confirmText,
+      cancelText: "Cancel",
+      isDanger,
+      showCancel: true
+    });
+  }
+
+  function appAlert(message, title = "Notice") {
+    return showSystemDialog({
+      title,
+      message,
+      confirmText: "OK",
+      showCancel: false
+    });
+  }
+
   function openDeleteModal(template) {
     if (!template || state.busy) return;
     state.pendingDelete = template;
@@ -5489,12 +5599,16 @@
   async function resetTemplateDetection() {
     if (!state.selected || state.busy) return;
     const templateName = state.selected.name || "this template";
-    if (!confirm(`Are you sure you want to reset detection for "${templateName}"?\n\nThis will remove all custom masks, raw AI detection points, and reset the artwork area.`)) {
-      return;
-    }
+    const confirmed = await appConfirm(
+      `This will restore "${templateName}" to its initial detection state as when it was first imported into MockupGen.\n\nAll manual modifications will be reset. Are you sure you want to proceed?`,
+      "Reset Detection",
+      true,
+      "Reset to initial state"
+    );
+    if (!confirmed) return;
     try {
       setBusy(true);
-      setStatus("Resetting detection...");
+      setStatus("Resetting detection to initial state...");
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/reset-detection`, { method: "POST" });
       state.selected = payload.template;
       greenRegularRenderUrlCache.clear();
@@ -5504,8 +5618,8 @@
       }
       await loadCategories(state.selected.category_id);
       await loadTemplates(state.selected.template_id);
-      toast("Mockup detection reset successfully");
-      setStatus("Detection reset");
+      toast("Mockup restored to initial imported state");
+      setStatus("Mockup reset to initial state");
     } catch (err) {
       toast(err.message || "Failed to reset detection");
       setStatus("Reset failed", true);
