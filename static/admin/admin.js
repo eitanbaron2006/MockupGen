@@ -2041,7 +2041,63 @@
           });
         }
       } else {
-        selectionSvg.classList.add("hidden");
+        if (multiGroup) {
+          multiGroup.innerHTML = "";
+          multiGroup.classList.add("hidden");
+        }
+        $("selectionPolygon").classList.remove("hidden");
+        for (let i = 0; i < 4; i++) {
+          const hg = $(`handle_group_${i}`);
+          if (hg) hg.classList.remove("hidden");
+          const rh = $(`raw_handle_${i}`);
+          if (rh) rh.classList.add("hidden");
+        }
+        if ($("svgZoneTag")) $("svgZoneTag").classList.remove("hidden");
+        if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
+        if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
+        selectionSvg.classList.remove("hidden");
+
+        const area = template.artwork_area;
+        const corners = areaCorners(area);
+        const displayPoints = corners.map((p) => ({
+          x: (p.x / template.canvas_width) * rect.width,
+          y: (p.y / template.canvas_height) * rect.height
+        }));
+        const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
+        $("selectionPolygon").setAttribute("points", pointsStr);
+
+        corners.forEach((p, idx) => {
+          const cx = (p.x / template.canvas_width) * rect.width;
+          const cy = (p.y / template.canvas_height) * rect.height;
+          const handle = $(`handle_${idx}`);
+          if (handle) {
+            handle.setAttribute("cx", cx);
+            handle.setAttribute("cy", cy);
+            handle.setAttribute("r", 14 / state.zoom);
+          }
+          const hLine = $(`h_line_${idx}`);
+          const vLine = $(`v_line_${idx}`);
+          if (hLine && vLine) {
+            const halfSize = 12 / state.zoom;
+            hLine.setAttribute("x1", cx - halfSize);
+            hLine.setAttribute("x2", cx + halfSize);
+            hLine.setAttribute("y1", cy);
+            hLine.setAttribute("y2", cy);
+            vLine.setAttribute("x1", cx);
+            vLine.setAttribute("x2", cx);
+            vLine.setAttribute("y1", cy - halfSize);
+            vLine.setAttribute("y2", cy + halfSize);
+          }
+        });
+        if (corners.length > 0) {
+          const tX = (corners[0].x / template.canvas_width) * rect.width;
+          const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
+          const tag = $("svgZoneTag");
+          if (tag) {
+            tag.setAttribute("x", tX);
+            tag.setAttribute("y", tY);
+          }
+        }
       }
 
       if (state.selectionStyle.overlayImage) {
