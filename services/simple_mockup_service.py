@@ -588,15 +588,12 @@ def _render_green_frame_mockup(
 
         if is_vertex_ai:
             raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
-            if raw_regions and mask_name and (template_folder / mask_name).is_file():
-                full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
-                detection = detection_from_mask(full_mask, raw_artwork_area, settings)
-            elif raw_regions:
+            if raw_regions:
                 from PIL import ImageDraw
                 mask_img = Image.new("L", canvas_size, 0)
                 draw = ImageDraw.Draw(mask_img)
                 for r in raw_regions:
-                    corners = r.get("corners")
+                    corners = r.get("corners") or r.get("inner_corners")
                     if corners and len(corners) >= 3:
                         pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
                         draw.polygon(pts, fill=255)
@@ -604,9 +601,15 @@ def _render_green_frame_mockup(
                         rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
                         rw, rh = int(r.get("width", r.get("w", 1))), int(r.get("height", r.get("h", 1)))
                         draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
+                if mask_name and (template_folder / mask_name).parent.is_dir():
+                    try:
+                        mask_img.save(template_folder / mask_name)
+                    except Exception:
+                        pass
                 detection = detection_from_mask(mask_img, raw_artwork_area, settings)
             else:
                 detection = detect_green_frames(background, settings)
+
         else:
             detection = detect_green_frames(background, settings)
             raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None

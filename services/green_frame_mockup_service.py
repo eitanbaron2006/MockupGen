@@ -397,11 +397,13 @@ def detection_from_mask(
             region.inner_corners = _find_corners(raw_mask, region)
             region.outer_corners = _find_corners(detect_mask, region)
             region.corners = region.inner_corners
-    if has_raw_regions and not any(region.corners for region in regions):
-        soft_mask = union.astype(np.float32)
+    is_vertex = isinstance(raw_artwork_area, dict) and (raw_artwork_area.get("provider") == "vertex" or raw_artwork_area.get("mode") == "vertex")
+    if (has_raw_regions and not any(region.corners for region in regions)) or is_vertex:
+        soft_mask = alpha.astype(np.float32)
     else:
         soft_mask = _soft_mask_for_regions(union, alpha.astype(np.float32), regions, settings)
     return GreenFrameDetection(mask.width, mask.height, regions, raw_mask, detect_mask, union, soft_mask, alpha.astype(np.float32), int(raw_mask.sum()))
+
 
 
 def detect_frames_by_color(

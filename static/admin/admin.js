@@ -2607,6 +2607,12 @@
     detectionReviewState.pendingPayload = null;
     detectionReviewState.params = null;
 
+    greenRegularRenderUrlCache.clear();
+    if ($("selectionRenderedMockup")) {
+      $("selectionRenderedMockup").classList.add("hidden");
+      $("selectionRenderedMockup").src = "";
+    }
+
     // state.selected already has the new detection — just update the display
     if (payload.proposal) {
       $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
@@ -2624,6 +2630,7 @@
       console.warn("Could not persist template state:", err);
     }
   }
+
 
 
   async function retryDetection() {
