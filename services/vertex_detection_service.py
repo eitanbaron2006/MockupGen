@@ -81,11 +81,13 @@ def check_vertex_health(
         return result
 
     try:
+        import httpx
+        http_client = httpx.Client(timeout=timeout_seconds)
         client = genai.Client(
             vertexai=True,
             project=project_id.strip(),
             location=location or "global",
-            http_options=types.HttpOptions(api_version="v1", timeout=timeout_seconds),
+            http_options=types.HttpOptions(httpx_client=http_client),
         )
         # Fast lightweight ping
         res = client.models.generate_content(
@@ -144,15 +146,17 @@ class VertexDetectionProvider:
 
     def _create_client(self):
         try:
+            import httpx
             from google import genai
             from google.genai import types
         except ImportError as error:
             raise DetectionError("google-genai is not installed") from error
+        http_client = httpx.Client(timeout=30.0)
         return genai.Client(
             vertexai=True,
             project=self.project_id,
             location=self.location,
-            http_options=types.HttpOptions(api_version="v1", timeout=30.0),
+            http_options=types.HttpOptions(httpx_client=http_client),
         )
 
     def detect(self, background_path: Path) -> DetectionProposal:
