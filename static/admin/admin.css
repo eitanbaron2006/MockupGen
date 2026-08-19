@@ -3228,7 +3228,7 @@ input[type="checkbox"]:disabled {
   overflow: hidden;
 }
 
-.selection-image-overlay img {
+.selection-image-overlay > img {
   width: 100%;
   height: 100%;
   display: block;
@@ -3238,6 +3238,13 @@ input[type="checkbox"]:disabled {
   position: absolute;
   overflow: hidden;
   transform-origin: 0 0;
+}
+
+.green-frame-region-overlay img {
+  position: absolute;
+  max-width: none !important;
+  max-height: none !important;
+  display: block;
 }
 
 .global-overlay-placement {

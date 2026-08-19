@@ -1856,7 +1856,7 @@
     overlayImg.classList.add("hidden");
     overlayImg.src = state.selectionStyle.overlayImage;
 
-    const fitMode = ($("greenFitMode") && $("greenFitMode").value) || template.fit_mode || "cover";
+    const rawFitMode = ($("fitMode") && $("fitMode").value) || template.fit_mode || "cover";
     const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
     const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;
@@ -1874,6 +1874,8 @@
       const quadW = Math.max(1, Math.round(Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y)));
       const quadH = Math.max(1, Math.round(Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y)));
 
+      const fitMode = resolveFitMode(rawFitMode, naturalW, naturalH, quadW, quadH);
+
       const regionDiv = document.createElement("div");
       regionDiv.className = "green-frame-region-overlay";
       regionDiv.style.position = "absolute";
@@ -1889,18 +1891,23 @@
       regionImg.src = state.selectionStyle.overlayImage;
       let baseW = quadW;
       let baseH = quadH;
-      if (fitMode !== "stretch") {
+      if (fitMode === "stretch") {
+        baseW = quadW;
+        baseH = quadH;
+      } else if (fitMode === "contain") {
         const imageRatio = naturalW / naturalH;
         const containerRatio = quadW / quadH;
-        if (fitMode === "contain") {
-          if (imageRatio > containerRatio) {
-            baseW = quadW;
-            baseH = quadW / imageRatio;
-          } else {
-            baseH = quadH;
-            baseW = quadH * imageRatio;
-          }
-        } else if (imageRatio > containerRatio) {
+        if (imageRatio > containerRatio) {
+          baseW = quadW;
+          baseH = quadW / imageRatio;
+        } else {
+          baseH = quadH;
+          baseW = quadH * imageRatio;
+        }
+      } else { // "cover"
+        const imageRatio = naturalW / naturalH;
+        const containerRatio = quadW / quadH;
+        if (imageRatio > containerRatio) {
           baseH = quadH;
           baseW = quadH * imageRatio;
         } else {
@@ -1916,6 +1923,9 @@
       regionImg.style.left = `${(quadW - scaledW) / 2 + (offsetX * quadW) / 2}px`;
       regionImg.style.top = `${(quadH - scaledH) / 2 + (offsetY * quadH) / 2}px`;
       regionImg.style.objectFit = "fill";
+      regionImg.style.maxWidth = "none";
+      regionImg.style.maxHeight = "none";
+      regionImg.style.display = "block";
       regionDiv.appendChild(regionImg);
       overlayDiv.appendChild(regionDiv);
     });
@@ -4182,8 +4192,13 @@
         if ($("fitMode")) {
           $("fitMode").value = button.dataset.overlayFit;
         }
+        applySelectionStyle();
         drawSelection();
         persistTemplateState(state.selected);
+        if (isGreenFrameTemplate()) {
+          greenRegularRenderUrlCache.clear();
+          refreshGreenFrameMockupPreview();
+        }
       }
     };
   });
@@ -4227,8 +4242,13 @@
     $("fitMode").onchange = (event) => {
       if (state.selected) {
         state.selected.fit_mode = event.target.value;
+        applySelectionStyle();
         drawSelection();
         persistTemplateState(state.selected);
+        if (isGreenFrameTemplate()) {
+          greenRegularRenderUrlCache.clear();
+          refreshGreenFrameMockupPreview();
+        }
       }
     };
   }
