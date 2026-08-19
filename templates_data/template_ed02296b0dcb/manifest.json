@@ -110,5 +110,7 @@
       "target": "all"
     }
   },
-  "raw_artwork_area": null
+  "raw_artwork_area": null,
+  "detection_provider": "classic",
+  "detection_confidence": 0.7
 }

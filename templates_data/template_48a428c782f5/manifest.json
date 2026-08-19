@@ -111,6 +111,19 @@
     }
   },
   "raw_artwork_area": {
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
+    ],
     "edge_expand": 11,
     "green_pixels": 309711,
     "mode": "green_frames_mockups",

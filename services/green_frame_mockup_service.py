@@ -146,21 +146,17 @@ def _color_distance(rgb: np.ndarray, target: tuple[int, int, int]) -> np.ndarray
 
 def _green_confidence(rgb: np.ndarray, target: tuple[int, int, int], tolerance: int) -> np.ndarray:
     dist = _color_distance(rgb, target)
-    similarity = np.maximum(0.0, 1.0 - (dist / max(1, tolerance)))
-    r = rgb[:, :, 0].astype(np.float32)
-    g = rgb[:, :, 1].astype(np.float32)
-    b = rgb[:, :, 2].astype(np.float32)
-    dominance = np.clip((g - np.maximum(r, b)) / 90.0, 0.0, 1.0)
-    brightness = np.clip((g - 60.0) / 120.0, 0.0, 1.0)
-    return similarity * (0.65 + dominance * 0.35) * (0.7 + brightness * 0.3)
+    return np.clip(1.0 - (dist / max(1, tolerance * 1.5)), 0.0, 1.0)
 
 
 def _target_pixels(rgb: np.ndarray, target: tuple[int, int, int], tolerance: int) -> np.ndarray:
     dist = _color_distance(rgb, target)
-    r = rgb[:, :, 0].astype(np.float32)
-    g = rgb[:, :, 1].astype(np.float32)
-    b = rgb[:, :, 2].astype(np.float32)
-    return (dist <= tolerance) & (g > r * 1.22) & (g > b * 1.22) & (g > 95)
+    r = rgb[:, :, 0].astype(np.int32)
+    g = rgb[:, :, 1].astype(np.int32)
+    b = rgb[:, :, 2].astype(np.int32)
+    is_target_near = dist <= tolerance
+    is_mostly_green = (g > r * 1.15) & (g > b * 1.15) & (g > 70)
+    return is_target_near | (is_mostly_green & (dist <= tolerance * 1.35))
 
 
 def _sample_grid(field: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:

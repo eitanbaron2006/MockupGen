@@ -211,6 +211,21 @@
         "x": 340,
         "y": 158
       }
+    ],
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
     ]
-  }
+  },
+  "detection_provider": "vertex",
+  "detection_confidence": 0.95
 }

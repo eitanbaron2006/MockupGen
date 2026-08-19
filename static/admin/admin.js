@@ -1816,17 +1816,27 @@
   }
 
   function greenFrameOverlayRegions(template) {
-    const rawRegions = template.raw_artwork_area && Array.isArray(template.raw_artwork_area.regions)
-      ? template.raw_artwork_area.regions
-      : [];
-    const regions = rawRegions.length ? rawRegions : [template.artwork_area];
-    return regions
-      .filter((region) => region && Number(region.width) > 0 && Number(region.height) > 0)
-      .map((region) => ({
-        ...region,
-        corners: region.corners || region.inner_corners || areaCorners(region)
-      }))
-      .filter((region) => Array.isArray(region.corners) && region.corners.length >= 4);
+    if (isMultiRegionTemplate(template)) {
+      const rawRegions = template.raw_artwork_area && Array.isArray(template.raw_artwork_area.regions)
+        ? template.raw_artwork_area.regions
+        : [];
+      return rawRegions
+        .filter((region) => region && Number(region.width) > 0 && Number(region.height) > 0)
+        .map((region) => ({
+          ...region,
+          corners: region.corners || region.inner_corners || areaCorners(region)
+        }))
+        .filter((region) => Array.isArray(region.corners) && region.corners.length >= 4);
+    }
+    const area = template.artwork_area;
+    if (!area) return [];
+    const corners = area.corners || areaCorners(area);
+    return [
+      {
+        ...area,
+        corners: corners
+      }
+    ];
   }
 
   function renderGreenFrameArtworkOverlay(template, image) {
@@ -1853,44 +1863,49 @@
     const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
     const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
 
-
     greenFrameOverlayRegions(template).forEach((region) => {
       const corners = region.corners;
+      if (!corners || corners.length < 4) return;
+
       const displayPoints = corners.map(p => ({
         x: (p.x / template.canvas_width) * rect.width,
         y: (p.y / template.canvas_height) * rect.height
       }));
-      const canvasW = Number(region.width);
-      const canvasH = Number(region.height);
+      const quadW = Math.max(1, Math.round(Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y)));
+      const quadH = Math.max(1, Math.round(Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y)));
+
       const regionDiv = document.createElement("div");
       regionDiv.className = "green-frame-region-overlay";
-      regionDiv.style.width = `${canvasW}px`;
-      regionDiv.style.height = `${canvasH}px`;
+      regionDiv.style.position = "absolute";
+      regionDiv.style.width = `${quadW}px`;
+      regionDiv.style.height = `${quadH}px`;
       regionDiv.style.left = `${rect.left}px`;
       regionDiv.style.top = `${rect.top}px`;
-      regionDiv.style.transform = `matrix3d(${getMatrix3d(canvasW, canvasH, displayPoints[0], displayPoints[1], displayPoints[2], displayPoints[3]).join(",")})`;
+      regionDiv.style.transformOrigin = "0 0";
+      regionDiv.style.overflow = "hidden";
+      regionDiv.style.transform = `matrix3d(${getMatrix3d(quadW, quadH, displayPoints[0], displayPoints[1], displayPoints[2], displayPoints[3]).join(",")})`;
 
       const regionImg = document.createElement("img");
       regionImg.src = state.selectionStyle.overlayImage;
-      let baseW = canvasW;
-      let baseH = canvasH;
+      let baseW = quadW;
+      let baseH = quadH;
       if (fitMode !== "stretch") {
         const imageRatio = naturalW / naturalH;
-        const containerRatio = canvasW / canvasH;
+        const containerRatio = quadW / quadH;
         if (fitMode === "contain") {
           if (imageRatio > containerRatio) {
-            baseW = canvasW;
-            baseH = canvasW / imageRatio;
+            baseW = quadW;
+            baseH = quadW / imageRatio;
           } else {
-            baseH = canvasH;
-            baseW = canvasH * imageRatio;
+            baseH = quadH;
+            baseW = quadH * imageRatio;
           }
         } else if (imageRatio > containerRatio) {
-          baseH = canvasH;
-          baseW = canvasH * imageRatio;
+          baseH = quadH;
+          baseW = quadH * imageRatio;
         } else {
-          baseW = canvasW;
-          baseH = canvasW / imageRatio;
+          baseW = quadW;
+          baseH = quadW / imageRatio;
         }
       }
       const scaledW = baseW * artworkScale;
@@ -1898,8 +1913,8 @@
       regionImg.style.position = "absolute";
       regionImg.style.width = `${scaledW}px`;
       regionImg.style.height = `${scaledH}px`;
-      regionImg.style.left = `${(canvasW - scaledW) / 2 + offsetX * canvasW / 2}px`;
-      regionImg.style.top = `${(canvasH - scaledH) / 2 + offsetY * canvasH / 2}px`;
+      regionImg.style.left = `${(quadW - scaledW) / 2 + (offsetX * quadW) / 2}px`;
+      regionImg.style.top = `${(quadH - scaledH) / 2 + (offsetY * quadH) / 2}px`;
       regionImg.style.objectFit = "fill";
       regionDiv.appendChild(regionImg);
       overlayDiv.appendChild(regionDiv);
@@ -1913,8 +1928,6 @@
     }
     if (state.isPreviewingMockup) {
       $("selectionSvg").classList.add("hidden");
-      $("selectionImageOverlay").classList.add("hidden");
-      renderGlobalOverlayPlacement();
       return;
     }
     const template = state.selected;
@@ -1936,178 +1949,227 @@
     selectionSvg.style.top = `${rect.top}px`;
     selectionSvg.style.width = `${rect.width}px`;
     selectionSvg.style.height = `${rect.height}px`;
-    selectionSvg.style.setProperty("--zoom", state.zoom);
     applySelectionStyle();
-
     const multiGroup = $("multiRegionSvgGroup");
 
-    if (isGreenFrameTemplate(template)) {
-      if (isMultiRegionTemplate(template)) {
-        selectionSvg.classList.remove("hidden");
-        $("selectionPolygon").classList.add("hidden");
-        for (let i = 0; i < 4; i++) {
-          const hg = $(`handle_group_${i}`);
-          if (hg) hg.classList.add("hidden");
-          const rh = $(`raw_handle_${i}`);
-          if (rh) rh.classList.add("hidden");
-        }
-        if ($("svgZoneTag")) $("svgZoneTag").classList.add("hidden");
-        if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
-        if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
+    if (isMultiRegionTemplate(template)) {
+      selectionSvg.classList.remove("hidden");
+      $("selectionPolygon").classList.add("hidden");
+      for (let i = 0; i < 4; i++) {
+        const hg = $(`handle_group_${i}`);
+        if (hg) hg.classList.add("hidden");
+        const rh = $(`raw_handle_${i}`);
+        if (rh) rh.classList.add("hidden");
+      }
+      if ($("svgZoneTag")) $("svgZoneTag").classList.add("hidden");
+      if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
+      if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
 
-        if (multiGroup) {
-          multiGroup.classList.remove("hidden");
-          multiGroup.innerHTML = "";
+      if (multiGroup) {
+        multiGroup.classList.remove("hidden");
+        multiGroup.innerHTML = "";
 
-          const style = state.selectionStyle;
-          const strokeColor = style.polygonColor || "#ed6f5c";
-          const strokeWidth = style.polygonWidth || 2;
-          const fillColor = style.polygonColor || "#ed6f5c";
-          const fillOpacity = (style.polygonOpacity || 15) / 100;
-          const crossColor = style.crossColor || "#ed6f5c";
-          const crossStrokeWidth = style.crossWidth || 1.5;
-          const crossOpacity = (style.crossOpacity || 100) / 100;
-          const halfSize = 12 / state.zoom;
-          const hitboxR = 14 / state.zoom;
+        const style = state.selectionStyle;
+        const strokeColor = style.polygonColor || "#ed6f5c";
+        const strokeWidth = style.polygonWidth || 2;
+        const fillColor = style.polygonColor || "#ed6f5c";
+        const fillOpacity = (style.polygonOpacity || 15) / 100;
+        const crossColor = style.crossColor || "#ed6f5c";
+        const crossStrokeWidth = style.crossWidth || 1.5;
+        const crossOpacity = (style.crossOpacity || 100) / 100;
+        const halfSize = 12 / state.zoom;
+        const hitboxR = 14 / state.zoom;
 
-          template.raw_artwork_area.regions.forEach((region, rIdx) => {
-            const corners = region.corners || region.inner_corners || areaCorners(region);
-            if (!region.corners) region.corners = corners;
+        template.raw_artwork_area.regions.forEach((region, rIdx) => {
+          const corners = region.corners || region.inner_corners || areaCorners(region);
+          if (!region.corners) region.corners = corners;
 
-            const displayPoints = corners.map(p => ({
-              x: (p.x / template.canvas_width) * rect.width,
-              y: (p.y / template.canvas_height) * rect.height
-            }));
-            const pointsStr = displayPoints.map(p => `${p.x},${p.y}`).join(" ");
+          const displayPoints = corners.map(p => ({
+            x: (p.x / template.canvas_width) * rect.width,
+            y: (p.y / template.canvas_height) * rect.height
+          }));
+          const pointsStr = displayPoints.map(p => `${p.x},${p.y}`).join(" ");
 
-            const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-            poly.setAttribute("points", pointsStr);
-            poly.setAttribute("class", "multi-region-polygon");
-            poly.dataset.regionIndex = String(rIdx);
-            poly.style.fill = fillColor;
-            poly.style.fillOpacity = String(fillOpacity);
-            poly.style.stroke = strokeColor;
-            poly.style.strokeWidth = `${strokeWidth}px`;
-            poly.style.cursor = "move";
-            multiGroup.appendChild(poly);
+          const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          poly.setAttribute("points", pointsStr);
+          poly.setAttribute("class", "multi-region-polygon");
+          poly.dataset.regionIndex = String(rIdx);
+          poly.style.fill = fillColor;
+          poly.style.fillOpacity = String(fillOpacity);
+          poly.style.stroke = strokeColor;
+          poly.style.strokeWidth = `${strokeWidth}px`;
+          poly.style.cursor = "move";
+          multiGroup.appendChild(poly);
 
-            corners.forEach((p, cIdx) => {
-              const cx = (p.x / template.canvas_width) * rect.width;
-              const cy = (p.y / template.canvas_height) * rect.height;
+          corners.forEach((p, cIdx) => {
+            const cx = (p.x / template.canvas_width) * rect.width;
+            const cy = (p.y / template.canvas_height) * rect.height;
 
-              const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-              g.setAttribute("class", "handle-group");
-              g.dataset.regionIndex = String(rIdx);
-              g.dataset.cornerIndex = String(cIdx);
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("class", "handle-group");
+            g.dataset.regionIndex = String(rIdx);
+            g.dataset.cornerIndex = String(cIdx);
 
-              const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-              hLine.setAttribute("class", "cross-line h-line");
-              hLine.setAttribute("x1", cx - halfSize);
-              hLine.setAttribute("x2", cx + halfSize);
-              hLine.setAttribute("y1", cy);
-              hLine.setAttribute("y2", cy);
-              hLine.style.stroke = crossColor;
-              hLine.style.strokeWidth = `${crossStrokeWidth}px`;
-              hLine.style.opacity = String(crossOpacity);
-              hLine.style.pointerEvents = "none";
-
-              const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-              vLine.setAttribute("class", "cross-line v-line");
-              vLine.setAttribute("x1", cx);
-              vLine.setAttribute("x2", cx);
-              vLine.setAttribute("y1", cy - halfSize);
-              vLine.setAttribute("y2", cy + halfSize);
-              vLine.style.stroke = crossColor;
-              vLine.style.strokeWidth = `${crossStrokeWidth}px`;
-              vLine.style.opacity = String(crossOpacity);
-              vLine.style.pointerEvents = "none";
-
-              const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-              circle.setAttribute("class", "svg-handle handle-hitbox");
-              circle.setAttribute("cx", cx);
-              circle.setAttribute("cy", cy);
-              circle.setAttribute("r", hitboxR);
-              circle.dataset.regionIndex = String(rIdx);
-              circle.dataset.cornerIndex = String(cIdx);
-              circle.style.cursor = "crosshair";
-              circle.style.fill = "transparent";
-
-              g.appendChild(hLine);
-              g.appendChild(vLine);
-              g.appendChild(circle);
-              multiGroup.appendChild(g);
-            });
-
-            if (displayPoints.length > 0) {
-              const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
-              tag.setAttribute("class", "svg-zone-tag");
-              tag.setAttribute("x", displayPoints[0].x);
-              tag.setAttribute("y", displayPoints[0].y - 8);
-              tag.textContent = `Frame ${rIdx + 1}`;
-              multiGroup.appendChild(tag);
-            }
-          });
-        }
-      } else {
-        if (multiGroup) {
-          multiGroup.innerHTML = "";
-          multiGroup.classList.add("hidden");
-        }
-        $("selectionPolygon").classList.remove("hidden");
-        for (let i = 0; i < 4; i++) {
-          const hg = $(`handle_group_${i}`);
-          if (hg) hg.classList.remove("hidden");
-          const rh = $(`raw_handle_${i}`);
-          if (rh) rh.classList.add("hidden");
-        }
-        if ($("svgZoneTag")) $("svgZoneTag").classList.remove("hidden");
-        if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
-        if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
-        selectionSvg.classList.remove("hidden");
-
-        const area = template.artwork_area;
-        const corners = areaCorners(area);
-        const displayPoints = corners.map((p) => ({
-          x: (p.x / template.canvas_width) * rect.width,
-          y: (p.y / template.canvas_height) * rect.height
-        }));
-        const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
-        $("selectionPolygon").setAttribute("points", pointsStr);
-
-        corners.forEach((p, idx) => {
-          const cx = (p.x / template.canvas_width) * rect.width;
-          const cy = (p.y / template.canvas_height) * rect.height;
-          const handle = $(`handle_${idx}`);
-          if (handle) {
-            handle.setAttribute("cx", cx);
-            handle.setAttribute("cy", cy);
-            handle.setAttribute("r", 14 / state.zoom);
-          }
-          const hLine = $(`h_line_${idx}`);
-          const vLine = $(`v_line_${idx}`);
-          if (hLine && vLine) {
-            const halfSize = 12 / state.zoom;
+            const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            hLine.setAttribute("class", "cross-line h-line");
             hLine.setAttribute("x1", cx - halfSize);
             hLine.setAttribute("x2", cx + halfSize);
             hLine.setAttribute("y1", cy);
             hLine.setAttribute("y2", cy);
+            hLine.style.stroke = crossColor;
+            hLine.style.strokeWidth = `${crossStrokeWidth}px`;
+            hLine.style.opacity = String(crossOpacity);
+            hLine.style.pointerEvents = "none";
+
+            const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            vLine.setAttribute("class", "cross-line v-line");
             vLine.setAttribute("x1", cx);
             vLine.setAttribute("x2", cx);
             vLine.setAttribute("y1", cy - halfSize);
             vLine.setAttribute("y2", cy + halfSize);
+            vLine.style.stroke = crossColor;
+            vLine.style.strokeWidth = `${crossStrokeWidth}px`;
+            vLine.style.opacity = String(crossOpacity);
+            vLine.style.pointerEvents = "none";
+
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("class", "svg-handle handle-hitbox");
+            circle.setAttribute("cx", cx);
+            circle.setAttribute("cy", cy);
+            circle.setAttribute("r", hitboxR);
+            circle.dataset.regionIndex = String(rIdx);
+            circle.dataset.cornerIndex = String(cIdx);
+            circle.style.cursor = "crosshair";
+            circle.style.fill = "transparent";
+
+            g.appendChild(hLine);
+            g.appendChild(vLine);
+            g.appendChild(circle);
+            multiGroup.appendChild(g);
+          });
+
+          if (displayPoints.length > 0) {
+            const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            tag.setAttribute("class", "svg-zone-tag");
+            tag.setAttribute("x", displayPoints[0].x);
+            tag.setAttribute("y", displayPoints[0].y - 8);
+            tag.textContent = `Frame ${rIdx + 1}`;
+            multiGroup.appendChild(tag);
           }
         });
-        if (corners.length > 0) {
-          const tX = (corners[0].x / template.canvas_width) * rect.width;
-          const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
-          const tag = $("svgZoneTag");
-          if (tag) {
-            tag.setAttribute("x", tX);
-            tag.setAttribute("y", tY);
+      }
+    } else {
+      if (multiGroup) {
+        multiGroup.innerHTML = "";
+        multiGroup.classList.add("hidden");
+      }
+      $("selectionPolygon").classList.remove("hidden");
+      for (let i = 0; i < 4; i++) {
+        const hg = $(`handle_group_${i}`);
+        if (hg) hg.classList.remove("hidden");
+        const rh = $(`raw_handle_${i}`);
+        if (rh) rh.classList.add("hidden");
+      }
+      if ($("svgZoneTag")) $("svgZoneTag").classList.remove("hidden");
+      if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
+      if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
+      selectionSvg.classList.remove("hidden");
+
+      const area = template.artwork_area;
+      const corners = areaCorners(area);
+      const displayPoints = corners.map((p) => ({
+        x: (p.x / template.canvas_width) * rect.width,
+        y: (p.y / template.canvas_height) * rect.height
+      }));
+      const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
+      $("selectionPolygon").setAttribute("points", pointsStr);
+
+      corners.forEach((p, idx) => {
+        const cx = (p.x / template.canvas_width) * rect.width;
+        const cy = (p.y / template.canvas_height) * rect.height;
+        const handle = $(`handle_${idx}`);
+        if (handle) {
+          handle.setAttribute("cx", cx);
+          handle.setAttribute("cy", cy);
+          handle.setAttribute("r", 14 / state.zoom);
+        }
+
+        const hLine = $(`h_line_${idx}`);
+        const vLine = $(`v_line_${idx}`);
+        if (hLine && vLine) {
+          const halfSize = 12 / state.zoom;
+          hLine.setAttribute("x1", cx - halfSize);
+          hLine.setAttribute("x2", cx + halfSize);
+          hLine.setAttribute("y1", cy);
+          hLine.setAttribute("y2", cy);
+
+          vLine.setAttribute("x1", cx);
+          vLine.setAttribute("x2", cx);
+          vLine.setAttribute("y1", cy - halfSize);
+          vLine.setAttribute("y2", cy + halfSize);
+        }
+      });
+
+      const rawPolygon = $("rawSelectionPolygon");
+      const rawTag = $("svgRawZoneTag");
+      if (template.raw_artwork_area && rawPolygon) {
+        if (!template.raw_artwork_area.corners) {
+          const rawA = template.raw_artwork_area;
+          template.raw_artwork_area.corners = [
+            { x: rawA.x, y: rawA.y },
+            { x: rawA.x + rawA.width, y: rawA.y },
+            { x: rawA.x + rawA.width, y: rawA.y + rawA.height },
+            { x: rawA.x, y: rawA.y + rawA.height }
+          ];
+        }
+        const rawCorners = template.raw_artwork_area.corners;
+        const rawPointsStr = rawCorners.map(p => {
+          const cx = (p.x / template.canvas_width) * rect.width;
+          const cy = (p.y / template.canvas_height) * rect.height;
+          return `${cx},${cy}`;
+        }).join(" ");
+        rawPolygon.setAttribute("points", rawPointsStr);
+        rawPolygon.classList.remove("hidden");
+
+        if (rawTag && rawCorners.length > 0) {
+          const tRawX = (rawCorners[0].x / template.canvas_width) * rect.width;
+          const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25;
+          rawTag.setAttribute("x", tRawX);
+          rawTag.setAttribute("y", tRawY);
+          rawTag.classList.remove("hidden");
+        }
+
+        rawCorners.forEach((p, idx) => {
+          const cx = (p.x / template.canvas_width) * rect.width;
+          const cy = (p.y / template.canvas_height) * rect.height;
+          const rawMarker = $(`raw_handle_${idx}`);
+          if (rawMarker) {
+            rawMarker.setAttribute("cx", cx);
+            rawMarker.setAttribute("cy", cy);
+            rawMarker.classList.remove("hidden");
           }
+        });
+      } else {
+        if (rawPolygon) rawPolygon.classList.add("hidden");
+        if (rawTag) rawTag.classList.add("hidden");
+        for (let idx = 0; idx < 4; idx++) {
+          const rawMarker = $(`raw_handle_${idx}`);
+          if (rawMarker) rawMarker.classList.add("hidden");
         }
       }
 
+      if (corners.length > 0) {
+        const tX = (corners[0].x / template.canvas_width) * rect.width;
+        const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
+        const tag = $("svgZoneTag");
+        if (tag) {
+          tag.setAttribute("x", tX);
+          tag.setAttribute("y", tY);
+        }
+      }
+    }
+
+    if (isGreenFrameTemplate(template)) {
       if (state.selectionStyle.overlayImage) {
         const rendered = $("selectionRenderedMockup");
         const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
@@ -2130,186 +2192,15 @@
       return;
     }
 
-
-    if (multiGroup) {
-      multiGroup.innerHTML = "";
-      multiGroup.classList.add("hidden");
-    }
-    $("selectionPolygon").classList.remove("hidden");
-    for (let i = 0; i < 4; i++) {
-      const hg = $(`handle_group_${i}`);
-      if (hg) hg.classList.remove("hidden");
-    }
-    if ($("svgZoneTag")) $("svgZoneTag").classList.remove("hidden");
-
-    if ($("selectionRenderedMockup")) {
-      $("selectionRenderedMockup").classList.add("hidden");
-    }
-
-    if (!template.artwork_area.corners) {
-      const area = template.artwork_area;
-      template.artwork_area.corners = [
-        { x: area.x, y: area.y },
-        { x: area.x + area.width, y: area.y },
-        { x: area.x + area.width, y: area.y + area.height },
-        { x: area.x, y: area.y + area.height }
-      ];
-    }
-
-    const corners = template.artwork_area.corners;
-    const displayPoints = corners.map(p => {
-      const cx = (p.x / template.canvas_width) * rect.width;
-      const cy = (p.y / template.canvas_height) * rect.height;
-      return { x: cx, y: cy };
-    });
-    const pointsStr = displayPoints.map((p) => `${p.x},${p.y}`).join(" ");
-
-    $("selectionPolygon").setAttribute("points", pointsStr);
-
-    const overlayDiv = $("selectionImageOverlay");
-    const overlayImg = $("selectionOverlayImg");
-    if (overlayDiv && overlayImg) {
-      const style = state.selectionStyle;
-      const showOverlay = style.overlayMode === "image" && Boolean(style.overlayImage);
-      overlayDiv.querySelectorAll(".green-frame-region-overlay").forEach((node) => node.remove());
-      overlayDiv.style.overflow = "hidden";
-      overlayImg.classList.remove("hidden");
-      overlayDiv.classList.toggle("hidden", !showOverlay);
-
-      if (!showOverlay) {
-        overlayImg.src = "";
-      } else {
-        overlayImg.style.position = "";
-        overlayImg.style.width = "";
-        overlayImg.style.height = "";
-        overlayImg.style.left = "";
-        overlayImg.style.top = "";
-      }
-
-      if (showOverlay && displayPoints.length >= 4) {
-        const p0 = displayPoints[0];
-        const p1 = displayPoints[1];
-        const p2 = displayPoints[2];
-        const p3 = displayPoints[3];
-
-        const canvasW = template.artwork_area.width;
-        const canvasH = template.artwork_area.height;
-        overlayDiv.style.width = `${canvasW}px`;
-        overlayDiv.style.height = `${canvasH}px`;
-        overlayDiv.style.left = `${rect.left}px`;
-        overlayDiv.style.top = `${rect.top}px`;
-
-        const matrix = getMatrix3d(canvasW, canvasH, p0, p1, p2, p3);
-        overlayDiv.style.transform = `matrix3d(${matrix.join(",")})`;
-
-        overlayImg.src = style.overlayImage;
-
-        let resolvedFitMode = template.fit_mode;
-        if (resolvedFitMode === "auto") {
-          resolvedFitMode = resolveFitMode(
-            "auto",
-            state.selectionStyle.overlayImageWidth,
-            state.selectionStyle.overlayImageHeight,
-            canvasW,
-            canvasH
-          );
-        }
-
-        if (resolvedFitMode === "contain") {
-          overlayImg.style.objectFit = "contain";
-        } else if (resolvedFitMode === "cover") {
-          overlayImg.style.objectFit = "cover";
-        } else {
-          overlayImg.style.objectFit = "fill";
-        }
-      }
-    }
-
-    corners.forEach((p, idx) => {
-      const cx = (p.x / template.canvas_width) * rect.width;
-      const cy = (p.y / template.canvas_height) * rect.height;
-      const handle = $(`handle_${idx}`);
-      if (handle) {
-        handle.setAttribute("cx", cx);
-        handle.setAttribute("cy", cy);
-        handle.setAttribute("r", 14 / state.zoom);
-      }
-
-      const hLine = $(`h_line_${idx}`);
-      const vLine = $(`v_line_${idx}`);
-      if (hLine && vLine) {
-        const halfSize = 12 / state.zoom;
-        hLine.setAttribute("x1", cx - halfSize);
-        hLine.setAttribute("x2", cx + halfSize);
-        hLine.setAttribute("y1", cy);
-        hLine.setAttribute("y2", cy);
-
-        vLine.setAttribute("x1", cx);
-        vLine.setAttribute("x2", cx);
-        vLine.setAttribute("y1", cy - halfSize);
-        vLine.setAttribute("y2", cy + halfSize);
-      }
-    });
-
-    const rawPolygon = $("rawSelectionPolygon");
-    const rawTag = $("svgRawZoneTag");
-    if (template.raw_artwork_area && rawPolygon) {
-      if (!template.raw_artwork_area.corners) {
-        const area = template.raw_artwork_area;
-        template.raw_artwork_area.corners = [
-          { x: area.x, y: area.y },
-          { x: area.x + area.width, y: area.y },
-          { x: area.x + area.width, y: area.y + area.height },
-          { x: area.x, y: area.y + area.height }
-        ];
-      }
-      const rawCorners = template.raw_artwork_area.corners;
-      const rawPointsStr = rawCorners.map(p => {
-        const cx = (p.x / template.canvas_width) * rect.width;
-        const cy = (p.y / template.canvas_height) * rect.height;
-        return `${cx},${cy}`;
-      }).join(" ");
-      rawPolygon.setAttribute("points", rawPointsStr);
-      rawPolygon.classList.remove("hidden");
-
-      if (rawTag && rawCorners.length > 0) {
-        const tRawX = (rawCorners[0].x / template.canvas_width) * rect.width;
-        const tRawY = (rawCorners[0].y / template.canvas_height) * rect.height - 25;
-        rawTag.setAttribute("x", tRawX);
-        rawTag.setAttribute("y", tRawY);
-        rawTag.classList.remove("hidden");
-      }
-
-      rawCorners.forEach((p, idx) => {
-        const cx = (p.x / template.canvas_width) * rect.width;
-        const cy = (p.y / template.canvas_height) * rect.height;
-        const rawMarker = $(`raw_handle_${idx}`);
-        if (rawMarker) {
-          rawMarker.setAttribute("cx", cx);
-          rawMarker.setAttribute("cy", cy);
-          rawMarker.classList.remove("hidden");
-        }
-      });
+    if (state.selectionStyle.overlayImage) {
+      renderGreenFrameArtworkOverlay(template, image);
     } else {
-      if (rawPolygon) rawPolygon.classList.add("hidden");
-      if (rawTag) rawTag.classList.add("hidden");
-      for (let idx = 0; idx < 4; idx++) {
-        const rawMarker = $(`raw_handle_${idx}`);
-        if (rawMarker) rawMarker.classList.add("hidden");
+      $("selectionImageOverlay").classList.add("hidden");
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
       }
     }
-
-    if (corners.length > 0) {
-      const tX = (corners[0].x / template.canvas_width) * rect.width;
-      const tY = (corners[0].y / template.canvas_height) * rect.height - 10;
-      const tag = $("svgZoneTag");
-      if (tag) {
-        tag.setAttribute("x", tX);
-        tag.setAttribute("y", tY);
-      }
-    }
-
-    selectionSvg.classList.remove("hidden");
   }
 
   function beginDrag(event) {

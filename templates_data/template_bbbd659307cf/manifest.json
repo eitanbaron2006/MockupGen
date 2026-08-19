@@ -155,6 +155,21 @@
         "x": 378,
         "y": 196
       }
+    ],
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
     ]
-  }
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.85
 }
