@@ -115,3 +115,14 @@ def test_telemetry_api_routes(tmp_path: Path):
     clear_resp = client.post("/api/telemetry/clear-logs")
     assert clear_resp.status_code == 200
     assert clear_resp.get_json()["success"] is True
+
+    # 7. Check providers status API (requires admin authentication)
+    with client.session_transaction() as sess:
+        sess["admin_authenticated"] = True
+    prov_resp = client.get("/api/admin/providers/status")
+    assert prov_resp.status_code == 200
+    prov_json = prov_resp.get_json()
+    assert prov_json["success"] is True
+    assert "classic" in prov_json["providers"]
+    assert "vertex" in prov_json["providers"]
+    assert prov_json["providers"]["classic"]["available"] is True

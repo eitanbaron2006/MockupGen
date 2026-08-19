@@ -648,16 +648,35 @@
   async function api(url, options = {}) {
     const headers = { ...(options.headers || {}), "X-CSRF-Token": csrf };
     if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-    const response = await fetch(url, { ...options, headers });
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (_error) {
-      payload = { error: "The server returned an unreadable response." };
+    
+    // Add timeout protection (default 35 seconds)
+    const timeoutMs = options.timeout || 35000;
+    let timeoutId;
+    const controller = new AbortController();
+    if (!options.signal) {
+      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      options.signal = controller.signal;
     }
-    if (response.status === 401) window.location.href = "/admin/login";
-    if (!response.ok) throw new Error(payload.error || "Request failed");
-    return payload;
+
+    try {
+      const response = await fetch(url, { ...options, headers });
+      if (timeoutId) clearTimeout(timeoutId);
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = { error: "The server returned an unreadable response." };
+      }
+      if (response.status === 401) window.location.href = "/admin/login";
+      if (!response.ok) throw new Error(payload.error || "Request failed");
+      return payload;
+    } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`);
+      }
+      throw err;
+    }
   }
 
   function escapeHtml(value) {
@@ -2392,6 +2411,15 @@
       return;
     }
 
+    // If Vertex AI is selected but known to be unavailable, fallback gracefully to classic
+    if (state.settings.DETECTION_PROVIDER === "vertex" && state.providerHealth && state.providerHealth.vertex && !state.providerHealth.vertex.available) {
+      const err = state.providerHealth.vertex.error || "Vertex AI connection unavailable";
+      toast(`Vertex AI unavailable (${err}). Using Classic Detection.`);
+      setStatus("Vertex AI unavailable, falling back to Classic", true);
+      showDetectionMethodPicker();
+      return;
+    }
+
     // Vertex AI / Local AI providers
     setBusy(true);
     const engineName = providerTitle(state.settings.DETECTION_PROVIDER || "classic");
@@ -2400,14 +2428,14 @@
     $("proposalState").textContent = "Analyzing the selected background image...";
     $("detectionResult").className = "rule result-rule";
     try {
-      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, { method: "POST" });
+      const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, { method: "POST", timeout: 35000 });
       setBusy(false);
       showDetectionReview(payload, { mode: "ai" });
     } catch (error) {
       setBusy(false);
       $("detectionResult").classList.add("error");
       $("detectionResult").textContent = error.message;
-      $("proposalState").textContent = "Detection failed. Open detection settings or retry.";
+      $("proposalState").textContent = "Detection failed. Open detection settings or retry with Classic.";
       toast(error.message);
       setStatus("Detection failed", true);
     }
@@ -3241,13 +3269,68 @@
     return "Classic edge detection";
   }
 
+  async function checkProviderHealth() {
+    try {
+      const res = await api("/api/admin/providers/status");
+      if (res && res.providers) {
+        state.providerHealth = res.providers;
+        applyProviderHealthUI();
+      }
+    } catch (err) {
+      console.warn("Could not fetch provider status:", err);
+    }
+  }
+
+  function applyProviderHealthUI() {
+    if (!state.providerHealth) return;
+    const vertex = state.providerHealth.vertex;
+    const vertexButton = document.querySelector('.detection-mode-button[data-provider="vertex"]');
+
+    if (vertex && !vertex.available) {
+      if (vertexButton) {
+        vertexButton.title = `Vertex AI unavailable: ${vertex.error || "Connection failed"}`;
+        vertexButton.classList.add("provider-offline");
+      }
+      if ($("vertexModelNotice")) {
+        $("vertexModelNotice").textContent = `⚠️ Vertex AI is unavailable: ${vertex.error || "Connection failed"}`;
+        $("vertexModelNotice").style.color = "var(--error, #c84b3e)";
+      }
+      // If active provider is currently vertex but it's not operational, fallback to classic
+      if (state.settings.DETECTION_PROVIDER === "vertex") {
+        console.warn("Vertex AI is unavailable. Falling back to Classic detection.");
+        showProvider("classic");
+        toast("Vertex AI is unavailable; switched to Classic detection");
+      }
+    } else if (vertex && vertex.available) {
+      if (vertexButton) {
+        vertexButton.title = "Vertex AI (Connected)";
+        vertexButton.classList.remove("provider-offline");
+      }
+      if ($("vertexModelNotice")) {
+        $("vertexModelNotice").textContent = "✓ Vertex AI is connected and operational.";
+        $("vertexModelNotice").style.color = "var(--success, #6e7448)";
+      }
+    }
+  }
+
   function updateDetectionModeSwitch() {
     const selectedProvider = state.settings.DETECTION_PROVIDER || "classic";
     document.querySelectorAll(".detection-mode-button").forEach((button) => {
-      const isActive = button.dataset.provider === selectedProvider;
+      const isProvider = button.dataset.provider;
+      const isActive = isProvider === selectedProvider;
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", String(isActive));
-      button.disabled = state.busy || state.switchingProvider;
+      
+      const isVertex = isProvider === "vertex";
+      const vertexOffline = isVertex && state.providerHealth && state.providerHealth.vertex && !state.providerHealth.vertex.available;
+      button.disabled = state.busy || state.switchingProvider || vertexOffline;
+      if (vertexOffline) {
+        button.style.opacity = "0.45";
+        button.style.cursor = "not-allowed";
+      } else {
+        button.style.opacity = "";
+        button.style.cursor = "";
+      }
     });
   }
 
@@ -3257,21 +3340,34 @@
       card.classList.toggle("selected", card.dataset.provider === provider);
     });
     updateDetectionModeSwitch();
-    $("vertexConfig").classList.toggle("hidden", provider !== "vertex");
-    $("localConfig").classList.toggle("hidden", provider !== "local");
-    $("classicConfig").classList.toggle("hidden", provider !== "classic");
-    $("engineProvider").textContent = providerTitle(provider);
-    $("engineModel").textContent = provider === "vertex"
-      ? `${$("vertexModel").value || "gemini-2.5-flash"} / ${$("vertexLocation").value || "global"}`
-      : provider === "local" ? ($("localModel").value || "Choose an installed model")
-      : ($("classicGreenFramesMode") && $("classicGreenFramesMode").checked ? "Green frames mockups" : "Standard geometric wizard");
+    if ($("vertexConfig")) $("vertexConfig").classList.toggle("hidden", provider !== "vertex");
+    if ($("localConfig")) $("localConfig").classList.toggle("hidden", provider !== "local");
+    if ($("classicConfig")) $("classicConfig").classList.toggle("hidden", provider !== "classic");
+    if ($("engineProvider")) $("engineProvider").textContent = providerTitle(provider);
+    if ($("engineModel")) {
+      const vModel = ($("vertexModel") && $("vertexModel").value) || "gemini-2.5-flash";
+      const vLoc = ($("vertexLocation") && $("vertexLocation").value) || "global";
+      const lModel = ($("localModel") && $("localModel").value) || "Choose an installed model";
+      const isGreen = $("classicGreenFramesMode") && $("classicGreenFramesMode").checked;
+      $("engineModel").textContent = provider === "vertex"
+        ? `${vModel} / ${vLoc}`
+        : provider === "local" ? lModel
+        : (isGreen ? "Green frames mockups" : "Standard geometric wizard");
+    }
     if ($("classicGreenOptions")) {
       $("classicGreenOptions").classList.toggle("hidden", provider !== "classic" || !$("classicGreenFramesMode") || !$("classicGreenFramesMode").checked);
     }
   }
 
   async function switchDetectionProvider(provider) {
-    if (state.busy || state.switchingProvider || provider === (state.settings.DETECTION_PROVIDER || "classic")) return;
+    if (state.busy || state.switchingProvider) return;
+    if (provider === "vertex" && state.providerHealth && state.providerHealth.vertex && !state.providerHealth.vertex.available) {
+      const err = state.providerHealth.vertex.error || "Vertex AI is not configured or unreachable.";
+      toast(`Cannot select Vertex AI: ${err}`);
+      setStatus("Vertex AI is unavailable", true);
+      return;
+    }
+    if (provider === (state.settings.DETECTION_PROVIDER || "classic")) return;
     const previousProvider = state.settings.DETECTION_PROVIDER || "classic";
     state.switchingProvider = true;
     showProvider(provider);
@@ -3304,60 +3400,79 @@
     } else if (selected && !models.some((model) => model.id === selected)) {
       select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(selected)}">${escapeHtml(selected)} / previously configured</option>`);
     }
-    select.value = selected && [...select.options].some((option) => option.value === selected)
-      ? selected
-      : (select.options[0] ? select.options[0].value : "");
+    if (selected) select.value = selected;
   }
 
   async function loadVertexModels(selected) {
-    const payload = await api("/api/admin/settings/detection/models?provider=vertex");
-    fillModels($("vertexModel"), payload.models, selected, "No compatible Vertex models found");
-    $("settingsNotice").textContent = payload.source === "fallback"
-      ? "Live Vertex model catalog unavailable; showing compatible fallback models."
-      : `${payload.models.length} compatible Vertex model(s) loaded from Model Garden.`;
+    try {
+      const payload = await api("/api/admin/settings/detection/models?provider=vertex");
+      if ($("vertexModel")) fillModels($("vertexModel"), payload.models, selected, "Select a detection model");
+      if ($("vertexModelNotice")) {
+        $("vertexModelNotice").textContent = payload.source === "fallback"
+          ? "Using recommended Gemini detection models."
+          : "Live Gemini detection models loaded.";
+      }
+    } catch (error) {
+      if ($("vertexModel")) fillModels($("vertexModel"), [], selected, "Unavailable");
+      if ($("vertexModelNotice")) $("vertexModelNotice").textContent = error.message;
+    }
   }
 
   async function loadLocalModels(showFeedback = false) {
-    const endpoint = $("localUrl").value.trim();
+    const endpoint = $("localUrl") ? $("localUrl").value.trim() : "";
     if (!endpoint) {
-      fillModels($("localModel"), [], "", "Enter an endpoint to list models");
-      $("localModelNotice").textContent = "Enter the local detector endpoint, then load models installed on that service.";
+      if ($("localModel")) fillModels($("localModel"), [], "", "Enter an endpoint to list models");
+      if ($("localModelNotice")) $("localModelNotice").textContent = "Enter the local detector endpoint, then load models installed on that service.";
       return;
     }
     try {
       const query = `/api/admin/settings/detection/models?provider=local&endpoint=${encodeURIComponent(endpoint)}`;
       const payload = await api(query);
-      fillModels(
-        $("localModel"),
-        payload.models,
-        state.settings.LOCAL_DETECTION_MODEL || "",
-        "No installed models reported by this endpoint"
-      );
-      $("localModelNotice").textContent = payload.models.length
-        ? `${payload.models.length} installed model(s) reported by the local service.`
-        : "The endpoint did not expose an OpenAI-compatible or Ollama model list.";
+      if ($("localModel")) {
+        fillModels(
+          $("localModel"),
+          payload.models,
+          state.settings.LOCAL_DETECTION_MODEL || "",
+          "No installed models reported by this endpoint"
+        );
+      }
+      if ($("localModelNotice")) {
+        $("localModelNotice").textContent = payload.models.length
+          ? `${payload.models.length} installed model(s) reported by the local service.`
+          : "The endpoint did not expose an OpenAI-compatible or Ollama model list.";
+      }
       if (showFeedback) toast(payload.models.length ? "Installed local models loaded" : "No local models were reported");
-      showProvider("local");
     } catch (error) {
-      $("localModelNotice").textContent = error.message;
+      if ($("localModelNotice")) $("localModelNotice").textContent = error.message;
       if (showFeedback) toast(error.message);
     }
   }
 
   async function loadSettings() {
-    state.settings = (await api("/api/admin/settings/detection")).settings;
-    $("vertexProject").value = state.settings.VERTEX_PROJECT_ID || "";
-    await loadVertexModels(state.settings.VERTEX_MODEL || "gemini-2.5-flash");
-    $("vertexLocation").value = state.settings.VERTEX_LOCATION || "global";
-    $("vertexResolution").value = state.settings.VERTEX_MEDIA_RESOLUTION || "high";
-    $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
+    try {
+      const payload = await api("/api/admin/settings/detection");
+      state.settings = (payload && payload.settings) || {};
+    } catch (e) {
+      console.warn("Could not fetch detection settings, using defaults:", e);
+      state.settings = state.settings || {};
+    }
+
+    if ($("vertexProject")) $("vertexProject").value = state.settings.VERTEX_PROJECT_ID || "";
+    if ($("vertexLocation")) $("vertexLocation").value = state.settings.VERTEX_LOCATION || "global";
+    if ($("vertexResolution")) $("vertexResolution").value = state.settings.VERTEX_MEDIA_RESOLUTION || "high";
+    if ($("refinementMode")) $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
     if ($("classicBlurSize")) $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
     if ($("classicSearchRadius")) $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
     if ($("classicGreenFramesMode")) $("classicGreenFramesMode").checked = (state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups";
     if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").value = state.settings.CLASSIC_GREEN_EDGE_EXPAND || "1";
-    $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
-    await loadLocalModels(false);
+    if ($("localUrl")) $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
+    
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
+
+    // Asynchronous background calls that don't block workspace loading
+    loadVertexModels(state.settings.VERTEX_MODEL || "gemini-2.5-flash").catch(console.warn);
+    loadLocalModels(false).catch(console.warn);
+    checkProviderHealth().catch(console.warn);
   }
 
   async function saveSettings(showFeedback = true) {
@@ -6163,6 +6278,11 @@
   (async () => {
     try {
       await loadSettings();
+    } catch (err) {
+      console.warn("Settings initialization warning (continuing to load templates):", err);
+    }
+
+    try {
       await loadCategories();
       // Auto-select first non-empty category on initial load
       if (state.categories.length > 0) {
@@ -6178,6 +6298,7 @@
       renderTestGallery();
       renderMockupGallery();
     } catch (error) {
+      console.error("Workspace initialization error:", error);
       setStatus("Unable to load workspace", true);
       toast(error.message);
     }

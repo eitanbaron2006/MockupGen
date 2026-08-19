@@ -659,6 +659,53 @@ def test_detection_settings():
     )
 
 
+@admin_routes.get("/api/admin/providers/status")
+@require_admin_json
+def get_providers_status():
+    settings = catalog().get_settings()
+    config = current_app.config
+
+    classic_status = {
+        "available": True,
+        "provider": "classic",
+        "message": "Classic Edge Detection is always available locally",
+    }
+
+    from services.vertex_detection_service import check_vertex_health
+
+    vertex_project = settings.get("VERTEX_PROJECT_ID") or config.get("VERTEX_PROJECT_ID")
+    vertex_location = settings.get("VERTEX_LOCATION") or config.get("VERTEX_LOCATION", "global")
+    vertex_model = settings.get("VERTEX_MODEL") or config.get("VERTEX_MODEL", "gemini-2.5-flash")
+
+    vertex_status = check_vertex_health(
+        project_id=vertex_project,
+        location=vertex_location,
+        model=vertex_model,
+        timeout_seconds=6.0,
+    )
+
+    local_url = settings.get("LOCAL_DETECTION_URL") or config.get("LOCAL_DETECTION_URL")
+    local_available = bool(local_url and local_url.strip())
+    local_status = {
+        "available": local_available,
+        "provider": "local",
+        "error": None if local_available else "Local Detection URL is not configured",
+    }
+
+    return jsonify(
+        {
+            "success": True,
+            "active_provider": settings.get("DETECTION_PROVIDER")
+            or config.get("DETECTION_PROVIDER", "classic"),
+            "providers": {
+                "classic": classic_status,
+                "vertex": vertex_status,
+                "local": local_status,
+            },
+        }
+    )
+
+
 @admin_routes.get("/server-pulse")
 def server_pulse_page():
     return render_template("admin/server_pulse.html", csrf_token=session.get("csrf_token", ""))

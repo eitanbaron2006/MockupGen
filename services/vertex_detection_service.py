@@ -36,6 +36,90 @@ def _safe_refinement(
     return refined_area
 
 
+_VERTEX_HEALTH_CACHE: dict[str, Any] = {"result": None, "timestamp": 0.0, "key": None}
+
+
+def check_vertex_health(
+    project_id: str | None,
+    location: str = "global",
+    model: str = "gemini-2.5-flash",
+    timeout_seconds: float = 6.0,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Test if Vertex AI is configured, credentials are valid, and model endpoint is reachable."""
+    global _VERTEX_HEALTH_CACHE
+    import time
+
+    cache_key = f"{project_id}:{location}:{model}"
+    now = time.time()
+    if not force and _VERTEX_HEALTH_CACHE["result"] is not None:
+        if (
+            _VERTEX_HEALTH_CACHE["key"] == cache_key
+            and (now - _VERTEX_HEALTH_CACHE["timestamp"]) < 60.0
+        ):
+            return _VERTEX_HEALTH_CACHE["result"]
+
+    if not project_id or not project_id.strip():
+        result = {
+            "available": False,
+            "provider": "vertex",
+            "error": "VERTEX_PROJECT_ID is not configured in settings.",
+        }
+        _VERTEX_HEALTH_CACHE = {"result": result, "timestamp": now, "key": cache_key}
+        return result
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        result = {
+            "available": False,
+            "provider": "vertex",
+            "error": "google-genai package is not installed.",
+        }
+        _VERTEX_HEALTH_CACHE = {"result": result, "timestamp": now, "key": cache_key}
+        return result
+
+    try:
+        client = genai.Client(
+            vertexai=True,
+            project=project_id.strip(),
+            location=location or "global",
+            http_options=types.HttpOptions(api_version="v1", timeout=timeout_seconds),
+        )
+        # Fast lightweight ping
+        res = client.models.generate_content(
+            model=model or "gemini-2.5-flash",
+            contents="ping",
+        )
+        result = {
+            "available": True,
+            "provider": "vertex",
+            "model": model or "gemini-2.5-flash",
+            "location": location or "global",
+            "message": "Vertex AI is connected and operational",
+        }
+    except Exception as exc:
+        err_msg = str(exc)
+        if (
+            "DefaultCredentialsError" in err_msg
+            or "Could not automatically determine credentials" in err_msg
+        ):
+            err_msg = "Google Cloud Application Default Credentials (ADC) are not configured."
+        elif "PermissionDenied" in err_msg or "403" in err_msg:
+            err_msg = "Permission denied. Check Vertex AI API permissions for this project."
+        elif "NotFound" in err_msg or "404" in err_msg:
+            err_msg = f"Model '{model}' not found in location '{location}'."
+        result = {
+            "available": False,
+            "provider": "vertex",
+            "error": err_msg,
+        }
+
+    _VERTEX_HEALTH_CACHE = {"result": result, "timestamp": now, "key": cache_key}
+    return result
+
+
 class VertexDetectionProvider:
     def __init__(
         self,
@@ -68,7 +152,7 @@ class VertexDetectionProvider:
             vertexai=True,
             project=self.project_id,
             location=self.location,
-            http_options=types.HttpOptions(api_version="v1"),
+            http_options=types.HttpOptions(api_version="v1", timeout=30.0),
         )
 
     def detect(self, background_path: Path) -> DetectionProposal:

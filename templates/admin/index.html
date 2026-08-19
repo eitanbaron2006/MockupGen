@@ -1055,8 +1055,7 @@
           </div>
           <span class="recommended">Recommended</span>
         </div>
-        <div class="guide-note">The model list loads live from Vertex Model Garden and filters out image generation,
-          audio/TTS and embedding models that cannot return a frame rectangle.</div>
+        <div class="guide-note" id="vertexModelNotice">Live multimodal frame analysis with your configured project.</div>
         <div class="config-row">
           <div>
             <label for="vertexModel">Available model</label>
@@ -1283,7 +1282,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=22"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=26"></script>
 </body>
 
 </html>
