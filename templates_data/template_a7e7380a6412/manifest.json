@@ -124,5 +124,39 @@
       "saturation": 0,
       "target": "all"
     }
+  },
+  "raw_artwork_area": {
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
+    ],
+    "layers": [],
+    "original_corners": [
+      {
+        "x": 596,
+        "y": 688
+      },
+      {
+        "x": 1380,
+        "y": 689
+      },
+      {
+        "x": 1381,
+        "y": 1842
+      },
+      {
+        "x": 592,
+        "y": 1843
+      }
+    ]
   }
 }

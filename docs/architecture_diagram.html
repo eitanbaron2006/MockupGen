@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ארכיטקטורת שרת מוקאפים - MockupGen</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            border: 1px solid #334155;
+        }
+        h1 {
+            color: #38bdf8;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        p.subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-top: 0;
+            margin-bottom: 30px;
+        }
+        .diagram-box {
+            background: #090d16;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #1e293b;
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .card {
+            background: #334155;
+            padding: 16px;
+            border-radius: 10px;
+            border-right: 4px solid #38bdf8;
+        }
+        .card h3 {
+            margin: 0 0 8px 0;
+            color: #e2e8f0;
+            font-size: 1.1rem;
+        }
+        .card p {
+            margin: 0;
+            color: #cbd5e1;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📐 ארכיטקטורת שרת MockupGen</h1>
+        <p class="subtitle">זרימת הבקשות מהדפדפן ועד למודל העיבוד בפייתון</p>
+
+        <div class="diagram-box">
+            <pre class="mermaid">
+flowchart LR
+    User["🌐 דפדפן / משתמש"] -->|בקשת HTTP| Nginx["🛡️ Reverse Proxy (Nginx)"]
+    Nginx -->|העברת תעבורה| WSGI["⚙️ שרת WSGI (Waitress / Gunicorn)"]
+    WSGI -->|קריאה לפונקציות| Flask["🐍 אפליקציית Flask (app.py)"]
+    Flask -->|רינדור מוקאפ| AI["🖼️ מנוע AI (SAM2, OpenCV, ESRGAN)"]
+            </pre>
+        </div>
+
+        <div class="steps-grid">
+            <div class="card" style="border-right-color: #38bdf8;">
+                <h3>1. דפדפן משתמש</h3>
+                <p>המשתמש שולח תמונה ובקשת יצירת מוקאפ דרך האתר או ה-API.</p>
+            </div>
+            <div class="card" style="border-right-color: #a855f7;">
+                <h3>2. שרת Nginx</h3>
+                <p>שוער הכניסה: מטפל בהצפנת SSL/HTTPS, הגנת סייבר והגשת קבצים סטטיים.</p>
+            </div>
+            <div class="card" style="border-right-color: #eab308;">
+                <h3>3. שרת WSGI</h3>
+                <p>מנהל מספר Workers במקביל כדי שמשתמש אחד לא יתקע משתמשים אחרים.</p>
+            </div>
+            <div class="card" style="border-right-color: #22c55e;">
+                <h3>4. Flask & AI Engine</h3>
+                <p>הקוד שלך שמריץ גזירה, אלגוריתמים ומחזיר תמונת מוקאפ מוכנה.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                darkMode: true,
+                background: '#090d16',
+                primaryColor: '#0284c7',
+                primaryTextColor: '#ffffff',
+                primaryBorderColor: '#38bdf8',
+                lineColor: '#94a3b8',
+                secondaryColor: '#7c3aed',
+                tertiaryColor: '#1e293b'
+            }
+        });
+    </script>
+</body>
+</html>
