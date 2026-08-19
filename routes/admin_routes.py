@@ -397,6 +397,8 @@ def update_admin_template(template_id: str):
                 manifest["mask"] = updated.get("mask_name")
                 manifest["raw_artwork_area"] = updated.get("raw_artwork_area")
                 manifest["effects"] = updated.get("effects")
+                manifest["detection_provider"] = updated.get("detection_provider")
+                manifest["detection_confidence"] = updated.get("detection_confidence")
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
@@ -509,6 +511,14 @@ def detect_admin_template(template_id: str):
                 proposal = provider.detect(background)
             mask_name = save_green_frame_mask_if_needed(provider, background, mode, proposal)
 
+        if not mask_name:
+            mask_path = background.parent / "mask.png"
+            if mask_path.is_file():
+                try:
+                    mask_path.unlink()
+                except Exception:
+                    pass
+
         if template.get("status") == "draft":
             changes = {
                 "artwork_area": proposal.artwork_area,
@@ -518,9 +528,8 @@ def detect_admin_template(template_id: str):
                 "detection_provider": proposal.provider,
                 "detection_confidence": proposal.confidence,
                 "raw_artwork_area": proposal.raw_artwork_area,
+                "mask_name": mask_name,
             }
-            if mask_name:
-                changes["mask_name"] = mask_name
             preview = catalog().update_template(
                 template_id,
                 changes
@@ -535,9 +544,8 @@ def detect_admin_template(template_id: str):
                 "detection_provider": proposal.provider,
                 "detection_confidence": proposal.confidence,
                 "raw_artwork_area": proposal.raw_artwork_area,
+                "mask_name": mask_name,
             }
-            if mask_name:
-                preview["mask_name"] = mask_name
     except DetectionError as error:
         return json_error(str(error), 422)
     return jsonify(

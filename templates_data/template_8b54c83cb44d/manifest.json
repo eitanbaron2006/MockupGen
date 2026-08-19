@@ -32,7 +32,7 @@
   "orientation": "portrait",
   "background": "background.png",
   "foreground": null,
-  "mask": "mask.png",
+  "mask": null,
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -145,6 +145,8 @@
       }
     ],
     "height": 1216,
+    "mode": "vertex",
+    "provider": "vertex",
     "regions": [
       {
         "area": 980096,
@@ -175,5 +177,7 @@
     "width": 806,
     "x": 984,
     "y": 422
-  }
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.85
 }

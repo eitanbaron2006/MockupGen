@@ -376,10 +376,18 @@
 
   function isGreenFrameTemplate(template = state.selected) {
     if (!template) return false;
+    if (template.detection_provider === "vertex" || template.detection_provider === "local") {
+      return false;
+    }
     const raw = template.raw_artwork_area;
     if (raw && typeof raw === "object") {
-      if (Array.isArray(raw.regions) && raw.regions.length > 1) return true;
-      if (raw.mode === "green_frames_mockups") return true;
+      if (raw.provider === "vertex" || raw.mode === "vertex" || raw.provider === "local" || raw.mode === "local") {
+        return false;
+      }
+      if (raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups") return true;
+      if (Array.isArray(raw.regions) && raw.regions.length > 1) {
+        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || template.mask_name === "mask.png");
+      }
     }
     return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
   }
@@ -2104,6 +2112,7 @@
         const rendered = $("selectionRenderedMockup");
         const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
         if (state.drag || state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
+          if (rendered) rendered.classList.add("hidden");
           renderGreenFrameArtworkOverlay(template, image);
         } else {
           $("selectionImageOverlay").classList.add("hidden");
@@ -2459,7 +2468,12 @@
   function endDrag() {
     if (state.drag && state.selected) {
       greenRegularRenderUrlCache.clear();
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
+      }
       persistTemplateState(state.selected);
+      drawSelection();
     }
     state.drag = null;
   }

@@ -348,6 +348,8 @@ class VertexDetectionProvider:
                         "corners": first["corners"],
                     }
                     raw_artwork_area = {
+                        "provider": "vertex",
+                        "mode": "vertex",
                         "x": first["x"],
                         "y": first["y"],
                         "width": first["width"],
@@ -374,7 +376,11 @@ class VertexDetectionProvider:
                         "width": first["width"],
                         "height": first["height"],
                     }
-                    raw_artwork_area = first.get("raw_box", proposal_area)
+                    raw_artwork_area = {
+                        "provider": "vertex",
+                        "mode": "vertex",
+                        **(first.get("raw_box") or proposal_area),
+                    }
                     reason = str(first.get("label", "inner artwork area"))
                     if any_refined:
                         reason += "; boundary refinement snapped the proposal to visible edges"

@@ -135,13 +135,25 @@ def publish_template(
     else:
         raise TemplateImportError("Template assets not found")
     published_folder.mkdir(parents=True, exist_ok=True)
+    raw_art = template.get("raw_artwork_area")
+    is_non_green_provider = (
+        template.get("detection_provider") in ("vertex", "local")
+        or (isinstance(raw_art, dict) and raw_art.get("provider") in ("vertex", "local"))
+    )
     for name in ("background.png", "preview.png", "foreground.png", "mask.png"):
         source = source_folder / name
         destination = published_folder / name
+        if name == "mask.png" and is_non_green_provider:
+            if destination.is_file():
+                try:
+                    destination.unlink()
+                except Exception:
+                    pass
+            continue
         if source.is_file() and source.resolve() != destination.resolve():
             shutil.copy2(source, published_folder / name)
     foreground = "foreground.png" if (published_folder / "foreground.png").is_file() else None
-    mask = "mask.png" if (published_folder / "mask.png").is_file() else None
+    mask = ("mask.png" if (published_folder / "mask.png").is_file() else None) if not is_non_green_provider else None
     manifest = {
         "template_id": template_id,
         "name": template["name"],

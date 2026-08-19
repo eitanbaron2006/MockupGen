@@ -327,10 +327,14 @@ def _green_frame_options(effects: dict | None, fallback_fit_mode: str) -> dict[s
     }
 
 
-def _is_green_frame_raw(raw_artwork_area: dict | None) -> bool:
+def _is_green_frame_raw(raw_artwork_area: dict | None, detection_provider: str | None = None) -> bool:
+    if detection_provider in ("vertex", "local"):
+        return False
     if not isinstance(raw_artwork_area, dict):
         return False
-    if raw_artwork_area.get("mode") == "green_frames_mockups":
+    if raw_artwork_area.get("provider") in ("vertex", "local") or raw_artwork_area.get("mode") in ("vertex", "local"):
+        return False
+    if raw_artwork_area.get("mode") == "green_frames_mockups" or raw_artwork_area.get("provider") == "green_frames_mockups":
         return True
     regions = raw_artwork_area.get("regions")
     if isinstance(regions, list) and len(regions) > 1:
@@ -621,6 +625,23 @@ def _render_green_frame_mockup(
                 if mask_name and (template_folder / mask_name).is_file():
                     full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
                     detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+
+            if raw_regions and isinstance(raw_regions, list):
+                from services.green_frame_mockup_service import _list_to_corners
+                for i, r in enumerate(raw_regions):
+                    if i < len(detection.regions) and isinstance(r, dict):
+                        c = _list_to_corners(r.get("corners") or r.get("inner_corners"))
+                        if c:
+                            detection.regions[i].corners = c
+                            detection.regions[i].inner_corners = c
+                            detection.regions[i].outer_corners = _list_to_corners(r.get("outer_corners")) or c
+                            xs = [float(p.get("x", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
+                            ys = [float(p.get("y", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
+                            if xs and ys:
+                                detection.regions[i].x = int(min(xs))
+                                detection.regions[i].y = int(min(ys))
+                                detection.regions[i].w = int(max(xs) - min(xs))
+                                detection.regions[i].h = int(max(ys) - min(ys))
 
         if not detection.regions:
             raise InvalidTemplateError("Green frame mask has no usable regions")
@@ -1532,7 +1553,9 @@ def render_simple_mockup(
         and isinstance(effective_raw_artwork_area.get("regions"), list)
         and len(effective_raw_artwork_area["regions"]) > 1
     )
-    if (effective_mask_name and _is_green_frame_raw(effective_raw_artwork_area)) or has_multiple_regions:
+    detection_provider = manifest.get("detection_provider")
+    is_non_green_single = detection_provider in ("vertex", "local") and not has_multiple_regions
+    if not is_non_green_single and ((effective_mask_name and _is_green_frame_raw(effective_raw_artwork_area, detection_provider)) or has_multiple_regions):
         # Apply the artwork-targeted realism pipeline (Inner Frame Shadow,
         # glass reflection, tint, etc. with target IMG) to each fitted region
         # source, mirroring the non-green render path.
