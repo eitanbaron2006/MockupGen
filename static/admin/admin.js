@@ -1920,12 +1920,12 @@
         const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
         // The CSS overlay is only an interim approximation: show it while
         // dragging (live feedback) or until the lightweight render arrives.
-        if (state.greenFrameDrag || !hasVisibleRender) {
+        if (state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
           renderGreenFrameArtworkOverlay(template, image);
         } else {
           $("selectionImageOverlay").classList.add("hidden");
         }
-        if (!state.greenFrameDrag) {
+        if (!state.greenFrameDrag && !detectionReviewState.active) {
           ensureGreenFrameRegularRender(template);
         }
       } else {
@@ -1937,6 +1937,7 @@
       }
       return;
     }
+
 
     if ($("selectionRenderedMockup")) {
       $("selectionRenderedMockup").classList.add("hidden");
@@ -2333,6 +2334,11 @@
       await saveTemplate(false);
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, { method: "POST" });
       state.selected = payload.template;
+      greenRegularRenderUrlCache.clear();
+      if ($("selectionRenderedMockup")) {
+        $("selectionRenderedMockup").classList.add("hidden");
+        $("selectionRenderedMockup").src = "";
+      }
       await loadCategories(state.selected.category_id);
       await loadTemplates(state.selected.template_id);
       $("proposalState").textContent = "Approved rectangle is active in the public API.";
@@ -2343,6 +2349,7 @@
       toast(error.message);
     }
   }
+
 
   function openDeleteModal(template) {
     if (!template || state.busy) return;
@@ -2592,7 +2599,7 @@
     );
   }
 
-  function acceptDetectionResult() {
+  async function acceptDetectionResult() {
     if (!detectionReviewState.pendingPayload) { closeMaskDetectionHud(); return; }
     const payload = detectionReviewState.pendingPayload;
     detectionReviewState.active = false;
@@ -2604,13 +2611,20 @@
     if (payload.proposal) {
       $("confidence").textContent = confidenceLabel(payload.proposal.confidence);
       $("detectionResult").className = "rule result-rule success";
-      $("detectionResult").textContent = `classic: ${payload.proposal.reason || "Detection accepted."}`;
+      $("detectionResult").textContent = `Detection: ${payload.proposal.reason || "Detection accepted."}`;
     }
     closeMaskDetectionHud();
     renderEditor();
     toast("Detection accepted");
-    setStatus("Detection confirmed. Fine-tune handles then approve.");
+    setStatus("Detection confirmed.");
+
+    try {
+      await persistTemplateState(state.selected, { force: true });
+    } catch (err) {
+      console.warn("Could not persist template state:", err);
+    }
   }
+
 
   async function retryDetection() {
     if (!detectionReviewState.params) return;
@@ -2630,9 +2644,10 @@
       await submitMaskDetection(params.mode, params);
     } else if (params.mode === "green_frames_mockups") {
       await runClassicGreenFramesDetection();
-    } else if (params.mode === "ai") {
-      await runDetection();
+    } else {
+      await detectFrame();
     }
+
   }
 
   function cancelDetection() {

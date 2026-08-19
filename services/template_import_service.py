@@ -158,11 +158,24 @@ def publish_template(
         "supported_modes": ["simple"],
         "output_format": "png",
         "effects": template.get("effects"),
+        "raw_artwork_area": template.get("raw_artwork_area"),
+        "detection_provider": template.get("detection_provider"),
+        "detection_confidence": template.get("detection_confidence"),
     }
     (published_folder / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return catalog.update_template(
         template_id,
-        {"status": "active", "foreground_name": foreground, "mask_name": mask},
+        {
+            "status": "active",
+            "foreground_name": foreground,
+            "mask_name": mask,
+            "raw_artwork_area": template.get("raw_artwork_area"),
+            "artwork_area": template.get("artwork_area"),
+            "detection_provider": template.get("detection_provider"),
+            "detection_confidence": template.get("detection_confidence"),
+            "effects": template.get("effects"),
+        },
     )
+

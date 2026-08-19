@@ -328,7 +328,16 @@ def _green_frame_options(effects: dict | None, fallback_fit_mode: str) -> dict[s
 
 
 def _is_green_frame_raw(raw_artwork_area: dict | None) -> bool:
-    return isinstance(raw_artwork_area, dict) and raw_artwork_area.get("mode") == "green_frames_mockups"
+    if not isinstance(raw_artwork_area, dict):
+        return False
+    if raw_artwork_area.get("mode") == "green_frames_mockups":
+        return True
+    regions = raw_artwork_area.get("regions")
+    if isinstance(regions, list) and len(regions) > 1:
+        return True
+    return False
+
+
 
 
 def _mask_regions(mask: Image.Image, min_pixels: int = 8) -> list[dict[str, int]]:
@@ -573,21 +582,51 @@ def _render_green_frame_mockup(
         if detection is not None:
             _GREEN_DETECTION_CACHE.move_to_end(cache_key)
     if detection is None:
-        detection = detect_green_frames(background, settings)
-        raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
-        raw_has_perspective = any(
-            isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
-            for region in (raw_regions or [])
-        )
-        if not detection.regions or (raw_regions and not raw_has_perspective):
-            full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
-            detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+        raw_mode = raw_artwork_area.get("mode") if isinstance(raw_artwork_area, dict) else None
+        raw_provider = raw_artwork_area.get("provider") if isinstance(raw_artwork_area, dict) else None
+        is_vertex_ai = raw_mode == "vertex" or raw_provider == "vertex"
+
+        if is_vertex_ai:
+            raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+            if raw_regions and mask_name and (template_folder / mask_name).is_file():
+                full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
+                detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+            elif raw_regions:
+                from PIL import ImageDraw
+                mask_img = Image.new("L", canvas_size, 0)
+                draw = ImageDraw.Draw(mask_img)
+                for r in raw_regions:
+                    corners = r.get("corners")
+                    if corners and len(corners) >= 3:
+                        pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
+                        draw.polygon(pts, fill=255)
+                    else:
+                        rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
+                        rw, rh = int(r.get("width", r.get("w", 1))), int(r.get("height", r.get("h", 1)))
+                        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
+                detection = detection_from_mask(mask_img, raw_artwork_area, settings)
+            else:
+                detection = detect_green_frames(background, settings)
+        else:
+            detection = detect_green_frames(background, settings)
+            raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+            raw_has_perspective = any(
+                isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
+                for region in (raw_regions or [])
+            )
+            if not detection.regions or (raw_regions and not raw_has_perspective):
+                if mask_name and (template_folder / mask_name).is_file():
+                    full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
+                    detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+
         if not detection.regions:
             raise InvalidTemplateError("Green frame mask has no usable regions")
         with _GREEN_DETECTION_LOCK:
             _GREEN_DETECTION_CACHE[cache_key] = detection
             while len(_GREEN_DETECTION_CACHE) > _GREEN_DETECTION_CACHE_LIMIT:
                 _GREEN_DETECTION_CACHE.popitem(last=False)
+
+
     composed = render_green_frame_mockup(background, artwork, settings, detection, artwork_filter)
     return composed
 
@@ -1483,8 +1522,14 @@ def render_simple_mockup(
             else:
                 final_fit_mode = "stretch"
 
-    mask_name = manifest.get("mask")
-    if mask_name and _is_green_frame_raw(raw_artwork_area):
+    effective_raw_artwork_area = raw_artwork_area if raw_artwork_area is not None else manifest.get("raw_artwork_area")
+    effective_mask_name = mask_name if mask_name is not None else manifest.get("mask")
+    has_multiple_regions = (
+        isinstance(effective_raw_artwork_area, dict)
+        and isinstance(effective_raw_artwork_area.get("regions"), list)
+        and len(effective_raw_artwork_area["regions"]) > 1
+    )
+    if (effective_mask_name and _is_green_frame_raw(effective_raw_artwork_area)) or has_multiple_regions:
         # Apply the artwork-targeted realism pipeline (Inner Frame Shadow,
         # glass reflection, tint, etc. with target IMG) to each fitted region
         # source, mirroring the non-green render path.
@@ -1495,16 +1540,17 @@ def render_simple_mockup(
             background=background,
             artwork=artworks if len(artworks) > 1 else artwork,
             template_folder=template_folder,
-            mask_name=mask_name,
+            mask_name=effective_mask_name or "mask.png",
             background_name=manifest["background"],
             canvas_size=canvas_size,
             area=area,
-            raw_artwork_area=raw_artwork_area,
+            raw_artwork_area=effective_raw_artwork_area,
             fit_mode=final_fit_mode,
             realism=realism,
             effects=active_effects if realism else effects,
             artwork_filter=artwork_filter,
         )
+
         if foreground_path:
             foreground = load_rgba(foreground_path)
             if foreground.size != canvas_size:
@@ -1531,9 +1577,10 @@ def render_simple_mockup(
         (area["width"], area["height"]),
         final_fit_mode,
     )
-    if mask_name:
-        mask = _mask_for_artwork(template_folder, mask_name, canvas_size, area)
+    if effective_mask_name:
+        mask = _mask_for_artwork(template_folder, effective_mask_name, canvas_size, area)
         artwork_layer.putalpha(ImageChops.multiply(artwork_layer.getchannel("A"), mask))
+
 
     # Apply scene integration filters (Print contrast, Paper Grain, Custom/Default reflection & shadows) if enabled
     if realism:

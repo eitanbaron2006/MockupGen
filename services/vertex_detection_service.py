@@ -17,10 +17,12 @@ Detect the exact 4 inner corners of the frame opening (excluding the wooden fram
 3. Bottom-Right corner [x, y]
 4. Bottom-Left corner [x, y]
 Return an array of objects under the 'corners' key, with coordinates normalized to the 0-1000 format (where x is horizontal percentage 0-1000, y is vertical percentage 0-1000).
-A gray dashed placeholder rectangle (often containing text like YOUR ARTWORK HERE, ART HERE, or 1/2/3) is the strongest signal.
+A bright solid green screen (chroma key), white placeholder, or gray dashed rectangle (often containing text like YOUR ARTWORK HERE, ART HERE, or 1/2/3) is the strongest signal.
+Ensure the 4 detected corners encompass the entire inner artwork opening precisely up to the inner edges of the frame border so no placeholder color or gaps bleed through.
 Even if the frame is a flat, non-rotated 2D rectangle, you MUST return the exact 4 corners under the 'corners' key. Do NOT return a 2D bounding box (box_2d).
 Ignore overlapping decorations and shadows.
 Return an entry in the array for EACH detected frame, ordered from left to right / top to bottom."""
+
 
 
 def _safe_refinement(
@@ -412,10 +414,12 @@ class VertexDetectionProvider:
                 }
                 raw_artwork_area = {
                     "mode": "green_frames_mockups",
+                    "provider": "vertex",
                     "regions": clean_regions,
                     "original_corners": first["corners"],
                     "frame_count": len(clean_regions),
                 }
+
                 reason = f"Detected {len(clean_regions)} artwork frames in mockup"
                 if any_refined:
                     reason += " (snapped to visible edges)"

@@ -48,12 +48,16 @@ def prepare_draft_render_manifest(drafts_folder: Path, template: dict) -> Path |
         "supported_modes": ["simple"],
         "output_format": "png",
         "effects": template.get("effects"),
+        "raw_artwork_area": template.get("raw_artwork_area"),
+        "detection_provider": template.get("detection_provider"),
+        "detection_confidence": template.get("detection_confidence"),
     }
     (template_folder / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     return drafts_folder
+
 
 
 @mockup_routes.get("/api/health")
