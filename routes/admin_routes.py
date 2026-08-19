@@ -657,3 +657,54 @@ def test_detection_settings():
             },
         }
     )
+
+
+@admin_routes.get("/server-pulse")
+def server_pulse_page():
+    return render_template("admin/server_pulse.html", csrf_token=session.get("csrf_token", ""))
+
+
+@admin_routes.get("/api/telemetry/summary")
+def get_telemetry_summary():
+    svc = current_app.extensions.get("telemetry_service")
+    if not svc:
+        return jsonify({"success": False, "error": "Telemetry service not available"}), 503
+    return jsonify({"success": True, "data": svc.get_summary()})
+
+
+@admin_routes.get("/api/telemetry/requests")
+def get_telemetry_requests():
+    svc = current_app.extensions.get("telemetry_service")
+    if not svc:
+        return jsonify({"success": False, "error": "Telemetry service not available"}), 503
+    limit = min(200, max(1, int(request.args.get("limit", 60))))
+    status_filter = request.args.get("filter")
+    return jsonify({"success": True, "requests": svc.get_recent_requests(limit=limit, status_filter=status_filter)})
+
+
+@admin_routes.get("/api/telemetry/errors")
+def get_telemetry_errors():
+    svc = current_app.extensions.get("telemetry_service")
+    if not svc:
+        return jsonify({"success": False, "error": "Telemetry service not available"}), 503
+    limit = min(100, max(1, int(request.args.get("limit", 40))))
+    return jsonify({"success": True, "errors": svc.get_recent_errors(limit=limit)})
+
+
+@admin_routes.post("/api/telemetry/purge-temp")
+def purge_telemetry_temp():
+    svc = current_app.extensions.get("telemetry_service")
+    if not svc:
+        return jsonify({"success": False, "error": "Telemetry service not available"}), 503
+    max_age_hours = float(request.args.get("max_age_hours", 24.0))
+    result = svc.purge_temp_files(max_age_hours=max_age_hours)
+    return jsonify({"success": True, **result})
+
+
+@admin_routes.post("/api/telemetry/clear-logs")
+def clear_telemetry_logs():
+    svc = current_app.extensions.get("telemetry_service")
+    if not svc:
+        return jsonify({"success": False, "error": "Telemetry service not available"}), 503
+    svc.clear_logs()
+    return jsonify({"success": True, "message": "Telemetry logs cleared"})

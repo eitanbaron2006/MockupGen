@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>MockupGen · Server Pulse & Operations</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=22">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/server_pulse.css') }}?v=1">
+</head>
+
+<body class="pulse-page">
+  <div class="pulse-app">
+    <!-- Topbar Header -->
+    <header class="pulse-topbar">
+      <div class="pulse-brand-col">
+        <a href="/server-pulse" class="brand">Mockup <em>Pulse</em><strong>.</strong></a>
+        <div class="pulse-status-badge" id="liveStatusBadge">
+          <span class="pulse-dot"></span>
+          <span id="liveStatusText">LIVE · Waitress WSGI</span>
+        </div>
+      </div>
+
+      <div class="pulse-controls">
+        <div class="refresh-pill-group">
+          <span class="control-label">Auto-Refresh:</span>
+          <button class="pill-btn active" data-interval="2000">2s</button>
+          <button class="pill-btn" data-interval="5000">5s</button>
+          <button class="pill-btn" data-interval="10000">10s</button>
+          <button class="pill-btn" data-interval="0">Pause</button>
+        </div>
+
+        <button class="btn compact" id="manualRefreshBtn" title="Refresh now">
+          <span class="icon">&#8635;</span> Refresh
+        </button>
+
+        <button class="btn compact" id="purgeTempBtn" title="Delete temporary outputs older than 24 hours">
+          <span class="icon">&#128465;</span> Purge Cache
+        </button>
+
+        <a href="/admin" class="btn compact primary-outline" title="Switch to Mockup Studio">
+          Mockup Studio &#8599;
+        </a>
+      </div>
+    </header>
+
+    <!-- KPI Metric Cards Grid -->
+    <section class="pulse-kpis">
+      <!-- Card 1: Server Health & Uptime -->
+      <div class="kpi-card">
+        <div class="kpi-label">Server Health & Uptime</div>
+        <div class="kpi-value text-success" id="kpiUptime">--</div>
+        <div class="kpi-sub">
+          <span id="kpiThreads">8 Threads</span> &bull; <span id="kpiPlatform">Python</span>
+        </div>
+      </div>
+
+      <!-- Card 2: System Resources -->
+      <div class="kpi-card">
+        <div class="kpi-label">System Resources</div>
+        <div class="kpi-value" id="kpiRam">-- MB</div>
+        <div class="kpi-sub">
+          Process RAM &bull; CPU: <span id="kpiCpu" class="bold">0%</span>
+        </div>
+        <div class="kpi-progress-bg">
+          <div class="kpi-progress-bar" id="kpiRamBar" style="width: 10%;"></div>
+        </div>
+      </div>
+
+      <!-- Card 3: Throughput -->
+      <div class="kpi-card">
+        <div class="kpi-label">Throughput & Requests</div>
+        <div class="kpi-value" id="kpiTotalReq">0</div>
+        <div class="kpi-sub">
+          <span id="kpiReqPerMin" class="bold">0</span> req/min (rolling 60s)
+        </div>
+      </div>
+
+      <!-- Card 4: Success Rate -->
+      <div class="kpi-card">
+        <div class="kpi-label">Health & Success Rate</div>
+        <div class="kpi-value" id="kpiSuccessRate">100%</div>
+        <div class="kpi-sub">
+          <span class="badge-pill bg-2xx" id="kpi2xx">0 2xx</span>
+          <span class="badge-pill bg-4xx" id="kpi4xx">0 4xx</span>
+          <span class="badge-pill bg-5xx" id="kpi5xx">0 5xx</span>
+        </div>
+      </div>
+
+      <!-- Card 5: Response Latency -->
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Response Latency</div>
+        <div class="kpi-value" id="kpiAvgLatency">0 ms</div>
+        <div class="kpi-sub">
+          Avg Render: <span id="kpiAvgRender" class="bold">0 ms</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content Area with Tabs -->
+    <main class="pulse-main">
+      <div class="pulse-tabs-bar">
+        <div class="pulse-tabs">
+          <button class="pulse-tab active" data-tab="stream">
+            <span class="tab-icon">&#9889;</span> Live Request Feed
+          </button>
+          <button class="pulse-tab" data-tab="errors">
+            <span class="tab-icon">&#128680;</span> Error Diagnostics
+            <span class="error-badge-count" id="tabErrorCount">0</span>
+          </button>
+          <button class="pulse-tab" data-tab="analytics">
+            <span class="tab-icon">&#128202;</span> Mockup & Storage
+          </button>
+        </div>
+
+        <div class="tab-actions" id="streamTabActions">
+          <div class="filter-pills" id="statusFilters">
+            <button class="filter-pill active" data-filter="all">All</button>
+            <button class="filter-pill" data-filter="2xx">2xx OK</button>
+            <button class="filter-pill" data-filter="4xx">4xx Client</button>
+            <button class="filter-pill" data-filter="5xx">5xx Server</button>
+            <button class="filter-pill" data-filter="slow">&#9889; Slow (&gt;1s)</button>
+          </div>
+          <button class="btn compact danger-outline" id="clearLogsBtn" title="Clear request history">
+            Clear Logs
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 1: Live Request Feed -->
+      <section class="tab-pane active" id="pane-stream">
+        <div class="table-container">
+          <table class="pulse-table" id="requestTable">
+            <thead>
+              <tr>
+                <th style="width: 90px;">Time</th>
+                <th style="width: 75px;">Method</th>
+                <th>Endpoint / Route</th>
+                <th style="width: 100px;">Status</th>
+                <th style="width: 95px;">Latency</th>
+                <th style="width: 120px;">Client IP</th>
+                <th style="width: 80px;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="requestTableBody">
+              <tr>
+                <td colspan="7" class="empty-cell">Listening for incoming requests...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 2: Error Diagnostics -->
+      <section class="tab-pane" id="pane-errors">
+        <div class="errors-feed" id="errorsFeed">
+          <div class="empty-state">
+            <div class="empty-icon">&#10004;</div>
+            <div class="empty-title">All Systems Operational</div>
+            <div class="empty-sub">No unhandled exceptions or 500 errors recorded in recent history.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 3: Mockup & Storage Analytics -->
+      <section class="tab-pane" id="pane-analytics">
+        <div class="analytics-grid">
+          <!-- Storage Card -->
+          <div class="analytics-panel">
+            <div class="panel-header">
+              <h3>&#128190; Storage Breakdown</h3>
+              <button class="btn compact" id="purgeAnalyticsBtn">Purge Outputs (&gt;24h)</button>
+            </div>
+            <div class="storage-list">
+              <div class="storage-row">
+                <span class="storage-name">Render Outputs (<code>/outputs</code>)</span>
+                <span class="storage-val bold" id="storageOutputs">0 MB</span>
+              </div>
+              <div class="storage-row">
+                <span class="storage-name">User Uploads (<code>/uploads</code>)</span>
+                <span class="storage-val bold" id="storageUploads">0 MB</span>
+              </div>
+              <div class="storage-row">
+                <span class="storage-name">Templates Library (<code>/templates_data</code>)</span>
+                <span class="storage-val bold" id="storageTemplates">0 MB</span>
+              </div>
+              <div class="storage-row total-row">
+                <span class="storage-name">Total Disk Footprint</span>
+                <span class="storage-val bold" id="storageTotal">0 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Templates Card -->
+          <div class="analytics-panel">
+            <div class="panel-header">
+              <h3>&#128444; Top Rendered Templates</h3>
+              <span class="sub" id="totalRendersCount">0 total renders</span>
+            </div>
+            <div class="templates-stat-list" id="topTemplatesList">
+              <div class="sub">No render metrics recorded yet. Generate mockups to populate analytics.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Error Detail Modal -->
+  <div class="pulse-modal hidden" id="errorModal">
+    <div class="pulse-modal-backdrop" id="modalBackdrop"></div>
+    <div class="pulse-modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 id="modalErrorTitle">Error Details</h2>
+          <div class="sub" id="modalErrorSub">Endpoint &bull; Timestamp</div>
+        </div>
+        <button class="icon-button modal-close" id="modalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section">
+          <label class="modal-label">Error Message</label>
+          <div class="modal-callout error-callout" id="modalErrorMessage">--</div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-label-row">
+            <label class="modal-label">Python Traceback</label>
+            <button class="btn compact" id="copyTracebackBtn">Copy Traceback</button>
+          </div>
+          <pre class="traceback-block" id="modalTraceback">No traceback available.</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='admin/server_pulse.js') }}?v=1"></script>
+</body>
+
+</html>
