@@ -441,6 +441,8 @@ def detect_frames_by_color(
                 cv2.drawContours(c_mask, [c], -1, 1, thickness=-1)
         raw_mask = c_mask.astype(bool)
 
+    raw_mask = _refine_region_boundaries(rgb, raw_mask)
+
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
     min_area = max(80, min(settings.min_area, int(w * h * 0.5)))
@@ -459,6 +461,46 @@ def detect_frames_by_color(
         region.outer_corners = _find_corners(detect_mask, region)
         region.corners = region.inner_corners
     return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, alpha, int(raw_mask.sum()))
+
+
+def _refine_region_boundaries(rgb: np.ndarray, region_mask: np.ndarray, max_snap: int = 6) -> np.ndarray:
+    """Refine detected mask boundaries by snapping to the strongest local color gradient (frame bevel)."""
+    if cv2 is None:
+        return region_mask
+    ys, xs = np.where(region_mask)
+    if len(xs) < 100:
+        return region_mask
+
+    h, w = rgb.shape[:2]
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    grad_x = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3))
+    grad_y = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3))
+
+    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+    span_y = y1 - y0
+    span_x = x1 - x0
+    if span_y < 20 or span_x < 20:
+        return region_mask
+
+    y_start, y_end = y0 + int(span_y * 0.15), y0 + int(span_y * 0.85)
+    x_start, x_end = x0 + int(span_x * 0.15), x0 + int(span_x * 0.85)
+
+    left_scores = [grad_x[y_start:y_end, x].mean() for x in range(max(0, x0 - max_snap), min(w, x0 + max_snap + 1))]
+    best_x0 = max(0, x0 - max_snap) + int(np.argmax(left_scores)) if left_scores else x0
+
+    right_scores = [grad_x[y_start:y_end, x].mean() for x in range(max(0, x1 - max_snap), min(w, x1 + max_snap + 1))]
+    best_x1 = max(0, x1 - max_snap) + int(np.argmax(right_scores)) if right_scores else x1
+
+    top_scores = [grad_y[y, x_start:x_end].mean() for y in range(max(0, y0 - max_snap), min(h, y0 + max_snap + 1))]
+    best_y0 = max(0, y0 - max_snap) + int(np.argmax(top_scores)) if top_scores else y0
+
+    bot_scores = [grad_y[y, x_start:x_end].mean() for y in range(max(0, y1 - max_snap), min(h, y1 + max_snap + 1))]
+    best_y1 = max(0, y1 - max_snap) + int(np.argmax(bot_scores)) if bot_scores else y1
+
+    out = region_mask.copy()
+    out[best_y0 : best_y1 + 1, best_x0 : best_x1 + 1] = True
+    return out
 
 
 def detect_frames_from_points(
@@ -538,6 +580,8 @@ def detect_frames_from_points(
                 filled = np.zeros((h, w), dtype=np.uint8)
                 cv2.drawContours(filled, [largest], -1, 1, thickness=-1)
                 region_mask = filled.astype(bool)
+
+        region_mask = _refine_region_boundaries(rgb, region_mask)
 
         ys_r, xs_r = np.where(region_mask)
         area = int(np.count_nonzero(region_mask))
