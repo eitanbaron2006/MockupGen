@@ -1938,6 +1938,10 @@
       $("selectionSvg").classList.add("hidden");
       renderGlobalOverlayPlacement();
     }
+    if (maskDetectState.active) {
+      clearDetectionOverlays();
+      return;
+    }
     if (state.isPreviewingMockup) {
       $("selectionSvg").classList.add("hidden");
       return;
@@ -2782,10 +2786,16 @@
     if (svg) svg.classList.add("hidden");
 
     const rendered = $("selectionRenderedMockup");
-    if (rendered) rendered.classList.add("hidden");
+    if (rendered) {
+      rendered.classList.add("hidden");
+      rendered.src = "";
+    }
 
     const imageOverlay = $("selectionImageOverlay");
-    if (imageOverlay) imageOverlay.classList.add("hidden");
+    if (imageOverlay) {
+      imageOverlay.classList.add("hidden");
+      imageOverlay.querySelectorAll(".green-frame-region-overlay").forEach(n => n.remove());
+    }
 
     const greenLayer = $("greenFramePlacementLayer");
     if (greenLayer) greenLayer.classList.add("hidden");
@@ -2860,9 +2870,9 @@
       { text: "Retry", class: "secondary", onclick: () => retryDetection() },
     ];
     if (mode === "color_pick") {
-      actions.push({ text: "New Color", class: "secondary", onclick: () => { cancelDetection(); runColorPickMode(); } });
+      actions.push({ text: "New Color", class: "secondary", onclick: () => editColorPickMode() });
     } else if (mode === "frame_points") {
-      actions.push({ text: "Edit Points", class: "secondary", onclick: () => { cancelDetection(); runFramePointsMode(); } });
+      actions.push({ text: "Edit Points", class: "secondary", onclick: () => editFramePointsMode() });
     }
     actions.push({ text: "Cancel", class: "danger", onclick: () => cancelDetection() });
 
@@ -2954,6 +2964,29 @@
     toast("Detection cancelled");
   }
 
+  function editColorPickMode() {
+    detectionReviewState.active = false;
+    clearDetectionOverlays();
+    if (detectionReviewState.prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+      updateTemplateInQueue(state.selected);
+    }
+    runColorPickMode();
+  }
+
+  function editFramePointsMode() {
+    if (detectionReviewState.params && Array.isArray(detectionReviewState.params.points) && detectionReviewState.params.points.length > 0) {
+      maskDetectState.points = detectionReviewState.params.points.map(p => ({ ...p }));
+    }
+    detectionReviewState.active = false;
+    clearDetectionOverlays();
+    if (detectionReviewState.prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+      updateTemplateInQueue(state.selected);
+    }
+    runFramePointsMode(true);
+  }
+
   // --- MASK DETECTION (COLOR PICK / FRAME POINTS) ---
 
   const maskDetectState = {
@@ -2985,9 +3018,13 @@
   }
 
   function runColorPickMode() {
+    maskDetectState.active = true;
     maskDetectState.mode = "color_pick";
     maskDetectState.sampledColor = null;
+    clearDetectionOverlays();
 
+    $("proposalState").classList.add("hidden");
+    $("maskDetectionHud").classList.remove("hidden");
     $("maskDetectColorSwatch").classList.add("hidden");
     $("maskDetectToleranceRow").classList.remove("hidden");
 
@@ -3038,19 +3075,33 @@
     $("canvasImage").addEventListener("click", maskDetectState.clickListener);
   }
 
-  function runFramePointsMode() {
+  function runFramePointsMode(preservePoints = false) {
+    maskDetectState.active = true;
     maskDetectState.mode = "frame_points";
-    maskDetectState.points = [];
-    clearMaskDetectDots();
+    clearDetectionOverlays();
+    if (!preservePoints) {
+      maskDetectState.points = [];
+      clearMaskDetectDots();
+    } else {
+      redrawMaskDetectDots();
+    }
 
+    $("proposalState").classList.add("hidden");
+    $("maskDetectionHud").classList.remove("hidden");
     $("maskDetectColorSwatch").classList.add("hidden");
     $("maskDetectToleranceRow").classList.remove("hidden");
 
-    updateMaskDetectUI("FRAME POINTS", "Mark Frame Centers", "Click inside each frame you want to detect. Each click places a numbered marker.", [
-      { text: "Done", class: "primary", disabled: true, id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
-      { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
-      { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
-    ]);
+    const count = maskDetectState.points.length;
+    updateMaskDetectUI("FRAME POINTS", "Mark Frame Centers",
+      count
+        ? `${count} point(s) placed. Add more or click Done to detect.`
+        : "Click inside each frame you want to detect. Each click places a numbered marker.",
+      [
+        { text: "Done", class: "primary", disabled: !count, id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
+        { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
+        { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+      ]
+    );
 
     $("stage").classList.add("stage-cursor-crosshair");
     disableMaskDetectClickListener();
