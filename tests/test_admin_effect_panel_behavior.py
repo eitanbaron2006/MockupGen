@@ -124,3 +124,20 @@ def test_preview_effect_updates_can_persist_while_preview_render_is_busy():
     assert "async function persistTemplateState(template, options = {})" in js
     assert "(state.busy && !options.force)" in js
     assert "persistTemplateState(state.selected, { force: state.isPreviewingMockup })" in js
+
+
+def test_mask_and_green_frame_templates_hide_polygon_and_disable_drag():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    # Verify isGreenFrameTemplate recognizes green frames, color pick, and frame points modes
+    assert 'raw.mode === "color_pick" || raw.provider === "color_pick"' in js
+    assert 'raw.mode === "frame_points" || raw.provider === "frame_points"' in js
+
+    # Verify drawSelection hides SVG and polygon handles for mask/green frame templates
+    green_branch = js.split("if (isGreenFrameTemplate(template)) {", 1)[1].split("return;", 1)[0]
+    assert 'selectionSvg.classList.add("hidden")' in green_branch
+    assert '$("selectionPolygon").classList.add("hidden")' in green_branch
+
+    # Verify beginDrag disables manual polygon dragging for mask/green frame templates
+    drag_body = js.split("function beginDrag(event) {", 1)[1].split("const target = event.target;", 1)[0]
+    assert "if (isGreenFrameTemplate(state.selected)) return;" in drag_body

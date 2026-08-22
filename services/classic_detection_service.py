@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 import cv2
 import numpy as np
@@ -12,6 +13,25 @@ from services.green_frame_mockup_service import (
     green_detection_raw,
     green_mask_image,
 )
+
+_SAM_MODEL_INSTANCE = None
+_SAM_MODEL_LOCK = threading.Lock()
+
+
+def _get_sam_model():
+    global _SAM_MODEL_INSTANCE
+    if _SAM_MODEL_INSTANCE is None:
+        with _SAM_MODEL_LOCK:
+            if _SAM_MODEL_INSTANCE is None:
+                from ultralytics import SAM
+                model_paths = [
+                    Path(__file__).resolve().parents[1] / "models" / "sam2.1_l.pt",
+                    Path("models/sam2.1_l.pt"),
+                    Path("sam2.1_l.pt"),
+                ]
+                model_file = next((p for p in model_paths if p.is_file()), Path("sam2.1_l.pt"))
+                _SAM_MODEL_INSTANCE = SAM(str(model_file))
+    return _SAM_MODEL_INSTANCE
 
 
 class ClassicDetectionProvider:
@@ -136,8 +156,7 @@ class ClassicDetectionProvider:
         # Run if no geometry chosen and we allow auto, or if mode is explicitly requested
         if chosen_pts is None and (mode in ("auto", "sam_center", "sam_point")):
             try:
-                from ultralytics import SAM
-                sam_model = SAM("sam2.1_l.pt")
+                sam_model = _get_sam_model()
                 
                 if mode == "sam_point" and point:
                     pts_list = [[int(point["x"]), int(point["y"])]]

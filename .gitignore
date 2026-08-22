@@ -12,5 +12,10 @@ outputs/*
 logs/*
 !logs/.gitkeep
 sam2.1_l.pt
+*.pt
+*.pth
+models/*
+!models/.gitkeep
+*.db
 
 .claude/settings.local.json

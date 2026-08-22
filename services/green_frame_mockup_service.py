@@ -136,7 +136,7 @@ def _blur_float_field(field: np.ndarray, radius: int) -> np.ndarray:
         size = radius * 2 + 1
         out = ndimage.uniform_filter1d(field.astype(np.float32), size=size, axis=1, mode="nearest")
         return ndimage.uniform_filter1d(out, size=size, axis=0, mode="nearest")
-    return np.asarray(Image.fromarray(np.clip(field * 255, 0, 255).astype(np.uint8), "L").filter(ImageFilter.BoxBlur(radius)), dtype=np.float32) / 255.0
+    return np.asarray(Image.fromarray(np.clip(field * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.BoxBlur(radius)), dtype=np.float32) / 255.0
 
 
 def _color_distance(rgb: np.ndarray, target: tuple[int, int, int]) -> np.ndarray:
@@ -358,7 +358,7 @@ def green_detection_raw(state: GreenFrameDetection, edge_expand: int = 0) -> dic
 
 
 def green_mask_image(state: GreenFrameDetection) -> Image.Image:
-    return Image.fromarray(np.where(state.detect_mask, 255, 0).astype(np.uint8), "L")
+    return Image.fromarray(np.where(state.detect_mask, 255, 0).astype(np.uint8))
 
 
 def detection_from_mask(
@@ -633,7 +633,7 @@ def render_green_frame_mockup(
     state = detection or detect_green_frames(background, settings)
     base = np.asarray(background.convert("RGBA")).copy()
     _suppress_green_halo(base, state)
-    result = Image.fromarray(base, "RGBA")
+    result = Image.fromarray(base)
     base_after_rect = np.asarray(result).copy()
     overlays: list[tuple[Image.Image, int, int, int, int]] = []
     shadows: list[tuple[Image.Image, GreenRegion]] = []
@@ -655,7 +655,7 @@ def render_green_frame_mockup(
         if shadow is not None:
             shadows.append((shadow, region))
 
-    result = Image.fromarray(base_after_rect, "RGBA")
+    result = Image.fromarray(base_after_rect)
     for overlay, cx0, cy0, cw, ch in overlays:
         result.alpha_composite(overlay, (cx0, cy0))
     for shadow, region in shadows:
@@ -888,7 +888,7 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
     # Apply the soft mask at target scale (handles circular, oval, and any arbitrary shape perfectly!)
     soft_mask_np = state.soft_mask[cy0:cy1, cx0:cx1]
     soft_mask_uint8 = np.clip(soft_mask_np * 255.0, 0, 255).astype(np.uint8)
-    soft_mask_region_img = Image.fromarray(soft_mask_uint8, mode="L")
+    soft_mask_region_img = Image.fromarray(soft_mask_uint8)
     
     blur_radius = round(settings.edge_aa_radius)
     if blur_radius > 0:
@@ -919,4 +919,4 @@ def _inner_shadow(region: GreenRegion, state: GreenFrameDetection, settings: Gre
     alpha[~local] = 0
     out = np.zeros((h, w, 4), dtype=np.uint8)
     out[:, :, 3] = np.round(alpha * 255).astype(np.uint8)
-    return Image.fromarray(out, "RGBA")
+    return Image.fromarray(out)

@@ -74,8 +74,12 @@ def get_templates():
     # on-disk manifests can lag behind admin edits.
     catalog = current_app.extensions.get("catalog_service")
     if catalog:
+        records_by_id = {
+            record["template_id"]: record
+            for record in catalog.list_templates(status="active")
+        }
         for template in templates:
-            record = catalog.get_template(template["template_id"])
+            record = records_by_id.get(template["template_id"])
             if not record:
                 continue
             if record.get("product_type"):

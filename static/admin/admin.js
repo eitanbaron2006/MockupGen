@@ -385,8 +385,10 @@
         return false;
       }
       if (raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups") return true;
+      if (raw.mode === "color_pick" || raw.provider === "color_pick") return true;
+      if (raw.mode === "frame_points" || raw.provider === "frame_points") return true;
       if (Array.isArray(raw.regions) && raw.regions.length > 1) {
-        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || template.mask_name === "mask.png");
+        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || raw.mode === "color_pick" || raw.provider === "color_pick" || raw.mode === "frame_points" || raw.provider === "frame_points" || template.mask_name === "mask.png");
       }
     }
     return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
@@ -1962,6 +1964,45 @@
     applySelectionStyle();
     const multiGroup = $("multiRegionSvgGroup");
 
+    if (isGreenFrameTemplate(template)) {
+      selectionSvg.classList.add("hidden");
+      $("selectionPolygon").classList.add("hidden");
+      if (multiGroup) {
+        multiGroup.innerHTML = "";
+        multiGroup.classList.add("hidden");
+      }
+      for (let i = 0; i < 4; i++) {
+        const hg = $(`handle_group_${i}`);
+        if (hg) hg.classList.add("hidden");
+        const rh = $(`raw_handle_${i}`);
+        if (rh) rh.classList.add("hidden");
+      }
+      if ($("svgZoneTag")) $("svgZoneTag").classList.add("hidden");
+      if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
+      if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
+
+      if (state.selectionStyle.overlayImage) {
+        const rendered = $("selectionRenderedMockup");
+        const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
+        if (state.drag || state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
+          if (rendered) rendered.classList.add("hidden");
+          renderGreenFrameArtworkOverlay(template, image);
+        } else {
+          $("selectionImageOverlay").classList.add("hidden");
+        }
+        if (!state.drag && !state.greenFrameDrag && !detectionReviewState.active) {
+          ensureGreenFrameRegularRender(template);
+        }
+      } else {
+        $("selectionImageOverlay").classList.add("hidden");
+        if ($("selectionRenderedMockup")) {
+          $("selectionRenderedMockup").classList.add("hidden");
+          $("selectionRenderedMockup").src = "";
+        }
+      }
+      return;
+    }
+
     if (isMultiRegionTemplate(template)) {
       selectionSvg.classList.remove("hidden");
       $("selectionPolygon").classList.add("hidden");
@@ -2179,29 +2220,6 @@
       }
     }
 
-    if (isGreenFrameTemplate(template)) {
-      if (state.selectionStyle.overlayImage) {
-        const rendered = $("selectionRenderedMockup");
-        const hasVisibleRender = Boolean(rendered && rendered.src && !rendered.classList.contains("hidden"));
-        if (state.drag || state.greenFrameDrag || !hasVisibleRender || detectionReviewState.active) {
-          if (rendered) rendered.classList.add("hidden");
-          renderGreenFrameArtworkOverlay(template, image);
-        } else {
-          $("selectionImageOverlay").classList.add("hidden");
-        }
-        if (!state.drag && !state.greenFrameDrag && !detectionReviewState.active) {
-          ensureGreenFrameRegularRender(template);
-        }
-      } else {
-        $("selectionImageOverlay").classList.add("hidden");
-        if ($("selectionRenderedMockup")) {
-          $("selectionRenderedMockup").classList.add("hidden");
-          $("selectionRenderedMockup").src = "";
-        }
-      }
-      return;
-    }
-
     if (state.selectionStyle.overlayImage) {
       renderGreenFrameArtworkOverlay(template, image);
     } else {
@@ -2216,6 +2234,7 @@
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
     if (state.polygonLocked) return;
+    if (isGreenFrameTemplate(state.selected)) return;
 
     const target = event.target;
     const template = state.selected;
