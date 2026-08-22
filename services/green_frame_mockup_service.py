@@ -14,6 +14,11 @@ try:
 except ImportError:  # pragma: no cover - production/dev dependency guard
     ndimage = None
 
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
+
 
 @dataclass
 class GreenFrameSettings:
@@ -428,6 +433,14 @@ def detect_frames_by_color(
     alpha[dist <= tolerance * 0.5] = 1.0
 
     raw_mask = alpha >= 0.3
+    if cv2 is not None:
+        c_mask = raw_mask.astype(np.uint8)
+        contours, _ = cv2.findContours(c_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in contours:
+            if cv2.contourArea(c) >= 80:
+                cv2.drawContours(c_mask, [c], -1, 1, thickness=-1)
+        raw_mask = c_mask.astype(bool)
+
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
     min_area = max(80, min(settings.min_area, int(w * h * 0.5)))
@@ -457,8 +470,8 @@ def detect_frames_from_points(
     """Detect frame regions by flood-filling from user-supplied seed points.
 
     Each point selects the connected region of similar-colored pixels at that
-    location.  One region is produced per valid seed point; overlapping regions
-    are merged in the returned union mask.
+    location. Smooth gradients and subtle shadows are traversed up to the hard
+    boundary of the frame bezel.
     """
     settings = settings or GreenFrameSettings()
     rgba = np.asarray(mockup.convert("RGBA"))
@@ -475,11 +488,26 @@ def detect_frames_from_points(
             continue
 
         seed_color = tuple(int(c) for c in rgb[py, px])
-        dist = _color_distance(rgb, seed_color)
-        similar = dist <= tolerance
+        diff = rgb.astype(np.float32) - np.asarray(seed_color, dtype=np.float32)
+        dist = np.sqrt(np.sum(diff * diff, axis=2))
+        fixed_similar = dist <= tolerance
 
-        if ndimage is not None:
-            labeled, _ = ndimage.label(similar, structure=np.ones((3, 3), dtype=np.uint8))
+        if cv2 is not None:
+            delta = int(max(6, min(25, tolerance * 0.35)))
+            ff_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+            cv2.floodFill(
+                rgb.copy(),
+                ff_mask,
+                (px, py),
+                (0, 255, 0),
+                loDiff=(delta, delta, delta),
+                upDiff=(delta, delta, delta),
+                flags=4 | (255 << 8),
+            )
+            floating_mask = ff_mask[1:-1, 1:-1] == 255
+            region_mask = floating_mask | (fixed_similar & _dilate_mask(floating_mask, 3))
+        elif ndimage is not None:
+            labeled, _ = ndimage.label(fixed_similar, structure=np.ones((3, 3), dtype=np.uint8))
             seed_label = int(labeled[py, px])
             if seed_label == 0:
                 continue
@@ -492,7 +520,7 @@ def detect_frames_from_points(
             visited[py, px] = True
             while q:
                 cx, cy = q.popleft()
-                if similar[cy, cx]:
+                if fixed_similar[cy, cx]:
                     region_mask[cy, cx] = True
                     for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
                         if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx]:
@@ -501,6 +529,15 @@ def detect_frames_from_points(
 
         if not np.any(region_mask):
             continue
+
+        if cv2 is not None:
+            c_mask = region_mask.astype(np.uint8)
+            contours, _ = cv2.findContours(c_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                largest = max(contours, key=cv2.contourArea)
+                filled = np.zeros((h, w), dtype=np.uint8)
+                cv2.drawContours(filled, [largest], -1, 1, thickness=-1)
+                region_mask = filled.astype(bool)
 
         ys_r, xs_r = np.where(region_mask)
         area = int(np.count_nonzero(region_mask))
