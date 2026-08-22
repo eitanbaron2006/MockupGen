@@ -295,7 +295,7 @@ def detect_green_frames(mockup: Image.Image, settings: GreenFrameSettings | None
     raw_mask = alpha >= 0.06
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
-    min_area = max(80, min(settings.min_area, max(80, int(w * h * 0.005))))
+    min_area = max(1200, min(settings.min_area, max(1200, int(w * h * 0.005))))
     regions = _connected_regions(detect_mask, min_area)
 
     union = np.zeros((h, w), dtype=bool)
