@@ -5,25 +5,25 @@
   "canvas_width": 1122,
   "canvas_height": 1402,
   "artwork_area": {
-    "x": 454,
-    "y": 279,
-    "width": 488,
-    "height": 398,
+    "x": 448,
+    "y": 273,
+    "width": 492,
+    "height": 409,
     "corners": [
       {
-        "x": 454,
-        "y": 327
+        "x": 451,
+        "y": 325
       },
       {
-        "x": 942,
-        "y": 279
+        "x": 940,
+        "y": 273
       },
       {
-        "x": 939,
-        "y": 677
+        "x": 940,
+        "y": 682
       },
       {
-        "x": 454,
+        "x": 448,
         "y": 670
       }
     ]
@@ -110,7 +110,59 @@
       "target": "all"
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "corners": [
+      {
+        "x": 449,
+        "y": 320
+      },
+      {
+        "x": 942,
+        "y": 278
+      },
+      {
+        "x": 941,
+        "y": 677
+      },
+      {
+        "x": 449,
+        "y": 670
+      }
+    ],
+    "height": 399,
+    "mode": "vertex",
+    "provider": "vertex",
+    "regions": [
+      {
+        "area": 196707,
+        "corners": [
+          {
+            "x": 449,
+            "y": 320
+          },
+          {
+            "x": 942,
+            "y": 278
+          },
+          {
+            "x": 941,
+            "y": 677
+          },
+          {
+            "x": 449,
+            "y": 670
+          }
+        ],
+        "height": 399,
+        "width": 493,
+        "x": 449,
+        "y": 278
+      }
+    ],
+    "width": 493,
+    "x": 449,
+    "y": 278
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }
