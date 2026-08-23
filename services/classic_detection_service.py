@@ -205,48 +205,25 @@ class ClassicDetectionProvider:
         if mode in ("geometry", "sam_center", "sam_point", "green_frames_mockups") and chosen_pts is None:
             raise DetectionError(f"No boundary corners could be resolved using {mode} mode.")
 
-        # If we successfully found corners (either from Canny or SAM), apply 3px Inset
+        # If we successfully found corners (either from Canny or SAM), use exact detected corners
         if chosen_pts is not None:
-            if is_green_frame:
-                final_corners = [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts]
-                xs = [c["x"] for c in final_corners]
-                ys = [c["y"] for c in final_corners]
-                artwork_area = {
-                    "x": min(xs),
-                    "y": min(ys),
-                    "width": max(xs) - min(xs),
-                    "height": max(ys) - min(ys),
-                    "corners": final_corners,
-                }
-                refined = True
-            else:
-            # Apply a 3-pixel inset towards the centroid to guarantee exact placement inside the frame borders
-                centroid = np.mean(chosen_pts, axis=0)
-                final_corners = []
-                for pt in chosen_pts:
-                    vec = centroid - pt
-                    norm = np.linalg.norm(vec)
-                    if norm > 0:
-                        inset_pt = pt + (vec / norm) * 3
-                    else:
-                        inset_pt = pt
-                    final_corners.append({"x": int(round(inset_pt[0])), "y": int(round(inset_pt[1]))})
-
-                xs = [c["x"] for c in final_corners]
-                ys = [c["y"] for c in final_corners]
-                min_x, max_x = min(xs), max(xs)
-                min_y, max_y = min(ys), max(ys)
-                artwork_area = {
-                    "x": min_x,
-                    "y": min_y,
-                    "width": max_x - min_x,
-                    "height": max_y - min_y,
-                    "corners": final_corners
-                }
-                refined = True
+            final_corners = [{"x": int(round(pt[0])), "y": int(round(pt[1]))} for pt in chosen_pts]
+            xs = [c["x"] for c in final_corners]
+            ys = [c["y"] for c in final_corners]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            artwork_area = {
+                "x": min_x,
+                "y": min_y,
+                "width": max_x - min_x,
+                "height": max_y - min_y,
+                "corners": final_corners,
+            }
+            refined = True
+            if not is_green_frame:
                 raw_artwork_area = {
                     "layers": all_layers,
-                    "original_corners": [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts]
+                    "original_corners": [{"x": int(pt[0]), "y": int(pt[1])} for pt in chosen_pts],
                 }
         else:
             # 3. Fallback to legacy centered offline estimation if both failed

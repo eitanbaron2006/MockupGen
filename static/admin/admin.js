@@ -379,16 +379,20 @@
     if (template.detection_provider === "vertex" || template.detection_provider === "local") {
       return false;
     }
+    // If the template does not have a mask image, it is a standard geometric/polygon template
+    if (!template.mask_name && !template.mask) {
+      return false;
+    }
     const raw = template.raw_artwork_area;
     if (raw && typeof raw === "object") {
-      if (raw.provider === "vertex" || raw.mode === "vertex" || raw.provider === "local" || raw.mode === "local") {
+      if (raw.provider === "vertex" || raw.mode === "vertex" || raw.provider === "local" || raw.mode === "local" || raw.provider === "classic" || raw.mode === "auto" || raw.mode === "geometry" || raw.layers) {
         return false;
       }
       if (raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups") return true;
       if (raw.mode === "color_pick" || raw.provider === "color_pick") return true;
       if (raw.mode === "frame_points" || raw.provider === "frame_points") return true;
       if (Array.isArray(raw.regions) && raw.regions.length > 1) {
-        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || raw.mode === "color_pick" || raw.provider === "color_pick" || raw.mode === "frame_points" || raw.provider === "frame_points" || template.mask_name === "mask.png");
+        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || raw.mode === "color_pick" || raw.provider === "color_pick" || raw.mode === "frame_points" || raw.provider === "frame_points");
       }
     }
     return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
@@ -3225,12 +3229,53 @@
       showDetectionReview(payload, params);
     } catch (error) {
       setBusy(false);
-      closeMaskDetectionHud();
       $("detectionResult").className = "rule result-rule error";
       $("detectionResult").textContent = error.message;
-      $("proposalState").textContent = "Detection failed. Adjust tolerance or pick different areas.";
       toast(error.message);
-      setStatus("Detection failed", true);
+      setStatus("Detection failed: " + error.message, true);
+
+      // Keep the HUD active so user can adjust tolerance or re-sample without losing context
+      $("maskDetectionHud").classList.remove("hidden");
+      $("proposalState").classList.add("hidden");
+      $("maskDetectToleranceRow").classList.remove("hidden");
+      const tolInput = $("maskDetectTolerance");
+      if (tolInput) tolInput.value = params.tolerance || 40;
+      const tolVal = $("maskDetectToleranceVal");
+      if (tolVal) tolVal.textContent = String(params.tolerance || 40);
+
+      if (params.mode === "color_pick" && params.color) {
+        maskDetectState.active = true;
+        maskDetectState.mode = "color_pick";
+        maskDetectState.sampledColor = params.color;
+        const [r, g, b] = params.color;
+        const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+        $("maskDetectColorBox").style.background = hex;
+        $("maskDetectColorLabel").textContent = `rgb(${r}, ${g}, ${b})`;
+        $("maskDetectColorSwatch").classList.remove("hidden");
+
+        updateMaskDetectUI("COLOR PICK", "No Regions Found", `No frames found for rgb(${r}, ${g}, ${b}) with tolerance ${params.tolerance}. Increase tolerance slider and click Run Detection, or re-pick.`, [
+          { text: "Run Detection", class: "primary", id: "maskColorPickRunBtn", onclick: () => submitMaskDetection("color_pick") },
+          { text: "Re-pick", class: "secondary", onclick: () => { maskDetectState.sampledColor = null; $("maskDetectColorSwatch").classList.add("hidden"); runColorPickMode(); } },
+          { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+        ]);
+        runColorPickMode();
+      } else if (params.mode === "frame_points") {
+        maskDetectState.active = true;
+        maskDetectState.mode = "frame_points";
+        if (Array.isArray(params.points)) {
+          maskDetectState.points = params.points.map(p => ({ ...p }));
+        }
+        redrawMaskDetectDots();
+        const count = maskDetectState.points.length;
+        updateMaskDetectUI("FRAME POINTS", "No Regions Found", `No frames detected at marker(s) with tolerance ${params.tolerance}. Adjust tolerance slider and click Done, or mark different spots.`, [
+          { text: "Done", class: "primary", disabled: !count, id: "maskFramePointsDoneBtn", onclick: () => submitMaskDetection("frame_points") },
+          { text: "Undo Last", class: "secondary", id: "maskFramePointsUndoBtn", onclick: () => undoLastFramePoint() },
+          { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
+        ]);
+        runFramePointsMode(true);
+      } else {
+        closeMaskDetectionHud();
+      }
     }
   }
 

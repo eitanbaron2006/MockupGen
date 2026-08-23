@@ -428,27 +428,31 @@ def detect_frames_by_color(
     h, w = rgb.shape[:2]
 
     dist = _color_distance(rgb, target_color)
-    score = np.maximum(0.0, 1.0 - (dist / max(1, tolerance))).astype(np.float32)
-    alpha = score.copy()
-    alpha[dist <= tolerance * 0.5] = 1.0
-
-    raw_mask = alpha >= 0.3
-    if cv2 is not None:
-        c_mask = raw_mask.astype(np.uint8)
-        contours, _ = cv2.findContours(c_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for c in contours:
-            if cv2.contourArea(c) >= 80:
-                cv2.drawContours(c_mask, [c], -1, 1, thickness=-1)
-        raw_mask = c_mask.astype(bool)
-
-    raw_mask = _refine_region_boundaries(rgb, raw_mask)
-
+    raw_mask = dist <= tolerance
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
-    min_area = max(80, min(settings.min_area, int(w * h * 0.5)))
-    regions = _connected_regions(detect_mask, min_area)
-    if not regions:
-        regions = _connected_regions(detect_mask, max(8, int(w * h * 0.0001)))
+    min_area = max(400, min(settings.min_area, max(400, int(w * h * 0.001))))
+    candidate_regions = _connected_regions(detect_mask, min_area)
+    if not candidate_regions:
+        candidate_regions = _connected_regions(detect_mask, max(80, int(w * h * 0.0001)))
+
+    regions: list[GreenRegion] = []
+    for r in candidate_regions:
+        if r.w < 20 or r.h < 20:
+            continue
+        ratio = r.w / max(1, r.h)
+        if ratio < 0.10 or ratio > 10.0:
+            continue
+        solidity = r.area / max(1, (r.w * r.h))
+        if solidity < 0.25:
+            continue
+        regions.append(r)
+
+    if not regions and candidate_regions:
+        regions = candidate_regions
+
+    alpha = np.maximum(0.0, 1.0 - (dist / max(1, tolerance))).astype(np.float32)
+    alpha[dist <= tolerance * 0.5] = 1.0
 
     union = np.zeros((h, w), dtype=bool)
     for region in regions:
