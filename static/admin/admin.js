@@ -1911,7 +1911,18 @@
     overlayImg.classList.add("hidden");
     overlayImg.src = state.selectionStyle.overlayImage;
 
-    const rawFitMode = ($("fitMode") && $("fitMode").value) || template.fit_mode || "cover";
+    // A mask-backed template renders through the green-frame pipeline, whose
+    // own fit mode overrides the template one. Read the same setting the
+    // renderer will, or the editor fits the artwork a different way than the
+    // finished mockup does.
+    // parse_green_frame_settings reads the fit mode off the template's own
+    // green-frame effect and falls back to the template fit mode, so read it
+    // from the same place rather than from the panel control, whose value may
+    // not have been written to the template yet.
+    const greenFit = template.effects && template.effects.green_frame_mockups
+      && template.effects.green_frame_mockups.fit_mode;
+    const templateFit = ($("fitMode") && $("fitMode").value) || template.fit_mode;
+    const rawFitMode = (templateMaskUrl(template) && greenFit) || templateFit || "cover";
     const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
     const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;

@@ -337,9 +337,101 @@ def _soft_mask_for_regions(
     return out
 
 
+def _region_quad(mask: np.ndarray, region: GreenRegion) -> Optional[dict[str, dict[str, float]]]:
+    """The tightest four-sided frame that still contains all of the mask.
+
+    The editing frame has four straight sides, so it should be the four-sided
+    shape that wastes the least: the mask entirely inside it, with the smallest
+    leftover area. Frame, artwork and mask then describe the same shape.
+    """
+    if cv2 is None:
+        return None
+    pad = 2
+    y0 = max(0, region.y - pad)
+    x0 = max(0, region.x - pad)
+    y1 = min(mask.shape[0], region.y + region.h + pad)
+    x1 = min(mask.shape[1], region.x + region.w + pad)
+    patch = np.ascontiguousarray(mask[y0:y1, x0:x1].astype(np.uint8))
+    if not patch.any():
+        return None
+    contours, _ = cv2.findContours(patch, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+
+    # Start from the four-sided shape of the opening, so a frame seen at an
+    # angle keeps its perspective instead of being squared off.
+    perimeter = cv2.arcLength(hull, True)
+    quad = None
+    epsilon = 0.002 * perimeter
+    for _ in range(24):
+        approx = cv2.approxPolyDP(hull, epsilon, True)
+        if len(approx) <= 4:
+            quad = approx.reshape(-1, 2).astype(np.float64) if len(approx) == 4 else None
+            break
+        epsilon *= 1.3
+    if quad is None:
+        quad = cv2.boxPoints(cv2.minAreaRect(hull)).astype(np.float64)
+
+    # Then push each side out by exactly as much as it takes to swallow the
+    # last stray pixel, and no more: the mask ends up wholly inside, with the
+    # smallest leftover area this four-sided shape can leave.
+    hull_points = hull.reshape(-1, 2).astype(np.float64)
+    centre = quad.mean(axis=0)
+    lines = []
+    for index in range(4):
+        start = quad[index]
+        direction = quad[(index + 1) % 4] - start
+        length = float(np.hypot(*direction))
+        if length < 1e-6:
+            lines = []
+            break
+        normal = np.array([direction[1], -direction[0]]) / length
+        if float(np.dot(normal, start - centre)) < 0:
+            normal = -normal
+        overshoot = float(np.max((hull_points - start) @ normal))
+        lines.append((start + normal * max(0.0, overshoot), direction / length))
+
+    if len(lines) == 4:
+        widened = []
+        for index in range(4):
+            (p1, d1), (p2, d2) = lines[index - 1], lines[index]
+            denominator = d1[0] * d2[1] - d1[1] * d2[0]
+            if abs(denominator) < 1e-9:
+                widened = []
+                break
+            delta = p2 - p1
+            widened.append(p1 + d1 * ((delta[0] * d2[1] - delta[1] * d2[0]) / denominator))
+        if len(widened) == 4:
+            quad = np.asarray(widened)
+
+    points = np.asarray(quad, dtype=np.float64)
+    points[:, 0] += x0
+    points[:, 1] += y0
+
+    # Order by angle around the centre rather than by x+y sums. On a strongly
+    # slanted frame the sum heuristic swaps the top-right and bottom-left
+    # corners, which mirrors the frame against the slant of the mask.
+    middle = points.mean(axis=0)
+    angles = np.arctan2(points[:, 1] - middle[1], points[:, 0] - middle[0])
+    clockwise = points[np.argsort(angles)]
+    start_index = int(np.argmin(clockwise.sum(axis=1)))
+    clockwise = np.roll(clockwise, -start_index, axis=0)
+    return {
+        key: {"x": float(point[0]), "y": float(point[1])}
+        for key, point in zip(("tl", "tr", "br", "bl"), clockwise)
+    }
+
+
 def green_detection_raw(state: GreenFrameDetection, edge_expand: int = 0) -> dict[str, Any]:
     regions = []
     for region in state.regions:
+        # Fit the frame to the mask, so the editing frame, the artwork drawn in
+        # it and the mask that clips it all describe the same shape.
+        hugging = _region_quad(state.detect_mask, region)
+        if hugging:
+            region.corners = hugging
+            region.inner_corners = region.inner_corners or hugging
         regions.append(
             {
                 "x": region.x,

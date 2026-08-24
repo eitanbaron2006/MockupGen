@@ -630,20 +630,43 @@ def _render_green_frame_mockup(
 
             if raw_regions and isinstance(raw_regions, list):
                 from services.green_frame_mockup_service import _list_to_corners
-                for i, r in enumerate(raw_regions):
-                    if i < len(detection.regions) and isinstance(r, dict):
-                        c = _list_to_corners(r.get("corners") or r.get("inner_corners"))
-                        if c:
-                            detection.regions[i].corners = c
-                            detection.regions[i].inner_corners = c
-                            detection.regions[i].outer_corners = _list_to_corners(r.get("outer_corners")) or c
-                            xs = [float(p.get("x", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
-                            ys = [float(p.get("y", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
-                            if xs and ys:
-                                detection.regions[i].x = int(min(xs))
-                                detection.regions[i].y = int(min(ys))
-                                detection.regions[i].w = int(max(xs) - min(xs))
-                                detection.regions[i].h = int(max(ys) - min(ys))
+
+                # Saved frames are paired with detected ones by where they are,
+                # not by their position in the list. Detection does not promise
+                # a stable order, and matching by index hands a frame another
+                # frame's corners -- wrong angle, wrong size, on every frame.
+                def _centre(xs, ys):
+                    return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+                unclaimed = list(range(len(detection.regions)))
+                for r in raw_regions:
+                    if not isinstance(r, dict) or not unclaimed:
+                        continue
+                    c = _list_to_corners(r.get("corners") or r.get("inner_corners"))
+                    if not c:
+                        continue
+                    points = [p for p in (r.get("corners") or []) if isinstance(p, dict)]
+                    xs = [float(p.get("x", 0)) for p in points]
+                    ys = [float(p.get("y", 0)) for p in points]
+                    if not xs or not ys:
+                        continue
+                    saved_centre = _centre(xs, ys)
+                    nearest = min(
+                        unclaimed,
+                        key=lambda index: (
+                            (detection.regions[index].x + detection.regions[index].w / 2 - saved_centre[0]) ** 2
+                            + (detection.regions[index].y + detection.regions[index].h / 2 - saved_centre[1]) ** 2
+                        ),
+                    )
+                    unclaimed.remove(nearest)
+                    target = detection.regions[nearest]
+                    target.corners = c
+                    target.inner_corners = c
+                    target.outer_corners = _list_to_corners(r.get("outer_corners")) or c
+                    target.x = int(min(xs))
+                    target.y = int(min(ys))
+                    target.w = int(max(xs) - min(xs))
+                    target.h = int(max(ys) - min(ys))
 
         if not detection.regions:
             raise InvalidTemplateError("Green frame mask has no usable regions")
