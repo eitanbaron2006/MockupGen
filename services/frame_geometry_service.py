@@ -25,6 +25,11 @@ MAX_ASPECT_RATIO = 6.5
 MAX_INTERIOR_TEXTURE = 14.0
 # Mean HSV saturation for an unframed candidate to still read as a placeholder.
 MAX_PLAIN_SATURATION = 25.0
+# A placeholder painted as a flat fill is this uniform, whatever its colour.
+# Room surfaces -- a rug, a wall, a countertop -- never are.
+FLAT_FILL_TEXTURE = 1.0
+# Smallest share of the biggest detected frame that a companion frame may be.
+MIN_RELATIVE_AREA = 1.0 / 10.0
 # Containment plus size similarity that make two quads border layers of one frame.
 SAME_FRAME_OVERLAP = 0.72
 SAME_FRAME_AREA_RATIO = 0.45
@@ -325,10 +330,10 @@ def find_frames(image: np.ndarray) -> list[dict]:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     frames = []
     for cluster in clusters:
-        # Contour quads trace the opening itself, so they win over flat-blob
-        # quads, which only ever approximate it from the inside.
-        traced = [member for member in cluster if member["source"] == "contour"]
-        innermost = (traced or cluster)[-1]
+        # The opening is the innermost quad of the cluster whatever found it: a
+        # contour can just as easily have traced the frame's outer edge, and
+        # preferring it there hands back a quad larger than the opening.
+        innermost = cluster[-1]
         corners = snap_to_border(gray, innermost["quad"])
         frames.append(
             {
@@ -343,11 +348,17 @@ def find_frames(image: np.ndarray) -> list[dict]:
 
     # A blank placeholder is flat, and it is trustworthy when a frame rings it
     # or when its colour is neutral enough to be a stand-in rather than decor.
+    # A placeholder is flat, and trustworthy when a frame rings it, when it is
+    # a dead-flat fill, or when its colour is neutral enough to be a stand-in.
     kept = [
         frame
         for frame in frames
         if frame["texture"] <= MAX_INTERIOR_TEXTURE
-        and (frame["framed"] or frame["saturation"] <= MAX_PLAIN_SATURATION)
+        and (
+            frame["framed"]
+            or frame["texture"] <= FLAT_FILL_TEXTURE
+            or frame["saturation"] <= MAX_PLAIN_SATURATION
+        )
     ]
     if not kept:
         # Some mockups ship a sample artwork inside the frame, so nothing is
@@ -355,6 +366,12 @@ def find_frames(image: np.ndarray) -> list[dict]:
         kept = [frame for frame in frames if frame["framed"]]
     # Nothing framed and nothing flat means no artwork area was found. Say so
     # rather than promoting the largest stray quad, which is never a frame.
+
+    # Frames in a set are comparable in size. A quad a fraction of the biggest
+    # one is a window pane, a shelf or a door panel, not a companion artwork.
+    if kept:
+        largest = max(frame["area"] for frame in kept)
+        kept = [frame for frame in kept if frame["area"] >= largest * MIN_RELATIVE_AREA]
 
     kept.sort(key=lambda f: (f["corners"][:, 1].min(), f["corners"][:, 0].min()))
     return kept

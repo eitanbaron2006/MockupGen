@@ -5,26 +5,26 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 290,
-    "y": 160,
-    "width": 833,
-    "height": 534,
+    "x": 289,
+    "y": 161,
+    "width": 834,
+    "height": 531,
     "corners": [
       {
-        "x": 290,
+        "x": 289,
         "y": 161
       },
       {
-        "x": 1122,
-        "y": 160
+        "x": 1123,
+        "y": 161
       },
       {
         "x": 1123,
-        "y": 694
+        "y": 692
       },
       {
-        "x": 292,
-        "y": 691
+        "x": 289,
+        "y": 692
       }
     ]
   },
@@ -32,7 +32,7 @@
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": null,
+  "mask": "mask.png",
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -110,7 +110,92 @@
       "target": "all"
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "edge_expand": 0,
+    "green_pixels": 444220,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 289,
+        "y": 161
+      },
+      {
+        "x": 1123,
+        "y": 161
+      },
+      {
+        "x": 1123,
+        "y": 692
+      },
+      {
+        "x": 289,
+        "y": 692
+      }
+    ],
+    "regions": [
+      {
+        "area": 444220,
+        "corners": [
+          {
+            "x": 289,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 692
+          },
+          {
+            "x": 289,
+            "y": 692
+          }
+        ],
+        "height": 532,
+        "inner_corners": [
+          {
+            "x": 289,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 692
+          },
+          {
+            "x": 289,
+            "y": 692
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 289,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 161
+          },
+          {
+            "x": 1123,
+            "y": 692
+          },
+          {
+            "x": 289,
+            "y": 692
+          }
+        ],
+        "width": 835,
+        "x": 289,
+        "y": 161
+      }
+    ]
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }

@@ -15,6 +15,12 @@ from services.green_frame_mockup_service import (
     green_mask_image,
 )
 
+# Pixels every detected opening is grown by, so artwork tucks a hair under the
+# frame border instead of stopping short and letting a rim of mockup show. It
+# is baked into the corners here so detection, the editor and the renderer all
+# work from one quad and cannot drift apart.
+_OPENING_BLEED = 3
+
 _SAM_MODEL_INSTANCE = None
 _SAM_MODEL_LOCK = threading.Lock()
 
@@ -131,17 +137,17 @@ class ClassicDetectionProvider:
         width, height = img.shape[1], img.shape[0]
         regions = []
         for frame in frames:
-            corners = _corner_dicts(frame["corners"], width, height)
+            corners = _inset_corners(
+                _corner_dicts(frame["corners"], width, height), -_OPENING_BLEED, width, height
+            )
             regions.append(
                 {
                     **_corner_bounds(corners),
                     "area": int(round(frame["area"])),
-                    # Only the opening is stored, and only once. The renderer
-                    # derives the mask and the warp target from it, so editing a
-                    # frame in the admin needs to touch nothing but these
-                    # corners -- a second copy would silently go stale.
+                    # The corners are the whole story: the renderer warps onto
+                    # them and the editor draws on them. A second copy of the
+                    # quad would go stale the moment a frame is dragged.
                     "corners": corners,
-                    "exact_envelope": True,
                 }
             )
         layers = [_corner_dicts(layer, width, height) for layer in frames[0]["layers"]]
@@ -269,28 +275,33 @@ class ClassicDetectionProvider:
         if mode in ("sam_center", "sam_point", "green_frames_mockups") and chosen_pts is None:
             raise DetectionError(f"No boundary corners could be resolved using {mode} mode.")
 
-        # If we successfully found corners (either from geometry or SAM), apply 3px Inset
         if chosen_pts is not None:
             if is_green_frame:
                 final_corners = _corner_dicts(chosen_pts, w, h)
-            elif multi_regions:
-                # Several frames render through the mask, and the mask alone
-                # decides what is visible. Insetting here would leave a rim of
-                # bare mockup showing between the artwork and the frame border,
-                # so the opening is kept exact and the mask bleeds outwards.
-                final_corners = multi_regions[0]["corners"]
+            elif is_geometric:
+                # chosen_pts already carries the bleed, having come from the
+                # regions themselves, so one frame and many render identically.
+                final_corners = _corner_dicts(chosen_pts, w, h)
+                # The wizard approves the innermost layer, so it has to be the
+                # very quad proposed here. Leaving the raw cluster quad there
+                # would silently approve a frame a few pixels off the opening.
+                if all_layers:
+                    all_layers[-1] = final_corners
+                else:
+                    all_layers = [final_corners]
                 raw_artwork_area = {
                     "mode": "geometry",
                     "layers": all_layers,
-                    "regions": multi_regions,
                     "original_corners": final_corners,
                 }
+                if multi_regions:
+                    raw_artwork_area["regions"] = multi_regions
             else:
-                # Inset towards the centroid to guarantee exact placement inside the frame borders
+                # A SAM outline traces the artwork loosely, so it keeps the 3px
+                # inset that guarantees placement inside the frame borders.
                 final_corners = _inset_corners(_corner_dicts(chosen_pts, w, h), 3, w, h)
                 raw_artwork_area = {
-                    "mode": "geometry",
-                    "layers": all_layers,
+                    "mode": "sam",
                     "original_corners": _corner_dicts(chosen_pts, w, h),
                 }
 

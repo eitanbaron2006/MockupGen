@@ -52,10 +52,6 @@ class GreenRegion:
     corners: Optional[dict[str, dict[str, float]]] = None
     inner_corners: Optional[dict[str, dict[str, float]]] = None
     outer_corners: Optional[dict[str, dict[str, float]]] = None
-    # Chroma-key edges are fuzzy, so artwork is stretched past them and clipped
-    # back. Geometric corners are exact and need no such margin -- stretching
-    # them would crop the artwork instead of bleeding it under the frame.
-    exact_envelope: bool = False
 
 
 @dataclass
@@ -396,15 +392,8 @@ def detection_from_mask(
             except (KeyError, TypeError, ValueError):
                 continue
             region.corners = _list_to_corners(item.get("corners") or item.get("inner_corners"))
-            region.exact_envelope = bool(item.get("exact_envelope"))
-            if region.exact_envelope:
-                # Exact frames are edited by moving their corners, so any other
-                # copy of the quad is stale the moment the user drags one.
-                region.inner_corners = region.corners
-                region.outer_corners = region.corners
-            else:
-                region.inner_corners = _list_to_corners(item.get("inner_corners")) or region.corners
-                region.outer_corners = _list_to_corners(item.get("outer_corners")) or region.corners
+            region.inner_corners = _list_to_corners(item.get("inner_corners")) or region.corners
+            region.outer_corners = _list_to_corners(item.get("outer_corners")) or region.corners
             regions.append(region)
     if not regions:
         regions = _connected_regions(detect_mask, max(8, min(settings.min_area, int(raw_mask.size * 0.5))))
@@ -830,11 +819,6 @@ def _dist(a: dict[str, float], b: dict[str, float]) -> float:
     return math.hypot(a["x"] - b["x"], a["y"] - b["y"])
 
 
-# Pixels an exact geometric quad is grown by, for both the mask and the warp,
-# so artwork meets the frame border with no rim of bare mockup between them.
-EXACT_ENVELOPE_BLEED = 3.0
-
-
 def _expanded_quad(c: dict[str, dict[str, float]], amount: float) -> dict[str, dict[str, float]]:
     center = {
         "x": (c["tl"]["x"] + c["tr"]["x"] + c["br"]["x"] + c["bl"]["x"]) / 4.0,
@@ -904,11 +888,7 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
     outer = region.outer_corners or region.corners
     if not inner:
         return None
-    if region.exact_envelope:
-        # Exact corners need only a hairline of bleed so the artwork tucks under
-        # the frame border; the mask is grown by the same amount.
-        warp = _expanded_quad(inner, EXACT_ENVELOPE_BLEED)
-    elif settings.wide_coverage_envelope and outer:
+    if settings.wide_coverage_envelope and outer:
         expansion_amount = max(10, settings.edge_expand + 8) if state.width >= 100 else max(2, settings.edge_expand + 2)
         warp = _expanded_quad(outer, expansion_amount)
     else:

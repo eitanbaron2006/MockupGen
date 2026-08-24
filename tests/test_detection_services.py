@@ -174,10 +174,10 @@ def test_classic_detection_uses_visible_inner_boundary_without_ai(tmp_path: Path
 
     proposal = ClassicDetectionProvider().detect(image_path)
 
-    # The opening starts just inside the 2px inner stroke, and the proposal is
-    # inset a further 3px so artwork tucks under the border instead of over it.
-    assert abs(proposal.artwork_area["x"] - 200) <= 4
-    assert abs(proposal.artwork_area["y"] - 190) <= 4
+    # Geometric edges snap to the opening, so the proposal sits on the inner
+    # stroke rather than a few pixels inside it, which would show as a rim.
+    assert abs(proposal.artwork_area["x"] - 196) <= 3
+    assert abs(proposal.artwork_area["y"] - 186) <= 3
     assert proposal.provider == "classic"
     assert proposal.raw_artwork_area["mode"] == "geometry"
     # One frame in the image means the layer picker, not the multi-frame path.
@@ -624,3 +624,62 @@ def test_vertex_provider_detects_multiple_frames_and_builds_mask(tmp_path: Path)
     assert mask.getpixel((700, 400)) == 255
     # Check pixel between frames is 0 (black)
     assert mask.getpixel((500, 400)) == 0
+
+
+def test_a_single_frame_mockup_is_not_split_by_incidental_rectangles(tmp_path: Path):
+    """One artwork frame beside windows and panels stays one frame.
+
+    Room scenes are full of flat rectangles -- window panes, door panels, a
+    skirting board. They pass the same flatness test as a placeholder, so size
+    relative to the real frame is what separates them.
+    """
+    image_path = tmp_path / "room.png"
+    image = Image.new("RGB", (900, 700), (232, 226, 216))
+    draw = ImageDraw.Draw(image)
+
+    # The artwork frame: a large bordered opening filled with chroma green.
+    draw.rectangle((150, 90, 560, 600), fill=(60, 48, 38))
+    draw.rectangle((162, 102, 548, 588), fill=(0, 255, 0))
+    # Incidental geometry: two small flat panes in a window frame.
+    for top in (120, 330):
+        draw.rectangle((700, top, 820, top + 170), fill=(80, 80, 80))
+        draw.rectangle((708, top + 8, 812, top + 162), fill=(236, 240, 244))
+    image.save(image_path)
+
+    proposal = ClassicDetectionProvider().detect(image_path, mode="geometry")
+
+    assert "regions" not in proposal.raw_artwork_area
+    area = proposal.artwork_area
+    assert abs(area["x"] - 162) <= 8
+    assert abs(area["y"] - 102) <= 8
+    assert abs(area["width"] - 386) <= 16
+    assert abs(area["height"] - 486) <= 16
+
+
+def test_flat_colour_placeholders_are_found_without_a_border_ring(tmp_path: Path):
+    """A chroma fill sitting flush on the wall is still an artwork area.
+
+    Only some mockups draw a frame around the placeholder. Where none is drawn
+    there is no nesting ring to detect, and the fill is far too saturated to
+    pass as a neutral stand-in -- but it is dead flat, and nothing in a room is.
+    """
+    image_path = tmp_path / "flush.png"
+    image = Image.new("RGB", (900, 700), (232, 226, 216))
+    draw = ImageDraw.Draw(image)
+    # Three borderless chroma panels of noticeably different sizes.
+    draw.rectangle((90, 90, 330, 560), fill=(0, 255, 0))
+    draw.rectangle((380, 150, 560, 500), fill=(0, 255, 0))
+    draw.rectangle((610, 210, 740, 440), fill=(0, 255, 0))
+    image.save(image_path)
+
+    proposal = ClassicDetectionProvider().detect(image_path, mode="geometry")
+
+    regions = proposal.raw_artwork_area.get("regions") or []
+    assert len(regions) == 3, f"expected all three panels, got {len(regions)}"
+    for region, (left, top, right, bottom) in zip(
+        regions, [(90, 90, 330, 560), (380, 150, 560, 500), (610, 210, 740, 440)]
+    ):
+        assert abs(region["x"] - left) <= 6
+        assert abs(region["y"] - top) <= 6
+        assert abs(region["width"] - (right - left)) <= 12
+        assert abs(region["height"] - (bottom - top)) <= 12

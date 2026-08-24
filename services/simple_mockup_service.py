@@ -18,7 +18,6 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance, ImageOp
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 from services.image_utils import get_perspective_coefficients
 from services.green_frame_mockup_service import (
-    EXACT_ENVELOPE_BLEED,
     detection_from_mask,
     detect_green_frames,
     parse_green_frame_settings,
@@ -593,10 +592,7 @@ def _render_green_frame_mockup(
         # Where the regions carry exact quads, they -- not a mask file written
         # once at detection time -- define the shape. Otherwise an edited frame
         # keeps rendering through the stale mask and the edit never shows up.
-        regions_define_mask = (
-            raw_mode in ("vertex", "geometry")
-            or raw_provider in ("vertex", "geometry")
-        )
+        regions_define_mask = raw_mode == "vertex" or raw_provider == "vertex"
 
         if regions_define_mask:
             raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
@@ -606,14 +602,7 @@ def _render_green_frame_mockup(
                 draw = ImageDraw.Draw(mask_img)
                 for r in raw_regions:
                     corners = r.get("corners") or r.get("inner_corners") or r.get("outer_corners")
-                    if corners and len(corners) == 4 and r.get("exact_envelope"):
-                        # Grow by the same hairline the artwork is warped with,
-                        # so the two always meet at the frame border.
-                        grown = _expanded_quad(corners, EXACT_ENVELOPE_BLEED)
-                        draw.polygon(
-                            [(int(round(p["x"])), int(round(p["y"]))) for p in grown], fill=255
-                        )
-                    elif corners and len(corners) >= 3:
+                    if corners and len(corners) >= 3:
                         pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
                         draw.polygon(pts, fill=255)
                     else:
@@ -650,7 +639,6 @@ def _render_green_frame_mockup(
                             detection.regions[i].corners = c
                             detection.regions[i].inner_corners = c
                             detection.regions[i].outer_corners = _list_to_corners(r.get("outer_corners")) or c
-                            detection.regions[i].exact_envelope = bool(r.get("exact_envelope"))
                             xs = [float(p.get("x", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
                             ys = [float(p.get("y", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
                             if xs and ys:
@@ -1531,6 +1519,63 @@ def _save_output(
     return output_name
 
 
+def _render_geometric_frames(
+    *,
+    background: Image.Image,
+    artworks: list[Image.Image],
+    regions: list[dict],
+    canvas_size: tuple[int, int],
+    fit_mode: str,
+    realism: bool,
+    effects: dict | None,
+) -> Image.Image:
+    """Composite one artwork per detected frame, straight onto its quad.
+
+    Geometric detection returns exact corners, so each frame renders the same
+    way a single-frame template does: fit, warp, composite. No mask is involved,
+    which is what kept the old path out of step with the corners once a frame
+    was edited.
+    """
+    canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    for index, region in enumerate(regions):
+        corners = region.get("corners") or region.get("inner_corners")
+        if not corners or len(corners) != 4:
+            continue
+        xs = [float(p["x"]) for p in corners]
+        ys = [float(p["y"]) for p in corners]
+        area = {
+            "x": int(min(xs)),
+            "y": int(min(ys)),
+            "width": max(1, int(round(max(xs) - min(xs)))),
+            "height": max(1, int(round(max(ys) - min(ys)))),
+            "corners": corners,
+        }
+        layer = fit_artwork(
+            artworks[index % len(artworks)],
+            (area["width"], area["height"]),
+            fit_mode,
+        )
+        if realism:
+            layer = _apply_realism_filter(layer, effects)
+            piece = _apply_edge_feathering_ssaa(layer, area, canvas_size, corners_present=True)
+        else:
+            src_coords = [
+                (0.0, 0.0),
+                (float(area["width"]), 0.0),
+                (float(area["width"]), float(area["height"])),
+                (0.0, float(area["height"])),
+            ]
+            dst_coords = [(float(p["x"]), float(p["y"])) for p in corners]
+            piece = layer.transform(
+                canvas_size,
+                Image.Transform.PERSPECTIVE,
+                get_perspective_coefficients(src_coords, dst_coords),
+                Image.Resampling.BICUBIC,
+            )
+        canvas.alpha_composite(piece)
+    return Image.alpha_composite(background, canvas)
+
+
 def _output_reference(
     composed: Image.Image,
     output_folder: Path,
@@ -1628,6 +1673,37 @@ def render_simple_mockup(
         and len(effective_raw_artwork_area["regions"]) > 1
     )
     detection_provider = manifest.get("detection_provider")
+    raw_mode = (
+        effective_raw_artwork_area.get("mode")
+        if isinstance(effective_raw_artwork_area, dict) else None
+    )
+    # Geometric frames carry exact corners, so they render straight onto them
+    # rather than through the chroma-key mask pipeline.
+    if raw_mode == "geometry" and has_multiple_regions:
+        composed = _render_geometric_frames(
+            background=background,
+            artworks=artworks,
+            regions=effective_raw_artwork_area["regions"],
+            canvas_size=canvas_size,
+            fit_mode=final_fit_mode,
+            realism=realism,
+            effects=active_effects if realism else effects,
+        )
+        if foreground_path:
+            foreground = load_rgba(foreground_path)
+            if foreground.size != canvas_size:
+                raise InvalidTemplateError("Foreground must match canvas size")
+            composed = Image.alpha_composite(composed, foreground)
+        if realism:
+            composed = _apply_effects_by_target(composed, active_effects, "all")
+        return RenderResult(
+            mode="simple",
+            template_id=template_id,
+            output_url=_output_reference(composed, output_folder, output_format, quality, preview),
+            width=canvas_size[0],
+            height=canvas_size[1],
+        )
+
     is_non_green_single = detection_provider in ("vertex", "local") and not has_multiple_regions
     if not is_non_green_single and ((effective_mask_name and _is_green_frame_raw(effective_raw_artwork_area, detection_provider)) or has_multiple_regions):
         # Apply the artwork-targeted realism pipeline (Inner Frame Shadow,

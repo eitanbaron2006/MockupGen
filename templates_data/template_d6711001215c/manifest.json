@@ -5,30 +5,30 @@
   "canvas_width": 1122,
   "canvas_height": 1402,
   "artwork_area": {
-    "x": 449,
-    "y": 254,
-    "width": 467,
-    "height": 353,
+    "x": 455,
+    "y": 257,
+    "width": 461,
+    "height": 351,
     "corners": [
       {
-        "x": 450,
-        "y": 291
+        "x": 455,
+        "y": 294
       },
       {
         "x": 916,
-        "y": 254
+        "y": 257
       },
       {
-        "x": 915,
-        "y": 607
+        "x": 912,
+        "y": 608
       },
       {
-        "x": 449,
-        "y": 597
+        "x": 455,
+        "y": 595
       }
     ]
   },
-  "fit_mode": "auto",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
@@ -54,7 +54,96 @@
       "top": 10
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
+    ],
+    "layers": [
+      [
+        {
+          "x": 445,
+          "y": 285
+        },
+        {
+          "x": 931,
+          "y": 245
+        },
+        {
+          "x": 940,
+          "y": 615
+        },
+        {
+          "x": 444,
+          "y": 603
+        }
+      ],
+      [
+        {
+          "x": 455,
+          "y": 294
+        },
+        {
+          "x": 915,
+          "y": 256
+        },
+        {
+          "x": 913,
+          "y": 606
+        },
+        {
+          "x": 453,
+          "y": 593
+        }
+      ],
+      [
+        {
+          "x": 455,
+          "y": 294
+        },
+        {
+          "x": 916,
+          "y": 257
+        },
+        {
+          "x": 912,
+          "y": 608
+        },
+        {
+          "x": 455,
+          "y": 595
+        }
+      ]
+    ],
+    "mode": "geometry",
+    "original_corners": [
+      {
+        "x": 455,
+        "y": 294
+      },
+      {
+        "x": 916,
+        "y": 257
+      },
+      {
+        "x": 912,
+        "y": 608
+      },
+      {
+        "x": 455,
+        "y": 595
+      }
+    ]
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }

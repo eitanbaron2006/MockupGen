@@ -148,6 +148,11 @@ def save_green_frame_mask_if_needed(
         mask_path = background.parent / "mask.png"
         mask.save(mask_path)
         return "mask.png"
+    raw = getattr(proposal, "raw_artwork_area", None)
+    if isinstance(raw, dict) and raw.get("mode") == "geometry":
+        # Geometric frames render straight onto their corners, so a mask would
+        # only be a second copy of the geometry waiting to go stale.
+        return None
     if proposal and proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area.get("regions"), list):
         regions = proposal.raw_artwork_area["regions"]
         if len(regions) > 1:

@@ -1201,7 +1201,6 @@ def test_normal_renders_are_never_pruned(tmp_path):
 def _multi_frame_template(
     templates_folder: Path,
     *,
-    exact_envelope: bool,
     canvas: tuple[int, int] = (200, 100),
     boxes: list[tuple[int, int, int, int]] | None = None,
 ) -> dict:
@@ -1222,16 +1221,9 @@ def _multi_frame_template(
         regions.append({
             "x": left, "y": top, "width": right - left, "height": bottom - top,
             "area": (right - left) * (bottom - top),
-            "corners": corners, "inner_corners": corners, "outer_corners": corners,
-            "exact_envelope": exact_envelope,
+            "corners": corners,
         })
     raw_artwork_area = {"mode": "geometry", "regions": regions}
-
-    mask = Image.new("L", canvas, 0)
-    draw = ImageDraw.Draw(mask)
-    for box in boxes:
-        draw.rectangle(box, fill=255)
-    mask.save(folder / "mask.png")
 
     save_image(folder / "background.png", canvas, (240, 240, 240, 255))
     save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
@@ -1241,7 +1233,7 @@ def _multi_frame_template(
         "artwork_area": {**{"x": 10, "y": 10, "width": 80, "height": 80},
                          "corners": regions[0]["corners"]},
         "fit_mode": "stretch", "background": "background.png", "foreground": None,
-        "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+        "mask": None, "supported_modes": ["simple"], "output_format": "png",
         "raw_artwork_area": raw_artwork_area, "detection_provider": "classic",
     }), encoding="utf-8")
     return {"template_id": template_id, "raw_artwork_area": raw_artwork_area}
@@ -1266,11 +1258,11 @@ def _corner_marked_artwork(path: Path) -> dict[str, tuple[int, int, int]]:
     return colours
 
 
-def _render_multi_frame(tmp_path: Path, *, exact_envelope: bool):
+def _render_multi_frame(tmp_path: Path):
     import numpy as np
 
     templates_folder = tmp_path / "templates_data"
-    template = _multi_frame_template(templates_folder, exact_envelope=exact_envelope)
+    template = _multi_frame_template(templates_folder)
     artwork = tmp_path / "marked.png"
     colours = _corner_marked_artwork(artwork)
 
@@ -1283,7 +1275,6 @@ def _render_multi_frame(tmp_path: Path, *, exact_envelope: bool):
         fit_mode="stretch",
         realism=False,
         raw_artwork_area=template["raw_artwork_area"],
-        mask_name="mask.png",
     )
     rendered = Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
     pixels = np.asarray(rendered).astype(int)
@@ -1293,21 +1284,13 @@ def _render_multi_frame(tmp_path: Path, *, exact_envelope: bool):
     }
 
 
-def test_exact_geometric_frames_render_the_whole_artwork(tmp_path):
-    counts = _render_multi_frame(tmp_path, exact_envelope=True)
+def test_geometric_frames_render_the_whole_artwork(tmp_path):
+    counts = _render_multi_frame(tmp_path)
 
     # Each 20px corner block of a 120px artwork stretched into an 80px frame
     # covers ~178px across the two frames, less the hairline of bleed.
     for name, count in counts.items():
         assert count > 200, f"{name} corner was cropped out of the render: {counts}"
-
-
-def test_fuzzy_regions_still_get_the_bleed_envelope(tmp_path):
-    exact = _render_multi_frame(tmp_path / "exact", exact_envelope=True)
-    fuzzy = _render_multi_frame(tmp_path / "fuzzy", exact_envelope=False)
-
-    # Chroma-key regions keep the old over-stretch, which eats the corners.
-    assert sum(fuzzy.values()) < sum(exact.values())
 
 
 def test_editing_a_detected_frame_changes_what_gets_rendered(tmp_path):
@@ -1323,7 +1306,6 @@ def test_editing_a_detected_frame_changes_what_gets_rendered(tmp_path):
     # Roomy canvas so an enlarged frame still fits well inside it.
     template = _multi_frame_template(
         templates_folder,
-        exact_envelope=True,
         canvas=(300, 200),
         boxes=[(20, 20, 100, 120), (160, 20, 240, 120)],
     )
@@ -1340,7 +1322,6 @@ def test_editing_a_detected_frame_changes_what_gets_rendered(tmp_path):
             fit_mode="stretch",
             realism=False,
             raw_artwork_area=raw_artwork_area,
-            mask_name="mask.png",
         )
         pixels = np.asarray(
             Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")

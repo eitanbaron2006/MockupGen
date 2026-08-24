@@ -168,7 +168,7 @@ def test_green_frame_detection_saves_mask_for_template_rendering(tmp_path: Path)
       assert mask.getpixel((33, 25)) == 255
 
 
-def test_auto_detection_returns_all_frames_and_builds_a_multi_frame_mask(tmp_path: Path):
+def test_auto_detection_returns_all_frames_without_writing_a_mask(tmp_path: Path):
     app = build_app(tmp_path)
     client = app.test_client()
     csrf = login(client)
@@ -207,16 +207,18 @@ def test_auto_detection_returns_all_frames_and_builds_a_multi_frame_mask(tmp_pat
 
     assert response.status_code == 200
     payload = response.get_json()
-    regions = payload["proposal"]["raw_artwork_area"]["regions"]
+    raw = payload["proposal"]["raw_artwork_area"]
+    regions = raw["regions"]
     assert len(regions) == 3
-    # Several regions need a mask so the multi-frame render path can clip them.
-    assert payload["template"]["mask_name"] == "mask.png"
-    mask_path = tmp_path / "draft_templates" / template["template_id"] / "mask.png"
-    assert mask_path.is_file()
-    with Image.open(mask_path) as mask:
-        for left, top, right, bottom in boxes:
-            assert mask.getpixel(((left + right) // 2, (top + bottom) // 2)) == 255
-        assert mask.getpixel((20, 20)) == 0
+    for region, (left, top, right, bottom) in zip(regions, boxes):
+        assert abs(region["x"] - left) <= 16
+        assert abs(region["y"] - top) <= 16
+
+    # Geometric frames render straight onto their corners, so no mask is
+    # written; one would only be a second copy of the geometry going stale.
+    assert raw["mode"] == "geometry"
+    assert payload["template"]["mask_name"] is None
+    assert not (tmp_path / "draft_templates" / template["template_id"] / "mask.png").exists()
 
 
 def test_detection_settings_can_test_provider_without_saving_proposal(
