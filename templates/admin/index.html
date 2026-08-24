@@ -79,10 +79,17 @@
               <div class="sub" id="editorSub">Choose a template from the queue to review its artwork area.</div>
             </div>
             <div class="editor-tools">
-              <div class="detection-mode-switch" aria-label="Detection engine">
-                <button class="detection-mode-button" type="button" data-provider="vertex">Vertex AI</button>
-                <button class="detection-mode-button" type="button" data-provider="classic">Classic / No AI</button>
-                <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
+              <div class="detection-mode-container">
+                <div class="detection-mode-switch" aria-label="Detection engine">
+                  <button class="detection-mode-button" type="button" data-provider="vertex">Vertex AI</button>
+                  <button class="detection-mode-button" type="button" data-provider="classic">Classic / No AI</button>
+                  <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
+                </div>
+                <div class="classic-submodes-switch" id="classicSubmodesBar" aria-label="Classic detection submodes">
+                  <button class="submode-btn active" type="button" data-submode="auto">Auto Detect</button>
+                  <button class="submode-btn" type="button" data-submode="frame_points">Frame Points</button>
+                  <button class="submode-btn" type="button" data-submode="color_pick">Color Pick</button>
+                </div>
               </div>
               <button class="btn success" id="detectButton">Detect frame</button>
               <button class="btn hidden" id="previewMockupButton" type="button">Preview Mockup</button>
@@ -1144,17 +1151,18 @@
           multi-layered geometric quadrilateral solver. It automatically detects the innermost mockup border with
           absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
         </div>
-        <label class="classic-mode-toggle" for="classicGreenFramesMode">
-          <input type="checkbox" id="classicGreenFramesMode">
-          <span>
-            <strong>Green frames mockups</strong>
-            <small>Detect bright green placeholder areas using a mask and perspective corners.</small>
-          </span>
-        </label>
+        <div class="config-field" style="margin-top: 15px;">
+          <label for="classicSubmodeSelect">Default Classic Detection Mode</label>
+          <select id="classicSubmodeSelect">
+            <option value="auto">Auto Detect (Geometry &amp; Multi-stage SAM 2.1)</option>
+            <option value="frame_points">Frame Points (Multi-frame Center Points)</option>
+            <option value="color_pick">Color Pick (Sample Color &amp; Tolerance / Green frames mockups)</option>
+          </select>
+        </div>
         <div class="config-row classic-green-options" id="classicGreenOptions">
           <div>
             <label for="classicGreenEdgeExpand">Green edge cleanup expansion</label>
-            <input class="text-input" id="classicGreenEdgeExpand" type="number" min="0" max="255" step="1" value="1">
+            <input class="text-input" id="classicGreenEdgeExpand" type="number" min="0" max="255" step="1" value="0">
           </div>
         </div>
       </section>

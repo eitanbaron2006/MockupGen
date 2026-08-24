@@ -2698,13 +2698,18 @@
     saveDetectionPreState();
     clearDetectionOverlays();
 
-    // If classic detection is active, run the selected internal classic mode.
+    // If classic detection is active, run the selected internal classic submode.
     if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
-      if ((state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups") {
-        await runClassicGreenFramesDetection();
+      const submode = state.settings.CLASSIC_SUBMODE || "auto";
+      if (submode === "color_pick") {
+        runColorPickMode();
         return;
       }
-      showDetectionMethodPicker();
+      if (submode === "frame_points") {
+        runFramePointsMode();
+        return;
+      }
+      startDetectionWizard();
       return;
     }
 
@@ -2713,7 +2718,7 @@
       const err = state.providerHealth.vertex.error || "Vertex AI connection unavailable";
       toast(`Vertex AI unavailable (${err}). Using Classic Detection.`);
       setStatus("Vertex AI unavailable, falling back to Classic", true);
-      showDetectionMethodPicker();
+      startDetectionWizard();
       return;
     }
 
@@ -3025,6 +3030,9 @@
     maskDetectState.active = true;
     maskDetectState.mode = "color_pick";
     maskDetectState.sampledColor = null;
+    maskDetectState.points = [];
+    clearMaskDetectDots();
+    greenRegularRenderUrlCache.clear();
     clearDetectionOverlays();
 
     $("proposalState").classList.add("hidden");
@@ -3326,6 +3334,9 @@
     // Save state (may already be saved from detectFrame, but wizard can also be called
     // from the method picker "Auto Detect" after prevTemplate was cleared)
     if (!detectionReviewState.prevTemplate) saveDetectionPreState();
+    maskDetectState.points = [];
+    clearMaskDetectDots();
+    greenRegularRenderUrlCache.clear();
     clearDetectionOverlays();
 
     wizardState.active = true;
@@ -3479,8 +3490,16 @@
     wizardState.step = 3;
     wizardState.proposedCorners = null;
 
+    // Clear all detection overlays and hide previous artwork so the background is 100% visible
+    clearDetectionOverlays();
+
     // Hide current polygon handles so user knows we are waiting for a click
     $("selectionSvg").classList.add("hidden");
+    $("selectionImageOverlay").classList.add("hidden");
+    if ($("selectionRenderedMockup")) {
+      $("selectionRenderedMockup").classList.add("hidden");
+      $("selectionRenderedMockup").src = "";
+    }
 
     const actions = [
       { text: "Lock", class: "primary", disabled: true, id: "btnLockContinue", onclick: () => runStage4FineTune() },
@@ -3747,6 +3766,45 @@
         button.style.cursor = "";
       }
     });
+    updateClassicSubmodes();
+  }
+
+  function updateClassicSubmodes() {
+    const provider = state.settings.DETECTION_PROVIDER || "classic";
+    const submodeBar = $("classicSubmodesBar");
+    if (submodeBar) {
+      submodeBar.classList.toggle("hidden", provider !== "classic");
+    }
+    const currentSubmode = state.settings.CLASSIC_SUBMODE || "auto";
+    document.querySelectorAll(".submode-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.submode === currentSubmode);
+    });
+    if ($("classicSubmodeSelect")) {
+      $("classicSubmodeSelect").value = currentSubmode;
+    }
+  }
+
+  function initClassicSubmodeButtons() {
+    document.querySelectorAll(".submode-btn").forEach((btn) => {
+      btn.onclick = async () => {
+        if (state.busy) return;
+        const submode = btn.dataset.submode;
+        state.settings.CLASSIC_SUBMODE = submode;
+        updateClassicSubmodes();
+        try {
+          await api("/api/admin/settings/detection", {
+            method: "PUT",
+            body: JSON.stringify({
+              DETECTION_PROVIDER: "classic",
+              CLASSIC_SUBMODE: submode
+            })
+          });
+        } catch (_e) {}
+        if (state.selected) {
+          detectFrame();
+        }
+      };
+    });
   }
 
   function showProvider(provider) {
@@ -3763,14 +3821,12 @@
       const vModel = ($("vertexModel") && $("vertexModel").value) || "gemini-2.5-flash";
       const vLoc = ($("vertexLocation") && $("vertexLocation").value) || "global";
       const lModel = ($("localModel") && $("localModel").value) || "Choose an installed model";
-      const isGreen = $("classicGreenFramesMode") && $("classicGreenFramesMode").checked;
+      const sub = state.settings.CLASSIC_SUBMODE || "auto";
+      const subTitle = sub === "frame_points" ? "Frame Points" : sub === "color_pick" ? "Color Pick" : "Auto Detect";
       $("engineModel").textContent = provider === "vertex"
         ? `${vModel} / ${vLoc}`
         : provider === "local" ? lModel
-        : (isGreen ? "Green frames mockups" : "Standard geometric wizard");
-    }
-    if ($("classicGreenOptions")) {
-      $("classicGreenOptions").classList.toggle("hidden", provider !== "classic" || !$("classicGreenFramesMode") || !$("classicGreenFramesMode").checked);
+        : `Classic (${subTitle})`;
     }
   }
 
@@ -3878,8 +3934,8 @@
     if ($("refinementMode")) $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
     if ($("classicBlurSize")) $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
     if ($("classicSearchRadius")) $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
-    if ($("classicGreenFramesMode")) $("classicGreenFramesMode").checked = (state.settings.CLASSIC_INTERNAL_MODE || "auto") === "green_frames_mockups";
-    if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").value = state.settings.CLASSIC_GREEN_EDGE_EXPAND || "1";
+    if ($("classicSubmodeSelect")) $("classicSubmodeSelect").value = state.settings.CLASSIC_SUBMODE || "auto";
+    if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").value = state.settings.CLASSIC_GREEN_EDGE_EXPAND || "0";
     if ($("localUrl")) $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
     
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
@@ -3893,6 +3949,8 @@
   async function saveSettings(showFeedback = true) {
     try {
       if ($("vertexModel").value === "gemini-3-flash-preview") $("vertexLocation").value = "global";
+      const classicSubmode = $("classicSubmodeSelect") ? $("classicSubmodeSelect").value : (state.settings.CLASSIC_SUBMODE || "auto");
+      state.settings.CLASSIC_SUBMODE = classicSubmode;
       const payload = await api("/api/admin/settings/detection", {
         method: "PUT",
         body: JSON.stringify({
@@ -3905,8 +3963,8 @@
           DETECTION_REFINEMENT: $("refinementMode").value,
           CLASSIC_BLUR_SIZE: $("classicBlurSize") ? $("classicBlurSize").value : "3",
           CLASSIC_SEARCH_RADIUS: $("classicSearchRadius") ? $("classicSearchRadius").value : "20",
-          CLASSIC_INTERNAL_MODE: $("classicGreenFramesMode") && $("classicGreenFramesMode").checked ? "green_frames_mockups" : "auto",
-          CLASSIC_GREEN_EDGE_EXPAND: $("classicGreenEdgeExpand") ? $("classicGreenEdgeExpand").value : "1",
+          CLASSIC_SUBMODE: classicSubmode,
+          CLASSIC_GREEN_EDGE_EXPAND: $("classicGreenEdgeExpand") ? $("classicGreenEdgeExpand").value : "0",
           LOCAL_DETECTION_URL: $("localUrl").value,
           LOCAL_DETECTION_MODEL: $("localModel").value
         })
@@ -6740,8 +6798,10 @@
   (async () => {
     try {
       await loadSettings();
+      initClassicSubmodeButtons();
     } catch (err) {
       console.warn("Settings initialization warning (continuing to load templates):", err);
+      initClassicSubmodeButtons();
     }
 
     try {

@@ -118,22 +118,40 @@ class ClassicDetectionProvider:
                 approx = cv2.approxPolyDP(c, 0.02 * peri, True)
                 if len(approx) == 4:
                     area = cv2.contourArea(approx)
-                    # Filter by relative scale in the mockup
-                    if (img_area * 0.04) < area < (img_area * 0.90):
+                    # Filter by relative scale in the mockup (from 0.3% to 95% of canvas area)
+                    if (img_area * 0.003) < area < (img_area * 0.95):
                         x, y, box_w, box_h = cv2.boundingRect(approx)
                         aspect_ratio = float(box_w) / box_h
-                        if 0.2 < aspect_ratio < 5.0:
+                        if 0.15 < aspect_ratio < 6.5:
                             valid_rectangles.append((area, approx))
 
             unique_layers = []
             if valid_rectangles:
-                # Sort the rectangles from largest (outermost) to smallest (innermost)
-                valid_rectangles.sort(key=lambda x: x[0], reverse=True)
+                # Group rectangles by spatial location (centroid) so different frames are kept separate
+                frame_groups = []
+                for area, approx in valid_rectangles:
+                    pts = approx.reshape(4, 2)
+                    cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+                    matched_group = None
+                    for grp in frame_groups:
+                        grp_cx, grp_cy = grp["center"]
+                        if np.hypot(cx - grp_cx, cy - grp_cy) < min(w, h) * 0.08:
+                            matched_group = grp
+                            break
+                    if matched_group is not None:
+                        matched_group["items"].append((area, approx))
+                    else:
+                        frame_groups.append({"center": (cx, cy), "items": [(area, approx)]})
 
-                # Filter out duplicate or near-identical rectangles (less than 1.5% difference in area)
-                for r in valid_rectangles:
-                    if not unique_layers or abs(r[0] - unique_layers[-1][0]) > (img_area * 0.015):
-                        unique_layers.append(r)
+                for grp in frame_groups:
+                    grp["items"].sort(key=lambda x: x[0], reverse=True)
+                    unique_for_grp = []
+                    for r in grp["items"]:
+                        if not unique_for_grp or abs(r[0] - unique_for_grp[-1][0]) > (img_area * 0.005):
+                            unique_for_grp.append(r)
+                    if unique_for_grp:
+                        # Innermost layer for this frame
+                        unique_layers.append(unique_for_grp[-1])
 
             if unique_layers:
                 # Populate all layers clockwise

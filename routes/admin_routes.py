@@ -56,6 +56,7 @@ SETTINGS_KEYS = {
     "CLASSIC_BLUR_SIZE",
     "CLASSIC_SEARCH_RADIUS",
     "CLASSIC_INTERNAL_MODE",
+    "CLASSIC_SUBMODE",
     "CLASSIC_GREEN_EDGE_EXPAND",
 }
 
@@ -439,11 +440,12 @@ def reset_admin_template_detection(template_id: str):
         if pub_mask.is_file():
             pub_mask.unlink(missing_ok=True)
 
-        detector = ClassicDetectionProvider()
-        bg_path = draft_asset_path(Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]), template_id, "background.png")
-        if not bg_path.is_file():
+        try:
+            bg_path = draft_asset_path(Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]), template_id, "background.png")
+        except TemplateImportError:
             bg_path = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "background.png"
 
+        detector = ClassicDetectionProvider()
         proposal = detector.detect(bg_path)
         mode = "green_frames_mockups" if (proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area, dict) and proposal.raw_artwork_area.get("mode") == "green_frames_mockups") else "auto"
         mask_name = save_green_frame_mask_if_needed(detector, bg_path, mode, proposal)
@@ -475,6 +477,10 @@ def reset_admin_template_detection(template_id: str):
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
+
+        from services.simple_mockup_service import _GREEN_DETECTION_CACHE, _GREEN_DETECTION_LOCK
+        with _GREEN_DETECTION_LOCK:
+            _GREEN_DETECTION_CACHE.clear()
     except Exception as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template": updated})
@@ -512,12 +518,16 @@ def detect_admin_template(template_id: str):
             mask_name = save_green_frame_mask_if_needed(provider, background, mode, proposal)
 
         if not mask_name:
-            mask_path = background.parent / "mask.png"
-            if mask_path.is_file():
-                try:
-                    mask_path.unlink()
-                except Exception:
-                    pass
+            for folder in (current_app.config["DRAFT_TEMPLATES_FOLDER"], current_app.config["TEMPLATES_FOLDER"]):
+                mp = Path(folder) / template_id / "mask.png"
+                if mp.is_file():
+                    try:
+                        mp.unlink()
+                    except Exception:
+                        pass
+            from services.simple_mockup_service import _GREEN_DETECTION_CACHE, _GREEN_DETECTION_LOCK
+            with _GREEN_DETECTION_LOCK:
+                _GREEN_DETECTION_CACHE.clear()
 
         if template.get("status") == "draft":
             changes = {
@@ -712,6 +722,8 @@ def update_detection_settings():
         return json_error("Unsupported refinement mode", 400)
     if settings.get("CLASSIC_INTERNAL_MODE") not in {None, "auto", "green_frames_mockups"}:
         return json_error("Unsupported classic internal mode", 400)
+    if settings.get("CLASSIC_SUBMODE") not in {None, "auto", "frame_points", "color_pick"}:
+        return json_error("Unsupported classic submode", 400)
     if "CLASSIC_GREEN_EDGE_EXPAND" in settings:
         try:
             edge_expand = int(settings["CLASSIC_GREEN_EDGE_EXPAND"])
