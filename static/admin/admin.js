@@ -671,6 +671,11 @@
     });
   }
 
+  // Colour tolerance for Colour Pick and Frame Points. At 40 a flat
+  // placeholder keeps a few pixels of its own colour showing around the
+  // artwork; 80 closes that without splitting one frame into several.
+  const DEFAULT_MASK_TOLERANCE = 80;
+
   let maskVersion = 0;
 
   async function api(url, options = {}) {
@@ -2972,7 +2977,7 @@
       const showTol = mode === "color_pick" || mode === "frame_points";
       tolRow.classList.toggle("hidden", !showTol);
       if (showTol) {
-        const tol = params.tolerance || 40;
+        const tol = params.tolerance || DEFAULT_MASK_TOLERANCE;
         const tolInput = $("maskDetectTolerance");
         if (tolInput) tolInput.value = tol;
         const tolVal = $("maskDetectToleranceVal");
@@ -3049,7 +3054,7 @@
 
   async function retryDetection() {
     if (!detectionReviewState.params) return;
-    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || "40", 10);
+    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || String(DEFAULT_MASK_TOLERANCE), 10);
     const params = { ...detectionReviewState.params, tolerance };
 
     // Restore visual to clean state while re-detecting
@@ -3354,7 +3359,7 @@
     updateMaskDetectUI("DETECTING", "Detecting…", "Please wait.", []);
 
     setBusy(true);
-    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || "40", 10);
+    const tolerance = parseInt(($("maskDetectTolerance") || {}).value || String(DEFAULT_MASK_TOLERANCE), 10);
 
     const params = overrideParams || {
       mode,
@@ -3393,9 +3398,9 @@
       $("proposalState").classList.add("hidden");
       $("maskDetectToleranceRow").classList.remove("hidden");
       const tolInput = $("maskDetectTolerance");
-      if (tolInput) tolInput.value = params.tolerance || 40;
+      if (tolInput) tolInput.value = params.tolerance || DEFAULT_MASK_TOLERANCE;
       const tolVal = $("maskDetectToleranceVal");
-      if (tolVal) tolVal.textContent = String(params.tolerance || 40);
+      if (tolVal) tolVal.textContent = String(params.tolerance || DEFAULT_MASK_TOLERANCE);
 
       if (params.mode === "color_pick" && params.color) {
         maskDetectState.active = true;

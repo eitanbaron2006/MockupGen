@@ -73,7 +73,7 @@ def _run_mask_detection(
 
     img = _PILImage.open(background).convert("RGBA")
     w, h = img.size
-    tolerance = max(5, min(220, int(payload.get("tolerance", 40))))
+    tolerance = max(5, min(220, int(payload.get("tolerance", 80))))
     settings = GreenFrameSettings(tolerance=tolerance, min_area=80)
 
     if mode == "color_pick":
