@@ -141,3 +141,34 @@ def test_mask_and_green_frame_templates_hide_polygon_and_disable_drag():
     # Verify beginDrag disables manual polygon dragging for mask/green frame templates
     drag_body = js.split("function beginDrag(event) {", 1)[1].split("const target = event.target;", 1)[0]
     assert "if (isGreenFrameTemplate(state.selected)) return;" in drag_body
+
+
+def test_green_frame_overlay_places_artwork_where_the_renderer_will():
+    """The editor overlay is a promise about the finished mockup.
+
+    It has to read the same green-frame settings the renderer does and lay the
+    artwork out the same way: no perspective warp when the renderer draws
+    upright, the same wide coverage envelope, and the same fit box.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    overlay = js.split("function renderGreenFrameArtworkOverlay(", 1)[1].split("\n  function ", 1)[0]
+    warp = js.split("function greenFrameWarpQuad(", 1)[1].split("\n  function ", 1)[0]
+
+    assert "greenFrameSettings(template.effects)" in overlay
+    assert "greenFrameWarpQuad(corners, greenSettings)" in overlay
+    # The renderer sizes the artwork by the longer of each pair of opposite
+    # sides (_render_perspective_region), not by the top and left edges.
+    assert "Math.max(sideLength(0, 1), sideLength(3, 2))" in overlay
+    assert "Math.max(sideLength(0, 3), sideLength(1, 2))" in overlay
+
+    # Perspective off: _draw_rect fills the region's upright bounding box.
+    assert "settings.use_perspective === false" in warp
+    # Wide coverage envelope: _expanded_quad's radial push, same amount.
+    assert "Math.max(10, (Number(settings.edge_expand) || 0) + 8)" in warp
+
+
+def test_green_frame_control_changes_redraw_the_artwork_overlay():
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    body = js.split("function updateGreenFrameSettingsFromControls()", 1)[1].split("\n  [", 1)[0]
+
+    assert "drawSelection();" in body

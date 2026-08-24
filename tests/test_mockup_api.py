@@ -1501,3 +1501,86 @@ def test_rendering_never_modifies_the_template_mask(tmp_path):
     )
 
     assert (folder / "mask.png").read_bytes() == before, "the render rewrote the template mask"
+
+
+def test_the_render_follows_the_frame_the_editor_shows_not_the_detected_outline(tmp_path):
+    """The frame the admin sees and drags is what the artwork is warped onto.
+
+    Detection also records the outline it found once, and those corners never
+    move with an edited frame. Rendering through them put the artwork at its
+    old angle and size while the editor drew it on the frame -- the two views
+    of the same template disagreed, and dragging a frame changed nothing.
+    """
+    import numpy as np
+    from PIL import ImageDraw
+
+    templates_folder = tmp_path / "templates_data"
+    template_id = "template_slanted"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (240, 240)
+
+    opening = (60, 40, 180, 200)
+    mask = Image.new("L", canvas, 0)
+    ImageDraw.Draw(mask).rectangle(opening, fill=255)
+    mask.save(folder / "mask.png")
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+
+    def quad(box):
+        left, top, right, bottom = box
+        return [
+            {"x": left, "y": top}, {"x": right, "y": top},
+            {"x": right, "y": bottom}, {"x": left, "y": bottom},
+        ]
+
+    # Detection recorded the upright opening; the frame has since been dragged
+    # into a slant. Only the frame may decide where the artwork goes.
+    detected = quad(opening)
+    slanted = [{"x": 60, "y": 40}, {"x": 180, "y": 70}, {"x": 180, "y": 200}, {"x": 60, "y": 170}]
+
+    def render(corners):
+        region = {
+            "x": 60, "y": 40, "width": 120, "height": 160, "area": 1,
+            "corners": corners, "inner_corners": corners, "outer_corners": detected,
+        }
+        raw = {"mode": "green_frames_mockups", "regions": [region], "corners_edited": True}
+        (folder / "manifest.json").write_text(json.dumps({
+            "template_id": template_id, "name": "slanted",
+            "canvas_width": canvas[0], "canvas_height": canvas[1],
+            "artwork_area": {"x": 60, "y": 40, "width": 120, "height": 160, "corners": corners},
+            "fit_mode": "stretch", "background": "background.png", "foreground": None,
+            "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+            "raw_artwork_area": raw, "detection_provider": "classic",
+            "effects": {"green_frame_mockups": {
+                "use_perspective": True, "use_vector_clip": True, "fit_mode": "stretch",
+                "feather_radius": 0, "edge_aa_radius": 0,
+            }},
+        }), encoding="utf-8")
+        artwork = tmp_path / "art.png"
+        art = Image.new("RGB", (120, 160), (255, 0, 255))
+        ImageDraw.Draw(art).rectangle((0, 0, 120, 80), fill=(0, 255, 255))
+        art.save(artwork)
+        result = render_module.render_simple_mockup(
+            template_id=template_id, artwork_path=artwork, output_format="png",
+            templates_folder=templates_folder, output_folder=tmp_path / "outputs",
+            fit_mode="stretch", realism=False, raw_artwork_area=raw, mask_name="mask.png",
+        )
+        return np.asarray(
+            Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+        ).astype(int)
+
+    def cyan_bottom(pixels, column):
+        rows = np.where(np.abs(pixels[:, column] - np.array([0, 255, 255])).sum(axis=1) < 90)[0]
+        return int(rows.max()) if rows.size else -1
+
+    upright = render(detected)
+    dragged = render(slanted)
+
+    # Upright, the halves meet at the same height across the opening.
+    assert abs(cyan_bottom(upright, 70) - cyan_bottom(upright, 170)) <= 2
+
+    # Dragged into a slant, the boundary follows the frame: lower on the right.
+    assert cyan_bottom(dragged, 170) - cyan_bottom(dragged, 70) > 10, (
+        "the render ignored the edited frame"
+    )

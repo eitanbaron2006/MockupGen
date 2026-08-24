@@ -337,6 +337,43 @@ def _soft_mask_for_regions(
     return out
 
 
+def _quad_area(points: np.ndarray) -> float:
+    x, y = points[:, 0], points[:, 1]
+    return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2.0)
+
+
+def _quad_containing(quad: np.ndarray, hull_points: np.ndarray) -> Optional[np.ndarray]:
+    """`quad` with every side pushed out until the hull sits wholly inside it.
+
+    Each side moves out by the smallest amount that swallows the last stray
+    pixel, then the sides are intersected back into corners, so the shape keeps
+    its slant and leaves the least leftover area it can at that slant.
+    """
+    centre = quad.mean(axis=0)
+    lines = []
+    for index in range(4):
+        start = quad[index]
+        direction = quad[(index + 1) % 4] - start
+        length = float(np.hypot(*direction))
+        if length < 1e-6:
+            return None
+        normal = np.array([direction[1], -direction[0]]) / length
+        if float(np.dot(normal, start - centre)) < 0:
+            normal = -normal
+        overshoot = float(np.max((hull_points - start) @ normal))
+        lines.append((start + normal * max(0.0, overshoot), direction / length))
+
+    widened = []
+    for index in range(4):
+        (p1, d1), (p2, d2) = lines[index - 1], lines[index]
+        denominator = d1[0] * d2[1] - d1[1] * d2[0]
+        if abs(denominator) < 1e-9:
+            return None
+        delta = p2 - p1
+        widened.append(p1 + d1 * ((delta[0] * d2[1] - delta[1] * d2[0]) / denominator))
+    return np.asarray(widened)
+
+
 def _region_quad(mask: np.ndarray, region: GreenRegion) -> Optional[dict[str, dict[str, float]]]:
     """The tightest four-sided frame that still contains all of the mask.
 
@@ -359,51 +396,33 @@ def _region_quad(mask: np.ndarray, region: GreenRegion) -> Optional[dict[str, di
         return None
     hull = cv2.convexHull(max(contours, key=cv2.contourArea))
 
+    hull_points = hull.reshape(-1, 2).astype(np.float64)
+
     # Start from the four-sided shape of the opening, so a frame seen at an
-    # angle keeps its perspective instead of being squared off.
+    # angle keeps its perspective instead of being squared off, and push each
+    # of its sides out by exactly as much as it takes to swallow the last
+    # stray pixel: the mask ends up wholly inside that four-sided shape.
+    candidates: list[np.ndarray] = []
     perimeter = cv2.arcLength(hull, True)
-    quad = None
     epsilon = 0.002 * perimeter
     for _ in range(24):
         approx = cv2.approxPolyDP(hull, epsilon, True)
         if len(approx) <= 4:
-            quad = approx.reshape(-1, 2).astype(np.float64) if len(approx) == 4 else None
+            if len(approx) == 4:
+                widened = _quad_containing(approx.reshape(-1, 2).astype(np.float64), hull_points)
+                if widened is not None:
+                    candidates.append(widened)
             break
         epsilon *= 1.3
-    if quad is None:
-        quad = cv2.boxPoints(cv2.minAreaRect(hull)).astype(np.float64)
 
-    # Then push each side out by exactly as much as it takes to swallow the
-    # last stray pixel, and no more: the mask ends up wholly inside, with the
-    # smallest leftover area this four-sided shape can leave.
-    hull_points = hull.reshape(-1, 2).astype(np.float64)
-    centre = quad.mean(axis=0)
-    lines = []
-    for index in range(4):
-        start = quad[index]
-        direction = quad[(index + 1) % 4] - start
-        length = float(np.hypot(*direction))
-        if length < 1e-6:
-            lines = []
-            break
-        normal = np.array([direction[1], -direction[0]]) / length
-        if float(np.dot(normal, start - centre)) < 0:
-            normal = -normal
-        overshoot = float(np.max((hull_points - start) @ normal))
-        lines.append((start + normal * max(0.0, overshoot), direction / length))
-
-    if len(lines) == 4:
-        widened = []
-        for index in range(4):
-            (p1, d1), (p2, d2) = lines[index - 1], lines[index]
-            denominator = d1[0] * d2[1] - d1[1] * d2[0]
-            if abs(denominator) < 1e-9:
-                widened = []
-                break
-            delta = p2 - p1
-            widened.append(p1 + d1 * ((delta[0] * d2[1] - delta[1] * d2[0]) / denominator))
-        if len(widened) == 4:
-            quad = np.asarray(widened)
+    # A rounded opening -- a phone screen -- simplifies to a quad whose sides
+    # rest on the corner arcs, a few degrees off the real edges. Pushed out to
+    # contain the mask that tilt costs area, and the artwork drawn on it comes
+    # out visibly rotated. So keep whichever candidate wastes the least: a
+    # frame in perspective wins on its own quad, a rounded one on the mask's
+    # minimal rectangle.
+    candidates.append(cv2.boxPoints(cv2.minAreaRect(hull)).astype(np.float64))
+    quad = min(candidates, key=_quad_area)
 
     points = np.asarray(quad, dtype=np.float64)
     points[:, 0] += x0
@@ -990,15 +1009,19 @@ def _sample_rgba(src: np.ndarray, x: float, y: float) -> tuple[float, float, flo
 
 
 def _render_perspective_region(region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings, artwork_filter: Any = None) -> Optional[tuple[Image.Image, int, int, int, int]]:
-    inner = region.inner_corners or region.corners
-    outer = region.outer_corners or region.corners
-    if not inner:
+    # The frame is what the admin sees and drags, so it -- not the corners
+    # detection happened to record once -- is what the artwork is warped onto.
+    # The outer corners never move with an edited frame, so expanding those
+    # rendered a dragged frame at its old angle and size, and the editor and
+    # the finished mockup drifted apart.
+    frame = region.corners or region.inner_corners or region.outer_corners
+    if not frame:
         return None
-    if settings.wide_coverage_envelope and outer:
+    if settings.wide_coverage_envelope:
         expansion_amount = max(10, settings.edge_expand + 8) if state.width >= 100 else max(2, settings.edge_expand + 2)
-        warp = _expanded_quad(outer, expansion_amount)
+        warp = _expanded_quad(frame, expansion_amount)
     else:
-        warp = inner
+        warp = frame
     target_w = max(2, round(max(_dist(warp["tl"], warp["tr"]), _dist(warp["bl"], warp["br"]))))
     target_h = max(2, round(max(_dist(warp["tl"], warp["bl"]), _dist(warp["tr"], warp["br"]))))
     src = _source_image(art, target_w, target_h, settings)

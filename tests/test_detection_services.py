@@ -683,3 +683,59 @@ def test_flat_colour_placeholders_are_found_without_a_border_ring(tmp_path: Path
         assert abs(region["y"] - top) <= 6
         assert abs(region["width"] - (right - left)) <= 12
         assert abs(region["height"] - (bottom - top)) <= 12
+
+
+def _quad_angles(corners: dict[str, dict[str, float]]) -> tuple[float, float]:
+    import math
+
+    top = math.degrees(
+        math.atan2(corners["tr"]["y"] - corners["tl"]["y"], corners["tr"]["x"] - corners["tl"]["x"])
+    )
+    bottom = math.degrees(
+        math.atan2(corners["br"]["y"] - corners["bl"]["y"], corners["br"]["x"] - corners["bl"]["x"])
+    )
+    return top, bottom
+
+
+def test_frame_of_a_rounded_opening_follows_its_edges_instead_of_tilting():
+    """A phone screen is a rounded rectangle, and its frame must sit square on it.
+
+    Simplifying the rounded outline to four sides can land them on the corner
+    arcs, a few degrees off the real edges. Pushed out far enough to contain
+    the opening, that tilted shape wastes area -- and the artwork drawn on it
+    comes out visibly rotated inside the screen.
+    """
+    import numpy as np
+    from services.green_frame_mockup_service import GreenRegion, _region_quad
+
+    opening = Image.new("L", (300, 500), 0)
+    ImageDraw.Draw(opening).rounded_rectangle((70, 90, 230, 430), radius=48, fill=255)
+    mask = np.asarray(opening) > 127
+    region = GreenRegion(70, 90, 161, 341, int(mask.sum()))
+
+    corners = _region_quad(mask, region)
+
+    assert corners is not None
+    top, bottom = _quad_angles(corners)
+    assert abs(top) < 1.0 and abs(bottom) < 1.0, "the frame is tilted off the screen's edges"
+    width = corners["tr"]["x"] - corners["tl"]["x"]
+    height = corners["bl"]["y"] - corners["tl"]["y"]
+    assert width * height < mask.sum() * 1.05, "the frame wastes more than the rounded corners"
+
+
+def test_frame_of_a_slanted_opening_keeps_its_slant():
+    """The tighter shape wins, and for a frame seen at an angle that is its own
+    quad -- squaring it off would waste a corner of the mask on every side."""
+    import numpy as np
+    from services.green_frame_mockup_service import GreenRegion, _region_quad
+
+    opening = Image.new("L", (500, 400), 0)
+    ImageDraw.Draw(opening).polygon([(120, 80), (390, 105), (360, 310), (95, 280)], fill=255)
+    mask = np.asarray(opening) > 127
+    region = GreenRegion(95, 80, 296, 231, int(mask.sum()))
+
+    corners = _region_quad(mask, region)
+
+    assert corners is not None
+    for key, (x, y) in zip(("tl", "tr", "br", "bl"), [(120, 80), (390, 105), (360, 310), (95, 280)]):
+        assert abs(corners[key]["x"] - x) <= 4 and abs(corners[key]["y"] - y) <= 4

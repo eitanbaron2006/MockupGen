@@ -1858,6 +1858,45 @@
     ];
   }
 
+  /** The quad the renderer warps the artwork onto.
+   *
+   * Mirrors _render_perspective_region / _draw_rect in
+   * green_frame_mockup_service.py. The editor is a promise about what PREVIEW
+   * will produce, so it has to place the artwork exactly where the renderer
+   * will, not merely somewhere inside the same frame.
+   */
+  function greenFrameWarpQuad(corners, settings) {
+    if (settings.use_perspective === false) {
+      // With the perspective warp off the renderer fills the region's upright
+      // bounding box and lets the mask cut the shape out, so the editor must
+      // not slant the artwork either.
+      const xs = corners.map((point) => point.x);
+      const ys = corners.map((point) => point.y);
+      const left = Math.min(...xs);
+      const top = Math.min(...ys);
+      const right = Math.max(...xs);
+      const bottom = Math.max(...ys);
+      return [
+        { x: left, y: top },
+        { x: right, y: top },
+        { x: right, y: bottom },
+        { x: left, y: bottom }
+      ];
+    }
+    if (settings.use_vector_clip === false) return corners.map((point) => ({ ...point }));
+    // Wide coverage envelope: _expanded_quad pushes every corner straight out
+    // from the centre, so no feathered mask edge is left uncovered.
+    const amount = Math.max(10, (Number(settings.edge_expand) || 0) + 8);
+    const centreX = corners.reduce((sum, point) => sum + point.x, 0) / corners.length;
+    const centreY = corners.reduce((sum, point) => sum + point.y, 0) / corners.length;
+    return corners.map((point) => {
+      const dx = point.x - centreX;
+      const dy = point.y - centreY;
+      const length = Math.hypot(dx, dy) || 1;
+      return { x: point.x + (dx / length) * amount, y: point.y + (dy / length) * amount };
+    });
+  }
+
   function templateMaskUrl(template) {
     const maskName = template.mask_name || template.mask;
     return maskName
@@ -1912,17 +1951,16 @@
     overlayImg.src = state.selectionStyle.overlayImage;
 
     // A mask-backed template renders through the green-frame pipeline, whose
-    // own fit mode overrides the template one. Read the same setting the
-    // renderer will, or the editor fits the artwork a different way than the
-    // finished mockup does.
-    // parse_green_frame_settings reads the fit mode off the template's own
-    // green-frame effect and falls back to the template fit mode, so read it
-    // from the same place rather than from the panel control, whose value may
-    // not have been written to the template yet.
-    const greenFit = template.effects && template.effects.green_frame_mockups
-      && template.effects.green_frame_mockups.fit_mode;
+    // own settings override the template ones. Read the same ones the renderer
+    // will -- fit mode, perspective warp, coverage envelope -- or the editor
+    // places the artwork a different way than the finished mockup does.
+    // parse_green_frame_settings reads them off the template's own green-frame
+    // effect and falls back to the template fit mode, so read them from the
+    // same place; the panel controls write straight into the template, so this
+    // is still what the admin has just picked.
+    const greenSettings = greenFrameSettings(template.effects);
     const templateFit = ($("fitMode") && $("fitMode").value) || template.fit_mode;
-    const rawFitMode = (templateMaskUrl(template) && greenFit) || templateFit || "cover";
+    const rawFitMode = (templateMaskUrl(template) && greenSettings.fit_mode) || templateFit || "cover";
     const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
     const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;
@@ -1943,12 +1981,16 @@
       const corners = region.corners;
       if (!corners || corners.length < 4) return;
 
-      const displayPoints = corners.map(p => ({
+      const warpQuad = greenFrameWarpQuad(corners, greenSettings);
+      const displayPoints = warpQuad.map(p => ({
         x: (p.x / template.canvas_width) * rect.width,
         y: (p.y / template.canvas_height) * rect.height
       }));
-      const quadW = Math.max(1, Math.round(Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y)));
-      const quadH = Math.max(1, Math.round(Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y)));
+      // The renderer sizes the artwork by the longer of each pair of opposite
+      // sides, so a frame in perspective fits the same way here as there.
+      const sideLength = (a, b) => Math.hypot(warpQuad[b].x - warpQuad[a].x, warpQuad[b].y - warpQuad[a].y);
+      const quadW = Math.max(2, Math.round(Math.max(sideLength(0, 1), sideLength(3, 2))));
+      const quadH = Math.max(2, Math.round(Math.max(sideLength(0, 3), sideLength(1, 2))));
 
       const fitMode = resolveFitMode(rawFitMode, naturalW, naturalH, quadW, quadH);
 
@@ -4698,6 +4740,10 @@
     if (!state.selected.effects) state.selected.effects = defaultEffects();
     state.selected.effects.green_frame_mockups = readGreenFrameControls();
     updateGreenFrameControlLabels();
+    // Perspective, envelope, fit and placement all move the artwork, and the
+    // lightweight overlay is drawn from them, so redraw it now instead of
+    // waiting for the debounced heavy preview.
+    drawSelection();
     if (greenFrameSettingsSaveTimeout) clearTimeout(greenFrameSettingsSaveTimeout);
     greenFrameSettingsSaveTimeout = setTimeout(async () => {
       await persistTemplateState(state.selected, { force: state.isPreviewingMockup });
