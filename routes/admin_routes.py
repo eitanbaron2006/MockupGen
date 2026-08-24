@@ -134,23 +134,20 @@ def save_green_frame_mask_if_needed(
     if proposal and proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area.get("regions"), list):
         regions = proposal.raw_artwork_area["regions"]
         if len(regions) > 1:
-            if hasattr(provider, "build_green_frame_mask"):
-                mask = provider.build_green_frame_mask(background, regions=regions)
-            else:
-                from PIL import Image, ImageDraw
-                with Image.open(background) as img:
-                    w, h = img.size
-                mask = Image.new("L", (w, h), 0)
-                draw = ImageDraw.Draw(mask)
-                for region in regions:
-                    corners = region.get("corners")
-                    if corners and len(corners) >= 3:
-                        pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
-                        draw.polygon(pts, fill=255)
-                    else:
-                        rx, ry = int(region["x"]), int(region["y"])
-                        rw, rh = int(region["width"]), int(region["height"])
-                        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
+            from PIL import Image, ImageDraw
+            with Image.open(background) as img:
+                w, h = img.size
+            mask = Image.new("L", (w, h), 0)
+            draw = ImageDraw.Draw(mask)
+            for region in regions:
+                corners = region.get("corners")
+                if corners and len(corners) >= 3:
+                    pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
+                    draw.polygon(pts, fill=255)
+                else:
+                    rx, ry = int(region["x"]), int(region["y"])
+                    rw, rh = int(region["width"]), int(region["height"])
+                    draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
             mask_path = background.parent / "mask.png"
             mask.save(mask_path)
             return "mask.png"
@@ -383,6 +380,14 @@ def update_admin_template(template_id: str):
                 return json_error("Raw artwork area must be a dictionary or null", 400)
         if "mask_name" in payload and payload.get("mask_name") in {"mask.png", None, ""}:
             changes["mask_name"] = payload.get("mask_name") or None
+            if not changes["mask_name"]:
+                for folder in (current_app.config["DRAFT_TEMPLATES_FOLDER"], current_app.config["TEMPLATES_FOLDER"]):
+                    mp = Path(folder) / template_id / "mask.png"
+                    if mp.is_file():
+                        try:
+                            mp.unlink()
+                        except Exception:
+                            pass
         updated = catalog().update_template(template_id, changes)
         
         # If the template is published (active), keep the manifest.json on disk synchronized!

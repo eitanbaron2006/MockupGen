@@ -371,11 +371,16 @@
   function isMultiRegionTemplate(template = state.selected) {
     if (!template) return false;
     const raw = template.raw_artwork_area;
-    return Boolean(raw && typeof raw === "object" && Array.isArray(raw.regions) && raw.regions.length > 1);
+    const art = template.artwork_area;
+    const hasRawRegions = Boolean(raw && typeof raw === "object" && Array.isArray(raw.regions) && raw.regions.length > 1);
+    const hasArtRegions = Boolean(art && typeof art === "object" && Array.isArray(art.regions) && art.regions.length > 1);
+    return hasRawRegions || hasArtRegions;
   }
 
   function isGreenFrameTemplate(template = state.selected) {
     if (!template) return false;
+    if (isMultiRegionTemplate(template)) return false;
+    if (wizardState && wizardState.active && !wizardState.isMultiFrame) return false;
     if (template.detection_provider === "vertex" || template.detection_provider === "local") {
       return false;
     }
@@ -391,9 +396,6 @@
       if (raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups") return true;
       if (raw.mode === "color_pick" || raw.provider === "color_pick") return true;
       if (raw.mode === "frame_points" || raw.provider === "frame_points") return true;
-      if (Array.isArray(raw.regions) && raw.regions.length > 1) {
-        return Boolean(raw.mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || raw.mode === "color_pick" || raw.provider === "color_pick" || raw.mode === "frame_points" || raw.provider === "frame_points");
-      }
     }
     return Boolean(template.mask_name === "mask.png" || template.mask === "mask.png");
   }
@@ -934,6 +936,7 @@
     $("queue").querySelectorAll(".queue-select").forEach((button) => {
       button.onclick = () => {
         autoSaveCurrent();
+        exitAllDetectionModes();
         state.selected = state.templates.find((template) => template.template_id === button.dataset.template);
         renderQueue();
         renderEditor();
@@ -2954,14 +2957,41 @@
 
   }
 
+  function exitAllDetectionModes() {
+    disableCanvasClickListener();
+    disableMaskDetectClickListener();
+    clearMaskDetectDots();
+
+    maskDetectState.active = false;
+    maskDetectState.mode = null;
+    maskDetectState.sampledColor = null;
+    maskDetectState.points = [];
+
+    wizardState.active = false;
+    wizardState.step = 0;
+    wizardState.layers = [];
+    wizardState.layerIndex = 0;
+    wizardState.proposedCorners = null;
+
+    detectionReviewState.active = false;
+
+    if ($("maskDetectionHud")) $("maskDetectionHud").classList.add("hidden");
+    if ($("detectionWizardHud")) $("detectionWizardHud").classList.add("hidden");
+    if ($("maskDetectColorSwatch")) $("maskDetectColorSwatch").classList.add("hidden");
+    if ($("maskDetectToleranceRow")) $("maskDetectToleranceRow").classList.add("hidden");
+    if ($("proposalState")) $("proposalState").classList.remove("hidden");
+    if ($("stage")) $("stage").classList.remove("stage-cursor-crosshair");
+
+    clearDetectionOverlays();
+    greenRegularRenderUrlCache.clear();
+  }
+
   function cancelDetection() {
     const prevTemplate = detectionReviewState.prevTemplate;
-    detectionReviewState.active = false;
+    exitAllDetectionModes();
     detectionReviewState.prevTemplate = null;
     detectionReviewState.pendingPayload = null;
     detectionReviewState.params = null;
-
-    closeMaskDetectionHud();
 
     if (prevTemplate) {
       state.selected = prevTemplate;
@@ -2974,26 +3004,31 @@
   }
 
   function editColorPickMode() {
-    detectionReviewState.active = false;
-    clearDetectionOverlays();
-    if (detectionReviewState.prevTemplate) {
-      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+    const prevTemplate = detectionReviewState.prevTemplate;
+    exitAllDetectionModes();
+    if (prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(prevTemplate));
       updateTemplateInQueue(state.selected);
     }
     runColorPickMode();
   }
 
   function editFramePointsMode() {
-    if (detectionReviewState.params && Array.isArray(detectionReviewState.params.points) && detectionReviewState.params.points.length > 0) {
-      maskDetectState.points = detectionReviewState.params.points.map(p => ({ ...p }));
-    }
-    detectionReviewState.active = false;
-    clearDetectionOverlays();
-    if (detectionReviewState.prevTemplate) {
-      state.selected = JSON.parse(JSON.stringify(detectionReviewState.prevTemplate));
+    const savedPoints = (detectionReviewState.params && Array.isArray(detectionReviewState.params.points))
+      ? detectionReviewState.params.points.map(p => ({ ...p }))
+      : [];
+    const prevTemplate = detectionReviewState.prevTemplate;
+    exitAllDetectionModes();
+    if (prevTemplate) {
+      state.selected = JSON.parse(JSON.stringify(prevTemplate));
       updateTemplateInQueue(state.selected);
     }
-    runFramePointsMode(true);
+    if (savedPoints.length > 0) {
+      maskDetectState.points = savedPoints;
+      runFramePointsMode(true);
+    } else {
+      runFramePointsMode(false);
+    }
   }
 
   // --- MASK DETECTION (COLOR PICK / FRAME POINTS) ---
@@ -3007,11 +3042,9 @@
   };
 
   function showDetectionMethodPicker() {
+    exitAllDetectionModes();
     maskDetectState.active = true;
     maskDetectState.mode = null;
-    maskDetectState.sampledColor = null;
-    maskDetectState.points = [];
-    clearMaskDetectDots();
 
     $("proposalState").classList.add("hidden");
     $("maskDetectionHud").classList.remove("hidden");
@@ -3019,7 +3052,7 @@
     $("maskDetectToleranceRow").classList.add("hidden");
 
     updateMaskDetectUI("DETECT", "Detection Method", "Choose how to find frame areas in this mockup:", [
-      { text: "Auto Detect", class: "secondary", onclick: () => { closeMaskDetectionHud(); startDetectionWizard(); } },
+      { text: "Auto Detect", class: "secondary", onclick: () => { exitAllDetectionModes(); startDetectionWizard(); } },
       { text: "Color Pick", class: "secondary", onclick: () => runColorPickMode() },
       { text: "Frame Points", class: "secondary", onclick: () => runFramePointsMode() },
       { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
@@ -3027,13 +3060,9 @@
   }
 
   function runColorPickMode() {
+    exitAllDetectionModes();
     maskDetectState.active = true;
     maskDetectState.mode = "color_pick";
-    maskDetectState.sampledColor = null;
-    maskDetectState.points = [];
-    clearMaskDetectDots();
-    greenRegularRenderUrlCache.clear();
-    clearDetectionOverlays();
 
     $("proposalState").classList.add("hidden");
     $("maskDetectionHud").classList.remove("hidden");
@@ -3042,7 +3071,6 @@
 
     updateMaskDetectUI("COLOR PICK", "Sample Frame Color", "Click anywhere in the frame area to pick its color.", [
       { text: "Run Detection", class: "primary", disabled: true, id: "maskColorPickRunBtn", onclick: () => submitMaskDetection("color_pick") },
-      { text: "Back", class: "secondary", onclick: () => showDetectionMethodPicker() },
       { text: "Cancel", class: "danger", onclick: () => cancelDetection() },
     ]);
 
@@ -3088,15 +3116,19 @@
   }
 
   function runFramePointsMode(preservePoints = false) {
-    maskDetectState.active = true;
-    maskDetectState.mode = "frame_points";
-    clearDetectionOverlays();
     if (!preservePoints) {
-      maskDetectState.points = [];
-      clearMaskDetectDots();
+      exitAllDetectionModes();
     } else {
+      disableCanvasClickListener();
+      disableMaskDetectClickListener();
+      if ($("detectionWizardHud")) $("detectionWizardHud").classList.add("hidden");
+      wizardState.active = false;
+      clearDetectionOverlays();
       redrawMaskDetectDots();
     }
+
+    maskDetectState.active = true;
+    maskDetectState.mode = "frame_points";
 
     $("proposalState").classList.add("hidden");
     $("maskDetectionHud").classList.remove("hidden");
@@ -3331,13 +3363,16 @@
       toast("Select a mockup before running detection.");
       return;
     }
-    // Save state (may already be saved from detectFrame, but wizard can also be called
-    // from the method picker "Auto Detect" after prevTemplate was cleared)
+    exitAllDetectionModes();
     if (!detectionReviewState.prevTemplate) saveDetectionPreState();
-    maskDetectState.points = [];
-    clearMaskDetectDots();
-    greenRegularRenderUrlCache.clear();
-    clearDetectionOverlays();
+
+    // Immediately isolate from any previous mask or multi-region points
+    state.selected.mask_name = null;
+    state.selected.mask = null;
+    state.selected.raw_artwork_area = { mode: "geometry" };
+    if (state.selected.artwork_area) {
+      delete state.selected.artwork_area.regions;
+    }
 
     wizardState.active = true;
     wizardState.step = 1;
@@ -3354,26 +3389,88 @@
 
   async function runStage1Geometry() {
     wizardState.step = 1;
-    updateWizardUI("STAGE 1", "Automatic Geometry", "Searching for sharp nesting mockup borders in the mockup image...", []);
+    wizardState.isMultiFrame = false;
+    updateWizardUI("STAGE 1", "Automatic Geometry", "Searching for nesting frames in the mockup image...", []);
 
     try {
-      // Call the detect API with mode="geometry"
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/detect`, {
         method: "POST",
         body: JSON.stringify({ mode: "geometry" })
       });
+
+      const detectedRegions = (payload.proposal?.raw_artwork_area?.regions) || (payload.proposal?.artwork_area?.regions) || [];
+      if (detectedRegions.length > 1) {
+        state.selected = {
+          ...payload.template,
+          mask_name: payload.template?.mask_name || "mask.png",
+          raw_artwork_area: payload.proposal.raw_artwork_area,
+          artwork_area: payload.proposal.artwork_area
+        };
+        wizardState.isMultiFrame = true;
+        updateTemplateInQueue(state.selected);
+        drawSelection();
+
+        updateWizardUI(
+          "STAGE 1",
+          "Automatic Multi-Frame Detection",
+          `Found ${detectedRegions.length} frames across this mockup! All frames mapped and ready.`,
+          [
+            { text: "Approve All Frames", class: "primary", onclick: () => approveWizardSelection() },
+            { text: "Single Frame (SAM)", class: "secondary", onclick: () => runStage2SamCenter() },
+            { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
+          ]
+        );
+        return;
+      }
+
+      if (payload.template) {
+        state.selected = {
+          ...payload.template,
+          mask_name: null,
+          mask: null,
+          raw_artwork_area: payload.proposal?.raw_artwork_area || { mode: "geometry" },
+          artwork_area: payload.proposal?.artwork_area || state.selected.artwork_area
+        };
+        if (state.selected.artwork_area) {
+          delete state.selected.artwork_area.regions;
+        }
+        updateTemplateInQueue(state.selected);
+      }
 
       const layers = (payload.proposal && payload.proposal.raw_artwork_area && payload.proposal.raw_artwork_area.layers) || [];
       if (layers.length > 0) {
         wizardState.layers = layers;
         wizardState.layerIndex = layers.length - 1; // Default to the innermost (smallest) layer
         showWizardLayer();
+      } else if (payload.proposal && payload.proposal.artwork_area && payload.proposal.artwork_area.corners) {
+        wizardState.layers = [payload.proposal.artwork_area.corners];
+        wizardState.layerIndex = 0;
+        showWizardLayer();
       } else {
-        await runStage2SamCenter();
+        updateWizardUI(
+          "STAGE 1",
+          "Automatic Geometry",
+          "No nesting border layers detected. Choose next step:",
+          [
+            { text: "Try SAM 2.1", class: "primary", onclick: () => runStage2SamCenter() },
+            { text: "Manual Click", class: "secondary", onclick: () => runStage3UserClick() },
+            { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
+          ]
+        );
       }
     } catch (error) {
       console.warn("Stage 1 Geometry failed:", error);
-      await runStage2SamCenter();
+      toast("Stage 1 geometry detection encountered an issue: " + error.message);
+      updateWizardUI(
+        "STAGE 1",
+        "Automatic Geometry",
+        "Could not detect sharp frame contours. Choose next step:",
+        [
+          { text: "Try SAM 2.1", class: "primary", onclick: () => runStage2SamCenter() },
+          { text: "Manual Click", class: "secondary", onclick: () => runStage3UserClick() },
+          { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
+        ]
+      );
     }
   }
 
@@ -3381,10 +3478,12 @@
     const currentLayer = wizardState.layers[wizardState.layerIndex];
     if (!currentLayer) return;
 
-    // Dynamically apply selected layer to state so user sees it drawn on the SVG overlay
+    state.selected.mask_name = null;
+    state.selected.mask = null;
     if (!state.selected.artwork_area) {
       state.selected.artwork_area = {};
     }
+    delete state.selected.artwork_area.regions;
     state.selected.artwork_area.corners = JSON.parse(JSON.stringify(currentLayer));
 
     const xs = currentLayer.map(c => c.x);
@@ -3401,49 +3500,30 @@
     $("selectionSvg").classList.remove("hidden");
 
     const actions = [
-      { text: "Approve", class: "primary", onclick: () => approveWizardSelection() },
-      {
-        text: "Next", class: "secondary", onclick: () => {
-          wizardState.layerIndex = (wizardState.layerIndex - 1 + wizardState.layers.length) % wizardState.layers.length;
-          showWizardLayer();
-        }
-      },
-      { text: "Skip", class: "danger", onclick: () => runStage2SamCenter() }
+      { text: "Approve", class: "primary", onclick: () => approveWizardSelection() }
     ];
 
     if (wizardState.layers.length > 1) {
-      actions.splice(1, 0, {
-        text: "Use All as Frames",
+      actions.push({
+        text: "Next Layer",
         class: "secondary",
         onclick: () => {
-          // Compute center of each layer and send as frame_points for multi-frame detection.
-          const centers = wizardState.layers.map(corners => {
-            const xs = corners.map(c => c.x);
-            const ys = corners.map(c => c.y);
-            const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2);
-            const cy = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
-            return { x: cx, y: cy };
-          });
-          // Prevent closeWizard from restoring state (we're going into mask-detect flow).
-          detectionReviewState.wizardApproved = true;
-          wizardState.active = false;
-          $("detectionWizardHud").classList.add("hidden");
-          submitMaskDetection("frame_points", {
-            mode: "frame_points",
-            points: centers,
-            tolerance: 40,
-          });
+          wizardState.layerIndex = (wizardState.layerIndex - 1 + wizardState.layers.length) % wizardState.layers.length;
+          showWizardLayer();
         }
       });
     }
 
-    const filteredActions = wizardState.layers.length > 1 ? actions : [actions[0], actions[actions.length - 1]];
+    actions.push({ text: "Skip", class: "danger", onclick: () => runStage2SamCenter() });
+    actions.push({ text: "Cancel", class: "danger", onclick: () => cancelDetection() });
 
     updateWizardUI(
       "STAGE 1",
       "Automatic Geometry",
-      `Found ${wizardState.layers.length} nesting border layers. Currently showing innermost (Layer ${wizardState.layerIndex + 1}/${wizardState.layers.length}).`,
-      filteredActions
+      wizardState.layers.length > 1
+        ? `Found ${wizardState.layers.length} nesting border layers. Currently showing Layer ${wizardState.layerIndex + 1}/${wizardState.layers.length}.`
+        : "Found frame border. Click Approve to confirm or Skip for SAM 2.1.",
+      actions
     );
   }
 
@@ -3459,7 +3539,12 @@
 
       const proposal = payload.proposal;
       if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
-        state.selected.artwork_area = proposal.artwork_area;
+        state.selected.mask_name = null;
+        state.selected.mask = null;
+        state.selected.artwork_area = { ...proposal.artwork_area };
+        delete state.selected.artwork_area.regions;
+        state.selected.raw_artwork_area = proposal.raw_artwork_area || null;
+
         updateCoordinateLabels();
         drawSelection();
 
@@ -3555,7 +3640,11 @@
 
         const proposal = payload.proposal;
         if (proposal && proposal.artwork_area && proposal.artwork_area.corners) {
-          state.selected.artwork_area = proposal.artwork_area;
+          state.selected.mask_name = null;
+          state.selected.mask = null;
+          state.selected.artwork_area = { ...proposal.artwork_area };
+          delete state.selected.artwork_area.regions;
+          state.selected.raw_artwork_area = proposal.raw_artwork_area || null;
           wizardState.proposedCorners = proposal.artwork_area.corners;
 
           updateCoordinateLabels();
@@ -3621,10 +3710,17 @@
   async function approveWizardSelection() {
     setBusy(true);
     detectionReviewState.wizardApproved = true;
+    if (!wizardState.isMultiFrame) {
+      state.selected.mask_name = null;
+      state.selected.mask = null;
+      if (state.selected.artwork_area) {
+        delete state.selected.artwork_area.regions;
+      }
+    }
     closeWizard();
 
     try {
-      await saveTemplate();
+      await saveTemplate(false, true);
 
       // Call activate/approve endpoint to publish template
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/activate`, { method: "POST" });
@@ -3788,9 +3884,11 @@
     document.querySelectorAll(".submode-btn").forEach((btn) => {
       btn.onclick = async () => {
         if (state.busy) return;
+        exitAllDetectionModes();
         const submode = btn.dataset.submode;
         state.settings.CLASSIC_SUBMODE = submode;
         updateClassicSubmodes();
+        showProvider("classic");
         try {
           await api("/api/admin/settings/detection", {
             method: "PUT",
@@ -3800,9 +3898,6 @@
             })
           });
         } catch (_e) {}
-        if (state.selected) {
-          detectFrame();
-        }
       };
     });
   }
@@ -5761,6 +5856,7 @@
     );
     if (!confirmed) return;
     try {
+      exitAllDetectionModes();
       setBusy(true);
       setStatus("Resetting detection to initial state...");
       const payload = await api(`/api/admin/templates/${state.selected.template_id}/reset-detection`, { method: "POST" });
@@ -5772,6 +5868,7 @@
       }
       await loadCategories(state.selected.category_id);
       await loadTemplates(state.selected.template_id);
+      renderEditor();
       toast("Mockup restored to initial imported state");
       setStatus("Mockup reset to initial state");
     } catch (err) {
