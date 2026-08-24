@@ -157,10 +157,7 @@ def save_green_frame_mask_if_needed(
             mask = Image.new("L", (w, h), 0)
             draw = ImageDraw.Draw(mask)
             for region in regions:
-                # The mask decides what is visible, so it follows the bled outer
-                # quad where one exists; the exact opening would leave a rim of
-                # bare mockup showing between the artwork and the frame border.
-                corners = region.get("outer_corners") or region.get("corners")
+                corners = region.get("corners") or region.get("inner_corners")
                 if corners and len(corners) >= 3:
                     pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
                     draw.polygon(pts, fill=255)

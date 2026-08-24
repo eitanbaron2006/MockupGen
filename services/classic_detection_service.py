@@ -15,10 +15,6 @@ from services.green_frame_mockup_service import (
     green_mask_image,
 )
 
-# Pixels the mask reaches past the detected opening, so artwork tucks under the
-# frame border instead of leaving a rim of bare mockup showing around it.
-_OPENING_BLEED = 3
-
 _SAM_MODEL_INSTANCE = None
 _SAM_MODEL_LOCK = threading.Lock()
 
@@ -140,15 +136,11 @@ class ClassicDetectionProvider:
                 {
                     **_corner_bounds(corners),
                     "area": int(round(frame["area"])),
+                    # Only the opening is stored, and only once. The renderer
+                    # derives the mask and the warp target from it, so editing a
+                    # frame in the admin needs to touch nothing but these
+                    # corners -- a second copy would silently go stale.
                     "corners": corners,
-                    "inner_corners": corners,
-                    # The renderer warps artwork onto the outer quad and lets the
-                    # mask trim it, so this is the opening plus a hairline of
-                    # bleed -- never the frame's outer edge, which would shrink
-                    # the artwork to fit the border as well as the opening.
-                    "outer_corners": _inset_corners(corners, -_OPENING_BLEED, width, height),
-                    # Geometric corners are exact, so the renderer must warp
-                    # artwork straight onto them instead of over-stretching it.
                     "exact_envelope": True,
                 }
             )

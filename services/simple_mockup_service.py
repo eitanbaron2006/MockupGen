@@ -18,6 +18,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance, ImageOp
 from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
 from services.image_utils import get_perspective_coefficients
 from services.green_frame_mockup_service import (
+    EXACT_ENVELOPE_BLEED,
     detection_from_mask,
     detect_green_frames,
     parse_green_frame_settings,
@@ -589,17 +590,30 @@ def _render_green_frame_mockup(
     if detection is None:
         raw_mode = raw_artwork_area.get("mode") if isinstance(raw_artwork_area, dict) else None
         raw_provider = raw_artwork_area.get("provider") if isinstance(raw_artwork_area, dict) else None
-        is_vertex_ai = raw_mode == "vertex" or raw_provider == "vertex"
+        # Where the regions carry exact quads, they -- not a mask file written
+        # once at detection time -- define the shape. Otherwise an edited frame
+        # keeps rendering through the stale mask and the edit never shows up.
+        regions_define_mask = (
+            raw_mode in ("vertex", "geometry")
+            or raw_provider in ("vertex", "geometry")
+        )
 
-        if is_vertex_ai:
+        if regions_define_mask:
             raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
             if raw_regions:
                 from PIL import ImageDraw
                 mask_img = Image.new("L", canvas_size, 0)
                 draw = ImageDraw.Draw(mask_img)
                 for r in raw_regions:
-                    corners = r.get("corners") or r.get("inner_corners")
-                    if corners and len(corners) >= 3:
+                    corners = r.get("corners") or r.get("inner_corners") or r.get("outer_corners")
+                    if corners and len(corners) == 4 and r.get("exact_envelope"):
+                        # Grow by the same hairline the artwork is warped with,
+                        # so the two always meet at the frame border.
+                        grown = _expanded_quad(corners, EXACT_ENVELOPE_BLEED)
+                        draw.polygon(
+                            [(int(round(p["x"])), int(round(p["y"]))) for p in grown], fill=255
+                        )
+                    elif corners and len(corners) >= 3:
                         pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
                         draw.polygon(pts, fill=255)
                     else:

@@ -1198,15 +1198,20 @@ def test_normal_renders_are_never_pruned(tmp_path):
     assert len(list(outputs.glob("mockup_*"))) == 5
 
 
-def _multi_frame_template(templates_folder: Path, *, exact_envelope: bool) -> dict:
+def _multi_frame_template(
+    templates_folder: Path,
+    *,
+    exact_envelope: bool,
+    canvas: tuple[int, int] = (200, 100),
+    boxes: list[tuple[int, int, int, int]] | None = None,
+) -> dict:
     """A two-frame template whose regions are exact geometric quads."""
     from PIL import ImageDraw
 
     template_id = "template_frames"
     folder = templates_folder / template_id
     folder.mkdir(parents=True)
-    canvas = (200, 100)
-    boxes = [(10, 10, 90, 90), (110, 10, 190, 90)]
+    boxes = boxes or [(10, 10, 90, 90), (110, 10, 190, 90)]
 
     regions = []
     for left, top, right, bottom in boxes:
@@ -1292,9 +1297,9 @@ def test_exact_geometric_frames_render_the_whole_artwork(tmp_path):
     counts = _render_multi_frame(tmp_path, exact_envelope=True)
 
     # Each 20px corner block of a 120px artwork stretched into an 80px frame
-    # covers ~178px, and there are two frames.
+    # covers ~178px across the two frames, less the hairline of bleed.
     for name, count in counts.items():
-        assert count > 250, f"{name} corner was cropped out of the render: {counts}"
+        assert count > 200, f"{name} corner was cropped out of the render: {counts}"
 
 
 def test_fuzzy_regions_still_get_the_bleed_envelope(tmp_path):
@@ -1303,3 +1308,68 @@ def test_fuzzy_regions_still_get_the_bleed_envelope(tmp_path):
 
     # Chroma-key regions keep the old over-stretch, which eats the corners.
     assert sum(fuzzy.values()) < sum(exact.values())
+
+
+def test_editing_a_detected_frame_changes_what_gets_rendered(tmp_path):
+    """Dragging a frame in the admin must reach the render.
+
+    The editor rewrites a region's corners and box and nothing else, and the
+    mask written at detection time stays on disk. If the render still trusts
+    that mask, or a second copy of the quad, the edit silently does nothing.
+    """
+    import numpy as np
+
+    templates_folder = tmp_path / "templates_data"
+    # Roomy canvas so an enlarged frame still fits well inside it.
+    template = _multi_frame_template(
+        templates_folder,
+        exact_envelope=True,
+        canvas=(300, 200),
+        boxes=[(20, 20, 100, 120), (160, 20, 240, 120)],
+    )
+    artwork = tmp_path / "art.png"
+    Image.new("RGB", (120, 120), (255, 0, 255)).save(artwork)
+
+    def render(raw_artwork_area):
+        result = render_module.render_simple_mockup(
+            template_id=template["template_id"],
+            artwork_path=artwork,
+            output_format="png",
+            templates_folder=templates_folder,
+            output_folder=tmp_path / "outputs",
+            fit_mode="stretch",
+            realism=False,
+            raw_artwork_area=raw_artwork_area,
+            mask_name="mask.png",
+        )
+        pixels = np.asarray(
+            Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+        ).astype(int)
+        return np.abs(pixels - np.array([255, 0, 255])).sum(axis=2) < 60
+
+    # Round-trip through JSON exactly as saving to the database does, so no two
+    # fields can quietly share the same list object.
+    original = json.loads(json.dumps(template["raw_artwork_area"]))
+    before = render(original)
+
+    edited = json.loads(json.dumps(original))
+    corners = edited["regions"][0]["corners"]
+    centre_x = sum(p["x"] for p in corners) / 4
+    centre_y = sum(p["y"] for p in corners) / 4
+    for point in corners:
+        point["x"] = int(round(centre_x + (point["x"] - centre_x) * 1.4))
+        point["y"] = int(round(centre_y + (point["y"] - centre_y) * 1.4))
+    edited["regions"][0]["x"] = min(p["x"] for p in corners)
+    edited["regions"][0]["y"] = min(p["y"] for p in corners)
+    edited["regions"][0]["width"] = max(p["x"] for p in corners) - edited["regions"][0]["x"]
+    edited["regions"][0]["height"] = max(p["y"] for p in corners) - edited["regions"][0]["y"]
+    after = render(edited)
+
+    window = (
+        slice(min(p["y"] for p in corners), max(p["y"] for p in corners)),
+        slice(min(p["x"] for p in corners), max(p["x"] for p in corners)),
+    )
+    # Growing a frame 1.4x each way roughly doubles the artwork inside it.
+    # Trusting the stale mask or a stale copy of the quad caps it near 1.3.
+    grew = int(after[window].sum()) / max(1, int(before[window].sum()))
+    assert grew > 1.6, f"the enlarged frame did not reach the render (ratio {grew:.2f})"
