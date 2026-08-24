@@ -189,6 +189,7 @@
             "y": 258
           }
         ],
+        "exact_envelope": true,
         "height": 177,
         "inner_corners": [
           {
@@ -250,6 +251,7 @@
             "y": 257
           }
         ],
+        "exact_envelope": true,
         "height": 175,
         "inner_corners": [
           {
@@ -311,6 +313,7 @@
             "y": 257
           }
         ],
+        "exact_envelope": true,
         "height": 172,
         "inner_corners": [
           {
@@ -372,6 +375,7 @@
             "y": 279
           }
         ],
+        "exact_envelope": true,
         "height": 173,
         "inner_corners": [
           {
@@ -433,6 +437,7 @@
             "y": 277
           }
         ],
+        "exact_envelope": true,
         "height": 167,
         "inner_corners": [
           {
@@ -494,6 +499,7 @@
             "y": 277
           }
         ],
+        "exact_envelope": true,
         "height": 166,
         "inner_corners": [
           {
@@ -555,6 +561,7 @@
             "y": 277
           }
         ],
+        "exact_envelope": true,
         "height": 166,
         "inner_corners": [
           {
@@ -616,6 +623,7 @@
             "y": 281
           }
         ],
+        "exact_envelope": true,
         "height": 165,
         "inner_corners": [
           {
@@ -677,6 +685,7 @@
             "y": 280
           }
         ],
+        "exact_envelope": true,
         "height": 155,
         "inner_corners": [
           {
@@ -738,6 +747,7 @@
             "y": 702
           }
         ],
+        "exact_envelope": true,
         "height": 136,
         "inner_corners": [
           {
@@ -791,14 +801,15 @@
             "y": 588
           },
           {
-            "x": 1452,
+            "x": 1453,
             "y": 781
           },
           {
-            "x": 1318,
-            "y": 780
+            "x": 1312,
+            "y": 781
           }
         ],
+        "exact_envelope": true,
         "height": 195,
         "inner_corners": [
           {
@@ -860,6 +871,7 @@
             "y": 817
           }
         ],
+        "exact_envelope": true,
         "height": 225,
         "inner_corners": [
           {
@@ -921,6 +933,7 @@
             "y": 767
           }
         ],
+        "exact_envelope": true,
         "height": 171,
         "inner_corners": [
           {
@@ -982,6 +995,7 @@
             "y": 807
           }
         ],
+        "exact_envelope": true,
         "height": 205,
         "inner_corners": [
           {
@@ -1043,6 +1057,7 @@
             "y": 862
           }
         ],
+        "exact_envelope": true,
         "height": 138,
         "inner_corners": [
           {

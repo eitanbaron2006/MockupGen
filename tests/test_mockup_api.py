@@ -1196,3 +1196,110 @@ def test_normal_renders_are_never_pruned(tmp_path):
 
     outputs = folders["OUTPUT_FOLDER"]
     assert len(list(outputs.glob("mockup_*"))) == 5
+
+
+def _multi_frame_template(templates_folder: Path, *, exact_envelope: bool) -> dict:
+    """A two-frame template whose regions are exact geometric quads."""
+    from PIL import ImageDraw
+
+    template_id = "template_frames"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (200, 100)
+    boxes = [(10, 10, 90, 90), (110, 10, 190, 90)]
+
+    regions = []
+    for left, top, right, bottom in boxes:
+        corners = [
+            {"x": left, "y": top}, {"x": right, "y": top},
+            {"x": right, "y": bottom}, {"x": left, "y": bottom},
+        ]
+        regions.append({
+            "x": left, "y": top, "width": right - left, "height": bottom - top,
+            "area": (right - left) * (bottom - top),
+            "corners": corners, "inner_corners": corners, "outer_corners": corners,
+            "exact_envelope": exact_envelope,
+        })
+    raw_artwork_area = {"mode": "geometry", "regions": regions}
+
+    mask = Image.new("L", canvas, 0)
+    draw = ImageDraw.Draw(mask)
+    for box in boxes:
+        draw.rectangle(box, fill=255)
+    mask.save(folder / "mask.png")
+
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+    (folder / "manifest.json").write_text(json.dumps({
+        "template_id": template_id, "name": "frames",
+        "canvas_width": canvas[0], "canvas_height": canvas[1],
+        "artwork_area": {**{"x": 10, "y": 10, "width": 80, "height": 80},
+                         "corners": regions[0]["corners"]},
+        "fit_mode": "stretch", "background": "background.png", "foreground": None,
+        "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+        "raw_artwork_area": raw_artwork_area, "detection_provider": "classic",
+    }), encoding="utf-8")
+    return {"template_id": template_id, "raw_artwork_area": raw_artwork_area}
+
+
+def _corner_marked_artwork(path: Path) -> dict[str, tuple[int, int, int]]:
+    """White artwork with a distinct colour block in each corner."""
+    from PIL import ImageDraw
+
+    size, margin = 120, 20
+    colours = {
+        "tl": (255, 0, 0), "tr": (0, 200, 0),
+        "br": (0, 0, 255), "bl": (255, 200, 0),
+    }
+    art = Image.new("RGB", (size, size), (255, 255, 255))
+    draw = ImageDraw.Draw(art)
+    draw.rectangle((0, 0, margin, margin), fill=colours["tl"])
+    draw.rectangle((size - margin, 0, size, margin), fill=colours["tr"])
+    draw.rectangle((size - margin, size - margin, size, size), fill=colours["br"])
+    draw.rectangle((0, size - margin, margin, size), fill=colours["bl"])
+    art.save(path)
+    return colours
+
+
+def _render_multi_frame(tmp_path: Path, *, exact_envelope: bool):
+    import numpy as np
+
+    templates_folder = tmp_path / "templates_data"
+    template = _multi_frame_template(templates_folder, exact_envelope=exact_envelope)
+    artwork = tmp_path / "marked.png"
+    colours = _corner_marked_artwork(artwork)
+
+    result = render_module.render_simple_mockup(
+        template_id=template["template_id"],
+        artwork_path=artwork,
+        output_format="png",
+        templates_folder=templates_folder,
+        output_folder=tmp_path / "outputs",
+        fit_mode="stretch",
+        realism=False,
+        raw_artwork_area=template["raw_artwork_area"],
+        mask_name="mask.png",
+    )
+    rendered = Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+    pixels = np.asarray(rendered).astype(int)
+    return {
+        name: int((np.abs(pixels - np.array(colour)).sum(axis=2) < 60).sum())
+        for name, colour in colours.items()
+    }
+
+
+def test_exact_geometric_frames_render_the_whole_artwork(tmp_path):
+    counts = _render_multi_frame(tmp_path, exact_envelope=True)
+
+    # Each 20px corner block of a 120px artwork stretched into an 80px frame
+    # covers ~178px, and there are two frames.
+    for name, count in counts.items():
+        assert count > 250, f"{name} corner was cropped out of the render: {counts}"
+
+
+def test_fuzzy_regions_still_get_the_bleed_envelope(tmp_path):
+    exact = _render_multi_frame(tmp_path / "exact", exact_envelope=True)
+    fuzzy = _render_multi_frame(tmp_path / "fuzzy", exact_envelope=False)
+
+    # Chroma-key regions keep the old over-stretch, which eats the corners.
+    assert sum(fuzzy.values()) < sum(exact.values())

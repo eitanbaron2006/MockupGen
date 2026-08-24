@@ -147,6 +147,9 @@ class ClassicDetectionProvider:
                     # bleed -- never the frame's outer edge, which would shrink
                     # the artwork to fit the border as well as the opening.
                     "outer_corners": _inset_corners(corners, -_OPENING_BLEED, width, height),
+                    # Geometric corners are exact, so the renderer must warp
+                    # artwork straight onto them instead of over-stretching it.
+                    "exact_envelope": True,
                 }
             )
         layers = [_corner_dicts(layer, width, height) for layer in frames[0]["layers"]]

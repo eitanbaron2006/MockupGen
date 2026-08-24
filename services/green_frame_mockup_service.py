@@ -52,6 +52,10 @@ class GreenRegion:
     corners: Optional[dict[str, dict[str, float]]] = None
     inner_corners: Optional[dict[str, dict[str, float]]] = None
     outer_corners: Optional[dict[str, dict[str, float]]] = None
+    # Chroma-key edges are fuzzy, so artwork is stretched past them and clipped
+    # back. Geometric corners are exact and need no such margin -- stretching
+    # them would crop the artwork instead of bleeding it under the frame.
+    exact_envelope: bool = False
 
 
 @dataclass
@@ -394,6 +398,7 @@ def detection_from_mask(
             region.corners = _list_to_corners(item.get("corners") or item.get("inner_corners"))
             region.inner_corners = _list_to_corners(item.get("inner_corners")) or region.corners
             region.outer_corners = _list_to_corners(item.get("outer_corners")) or region.corners
+            region.exact_envelope = bool(item.get("exact_envelope"))
             regions.append(region)
     if not regions:
         regions = _connected_regions(detect_mask, max(8, min(settings.min_area, int(raw_mask.size * 0.5))))
@@ -888,7 +893,9 @@ def _render_perspective_region(region: GreenRegion, art: Image.Image, state: Gre
     outer = region.outer_corners or region.corners
     if not inner:
         return None
-    if settings.wide_coverage_envelope and outer:
+    if region.exact_envelope and outer:
+        warp = outer
+    elif settings.wide_coverage_envelope and outer:
         expansion_amount = max(10, settings.edge_expand + 8) if state.width >= 100 else max(2, settings.edge_expand + 2)
         warp = _expanded_quad(outer, expansion_amount)
     else:

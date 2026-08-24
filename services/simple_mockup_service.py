@@ -636,6 +636,7 @@ def _render_green_frame_mockup(
                             detection.regions[i].corners = c
                             detection.regions[i].inner_corners = c
                             detection.regions[i].outer_corners = _list_to_corners(r.get("outer_corners")) or c
+                            detection.regions[i].exact_envelope = bool(r.get("exact_envelope"))
                             xs = [float(p.get("x", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
                             ys = [float(p.get("y", 0)) for p in (r.get("corners") or []) if isinstance(p, dict)]
                             if xs and ys:
