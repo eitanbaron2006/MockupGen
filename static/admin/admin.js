@@ -2111,12 +2111,47 @@
           });
 
           if (displayPoints.length > 0) {
+            const minX = Math.min(...displayPoints.map(p => p.x));
+            const maxX = Math.max(...displayPoints.map(p => p.x));
+            const minY = Math.min(...displayPoints.map(p => p.y));
+
             const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
             tag.setAttribute("class", "svg-zone-tag");
-            tag.setAttribute("x", displayPoints[0].x);
-            tag.setAttribute("y", displayPoints[0].y - 8);
+            tag.setAttribute("x", minX);
+            tag.setAttribute("y", minY - 8);
             tag.textContent = `Frame ${rIdx + 1}`;
             multiGroup.appendChild(tag);
+
+            // Interactive Delete badge '✕' on top-right corner
+            const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            badgeG.setAttribute("class", "region-delete-badge");
+            badgeG.style.cursor = "pointer";
+
+            const badgeCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            badgeCircle.setAttribute("cx", maxX);
+            badgeCircle.setAttribute("cy", minY - 8);
+            badgeCircle.setAttribute("r", "8");
+            badgeCircle.setAttribute("fill", "#ef4444");
+            badgeCircle.setAttribute("stroke", "#ffffff");
+            badgeCircle.setAttribute("stroke-width", "1.5");
+
+            const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            badgeText.setAttribute("x", maxX);
+            badgeText.setAttribute("y", minY - 5);
+            badgeText.setAttribute("text-anchor", "middle");
+            badgeText.setAttribute("fill", "#ffffff");
+            badgeText.setAttribute("font-size", "10px");
+            badgeText.setAttribute("font-weight", "bold");
+            badgeText.setAttribute("pointer-events", "none");
+            badgeText.textContent = "✕";
+
+            badgeG.appendChild(badgeCircle);
+            badgeG.appendChild(badgeText);
+            badgeG.onclick = (e) => {
+              e.stopPropagation();
+              removeDetectedRegion(rIdx);
+            };
+            multiGroup.appendChild(badgeG);
           }
         });
       }
@@ -3413,9 +3448,10 @@
         updateWizardUI(
           "STAGE 1",
           "Automatic Multi-Frame Detection",
-          `Found ${detectedRegions.length} frames across this mockup! All frames mapped and ready.`,
+          `Found ${detectedRegions.length} frames across this mockup. Click '✕' on any frame to remove it, or pick manually:`,
           [
-            { text: "Approve All Frames", class: "primary", onclick: () => approveWizardSelection() },
+            { text: `Approve (${detectedRegions.length})`, class: "primary", onclick: () => approveWizardSelection() },
+            { text: "Pick Frames (Points)", class: "secondary", onclick: () => runFramePointsMode() },
             { text: "Single Frame (SAM)", class: "secondary", onclick: () => runStage2SamCenter() },
             { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
           ]
@@ -3735,6 +3771,46 @@
       setStatus("Approval failed", true);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function removeDetectedRegion(rIdx) {
+    if (!state.selected?.raw_artwork_area?.regions) return;
+    state.selected.raw_artwork_area.regions.splice(rIdx, 1);
+    const regions = state.selected.raw_artwork_area.regions;
+    if (regions.length === 0) {
+      toast("All frames removed. Switching to manual point selection.");
+      runFramePointsMode();
+      return;
+    }
+    // Re-index remaining frames
+    regions.forEach((r, i) => { r.index = i + 1; });
+    const allCorners = regions.flatMap(r => r.corners || []);
+    const xs = allCorners.map(c => c.x);
+    const ys = allCorners.map(c => c.y);
+    state.selected.artwork_area = {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
+      corners: regions[0].corners,
+      regions: regions
+    };
+    updateTemplateInQueue(state.selected);
+    drawSelection();
+    toast(`Frame removed. ${regions.length} frame(s) remaining.`);
+    if (wizardState.active && wizardState.isMultiFrame) {
+      updateWizardUI(
+        "STAGE 1",
+        "Automatic Multi-Frame Detection",
+        `Showing ${regions.length} frame(s). Click '✕' to remove any frame:`,
+        [
+          { text: `Approve (${regions.length})`, class: "primary", onclick: () => approveWizardSelection() },
+          { text: "Pick Frames (Points)", class: "secondary", onclick: () => runFramePointsMode() },
+          { text: "Single Frame (SAM)", class: "secondary", onclick: () => runStage2SamCenter() },
+          { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
+        ]
+      );
     }
   }
 
