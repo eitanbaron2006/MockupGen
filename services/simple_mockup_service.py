@@ -5,6 +5,7 @@ import base64
 import re
 import threading
 from collections import OrderedDict
+from base64 import b64encode
 from io import BytesIO
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -1453,6 +1454,45 @@ _OUTPUT_FORMATS = {
 }
 
 
+# Legacy name for preview files written by earlier builds, kept so the cleanup
+# below can still find and remove them. Previews are no longer written to disk.
+PREVIEW_PREFIX = "preview_"
+
+
+def prune_preview_outputs(output_folder: Path, keep: int = 0) -> int:
+    """Delete leftover preview files from builds that still wrote them."""
+    if not output_folder.is_dir():
+        return 0
+    previews = sorted(
+        (p for p in output_folder.glob(f"{PREVIEW_PREFIX}*") if p.is_file()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    removed = 0
+    for stale in previews[max(0, keep):]:
+        try:
+            stale.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def _encode_output(composed: Image.Image, output_format: str, quality: int | None) -> str:
+    """Return the render as a data URL, leaving nothing behind on disk."""
+    pil_format, extension = _OUTPUT_FORMATS[(output_format or "png").lower()]
+    resolved_quality = 90 if quality is None else max(1, min(100, int(quality)))
+    buffer = BytesIO()
+    if pil_format == "PNG":
+        composed.save(buffer, format="PNG", compress_level=2)
+    elif pil_format == "WEBP":
+        composed.save(buffer, format="WEBP", quality=resolved_quality, method=4)
+    else:
+        composed.convert("RGB").save(buffer, format=pil_format, quality=resolved_quality)
+    mime = "jpeg" if extension in {"jpg", "jpeg"} else extension
+    return f"data:image/{mime};base64," + b64encode(buffer.getvalue()).decode("ascii")
+
+
 def _save_output(
     composed: Image.Image,
     output_folder: Path,
@@ -1476,6 +1516,24 @@ def _save_output(
     return output_name
 
 
+def _output_reference(
+    composed: Image.Image,
+    output_folder: Path,
+    output_format: str,
+    quality: int | None,
+    preview: bool,
+) -> str:
+    """Where the caller should fetch this render from.
+
+    Admin canvas previews are throwaway and used to pile up in the outputs
+    folder, so they come back inline and never reach disk. Real renders are
+    saved and served from /outputs as before.
+    """
+    if preview:
+        return _encode_output(composed, output_format, quality)
+    return f"/outputs/{_save_output(composed, output_folder, output_format, quality)}"
+
+
 def render_simple_mockup(
     *,
     template_id: str,
@@ -1491,6 +1549,7 @@ def render_simple_mockup(
     mask_name: str | None = None,
     artwork_paths: list[Path] | None = None,
     quality: int | None = None,
+    preview: bool = False,
 ) -> RenderResult:
     if (output_format or "png").lower() not in _OUTPUT_FORMATS:
         raise RenderValidationError(
@@ -1584,11 +1643,11 @@ def render_simple_mockup(
             composed = Image.alpha_composite(composed, foreground)
         if realism:
             composed = _apply_effects_by_target(composed, active_effects, "all")
-        output_name = _save_output(composed, output_folder, output_format, quality)
+        output_ref = _output_reference(composed, output_folder, output_format, quality, preview)
         return RenderResult(
             mode="simple",
             template_id=template_id,
-            output_url=f"/outputs/{output_name}",
+            output_url=output_ref,
             width=canvas_size[0],
             height=canvas_size[1],
         )
@@ -1654,11 +1713,11 @@ def render_simple_mockup(
         active_effects = effects if effects is not None else manifest.get("effects")
         composed = _apply_effects_by_target(composed, active_effects, "all")
 
-    output_name = _save_output(composed, output_folder, output_format, quality)
+    output_ref = _output_reference(composed, output_folder, output_format, quality, preview)
     return RenderResult(
         mode="simple",
         template_id=template_id,
-        output_url=f"/outputs/{output_name}",
+        output_url=output_ref,
         width=canvas_size[0],
         height=canvas_size[1],
     )

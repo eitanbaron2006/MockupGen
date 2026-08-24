@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -208,9 +209,16 @@ def render_mockup():
     if not current_app.config.get(enabled_flag, False):
         return error_response(f"{mode.upper()} rendering mode is disabled", 503)
 
+    # Admin canvas previews are throwaway on both ends: the render comes back
+    # inline, and the artwork they upload is discarded instead of piling up in
+    # the uploads folder on every redraw.
+    preview = request.form.get("preview", "").strip().lower() == "true"
+    scratch_dir = TemporaryDirectory(prefix="mockup-preview-") if preview else None
+
     try:
         artwork_path = store_uploaded_artwork(
-            artwork, Path(current_app.config["UPLOAD_FOLDER"])
+            artwork,
+            Path(scratch_dir.name) if scratch_dir else Path(current_app.config["UPLOAD_FOLDER"]),
         )
         if mode == "simple":
             if not template_id:
@@ -254,19 +262,22 @@ def render_mockup():
             except ValueError:
                 return error_response("quality must be an integer between 1 and 100", 400)
 
+            output_folder = Path(current_app.config["OUTPUT_FOLDER"])
+
             result = render_simple_mockup(
                 template_id=template_id,
                 artwork_path=artwork_path,
                 output_format=output_format,
                 quality=quality,
                 templates_folder=render_templates_folder,
-                output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
+                output_folder=output_folder,
                 fit_mode=db_fit_mode,
                 realism=realism,
                 effects=db_effects,
                 artwork_area=db_artwork_area,
                 raw_artwork_area=db_raw_artwork_area,
                 mask_name=db_mask_name,
+                preview=preview,
             )
             return jsonify(result.as_response())
         elif mode == "ai":
@@ -301,5 +312,8 @@ def render_mockup():
         return error_response(str(error), 501)
     except Exception as error:
         return error_response(str(error), 500)
+    finally:
+        if scratch_dir is not None:
+            scratch_dir.cleanup()
 
     return error_response("Rendering did not produce an output", 500)

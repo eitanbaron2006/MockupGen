@@ -27,9 +27,25 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     for key in ("UPLOAD_FOLDER", "OUTPUT_FOLDER", "TEMPLATES_FOLDER", "DRAFT_TEMPLATES_FOLDER"):
         Path(app.config[key]).mkdir(parents=True, exist_ok=True)
+
+    # Earlier builds saved every admin canvas preview into the outputs folder.
+    # Previews are inline now, so sweep the ones already left behind.
+    from services.simple_mockup_service import prune_preview_outputs
+
+    prune_preview_outputs(Path(app.config["OUTPUT_FOLDER"]))
     catalog_service = CatalogService(Path(app.config["DATABASE_PATH"]))
     catalog_service.initialize(Path(app.config["TEMPLATES_FOLDER"]))
     app.extensions["catalog_service"] = catalog_service
+
+    # Admin assets were cache-busted by a hand-edited ?v= number, so any edit
+    # that forgot to bump it shipped stale JS/CSS to every open browser. The
+    # stamp now follows the file itself and cannot drift.
+    @app.template_global()
+    def asset_version(filename: str) -> str:
+        try:
+            return str(int((Path(app.static_folder) / filename).stat().st_mtime))
+        except OSError:
+            return "0"
 
     from services.telemetry_service import TelemetryService
     telemetry_service = TelemetryService(

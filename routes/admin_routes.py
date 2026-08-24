@@ -123,6 +123,23 @@ def _run_mask_detection(
     return proposal, mask
 
 
+def _centered_artwork_area(width: int, height: int) -> dict[str, int]:
+    """The neutral artwork box a template falls back to when detection is cleared."""
+    orientation = orientation_for_size(width, height)
+    if orientation == "portrait":
+        area_width, area_height = int(width * 0.56), int(height * 0.62)
+    elif orientation == "landscape":
+        area_width, area_height = int(width * 0.62), int(height * 0.56)
+    else:
+        area_width = area_height = int(min(width, height) * 0.58)
+    return {
+        "x": (width - area_width) // 2,
+        "y": (height - area_height) // 2,
+        "width": area_width,
+        "height": area_height,
+    }
+
+
 def save_green_frame_mask_if_needed(
     provider: Any, background: Path, mode: str, proposal: Any = None
 ) -> str | None:
@@ -140,7 +157,10 @@ def save_green_frame_mask_if_needed(
             mask = Image.new("L", (w, h), 0)
             draw = ImageDraw.Draw(mask)
             for region in regions:
-                corners = region.get("corners")
+                # The mask decides what is visible, so it follows the bled outer
+                # quad where one exists; the exact opening would leave a rim of
+                # bare mockup showing between the artwork and the frame border.
+                corners = region.get("outer_corners") or region.get("corners")
                 if corners and len(corners) >= 3:
                     pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
                     draw.polygon(pts, fill=255)
@@ -450,21 +470,25 @@ def reset_admin_template_detection(template_id: str):
         except TemplateImportError:
             bg_path = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "background.png"
 
-        detector = ClassicDetectionProvider()
-        proposal = detector.detect(bg_path)
-        mode = "green_frames_mockups" if (proposal.raw_artwork_area and isinstance(proposal.raw_artwork_area, dict) and proposal.raw_artwork_area.get("mode") == "green_frames_mockups") else "auto"
-        mask_name = save_green_frame_mask_if_needed(detector, bg_path, mode, proposal)
+        # Reset clears detection; it never runs a new one. Re-detecting here is
+        # what made the button look like it did nothing -- the frames it wiped
+        # reappeared immediately.
+        from PIL import Image as _ResetImage
+
+        with _ResetImage.open(bg_path) as background:
+            canvas_width, canvas_height = background.size
+        artwork_area = _centered_artwork_area(canvas_width, canvas_height)
 
         changes = {
-            "artwork_area": proposal.artwork_area,
+            "artwork_area": artwork_area,
             "orientation": orientation_for_size(
-                proposal.artwork_area["width"],
-                proposal.artwork_area["height"],
+                artwork_area["width"],
+                artwork_area["height"],
             ),
-            "raw_artwork_area": proposal.raw_artwork_area,
-            "mask_name": mask_name,
-            "detection_provider": proposal.provider,
-            "detection_confidence": proposal.confidence,
+            "raw_artwork_area": None,
+            "mask_name": None,
+            "detection_provider": None,
+            "detection_confidence": None,
         }
         updated = catalog().update_template(template_id, changes)
 
@@ -473,12 +497,12 @@ def reset_admin_template_detection(template_id: str):
             manifest_path = templates_folder / template_id / "manifest.json"
             if manifest_path.is_file():
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest["artwork_area"] = proposal.artwork_area
+                manifest["artwork_area"] = artwork_area
                 manifest["orientation"] = updated["orientation"]
-                manifest["mask"] = mask_name
-                manifest["raw_artwork_area"] = proposal.raw_artwork_area
-                manifest["detection_provider"] = proposal.provider
-                manifest["detection_confidence"] = proposal.confidence
+                manifest["mask"] = None
+                manifest["raw_artwork_area"] = None
+                manifest["detection_provider"] = None
+                manifest["detection_confidence"] = None
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
                 )

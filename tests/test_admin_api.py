@@ -168,6 +168,57 @@ def test_green_frame_detection_saves_mask_for_template_rendering(tmp_path: Path)
       assert mask.getpixel((33, 25)) == 255
 
 
+def test_auto_detection_returns_all_frames_and_builds_a_multi_frame_mask(tmp_path: Path):
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Gallery"}, headers=headers
+    ).get_json()["category"]
+
+    from PIL import ImageDraw
+
+    image = Image.new("RGB", (900, 700), (232, 226, 216))
+    draw = ImageDraw.Draw(image)
+    boxes = [(80, 90, 320, 430), (350, 90, 590, 430), (620, 90, 860, 430)]
+    for box in boxes:
+        draw.rectangle(box, fill=(255, 255, 255), outline=(60, 48, 38), width=6)
+        draw.rectangle(
+            (box[0] + 10, box[1] + 10, box[2] - 10, box[3] - 10),
+            outline=(150, 140, 130),
+            width=2,
+        )
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    stream.seek(0)
+    template = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(stream, "wall.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]
+
+    response = client.post(
+        f"/api/admin/templates/{template['template_id']}/detect",
+        json={"mode": "geometry"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    regions = payload["proposal"]["raw_artwork_area"]["regions"]
+    assert len(regions) == 3
+    # Several regions need a mask so the multi-frame render path can clip them.
+    assert payload["template"]["mask_name"] == "mask.png"
+    mask_path = tmp_path / "draft_templates" / template["template_id"] / "mask.png"
+    assert mask_path.is_file()
+    with Image.open(mask_path) as mask:
+        for left, top, right, bottom in boxes:
+            assert mask.getpixel(((left + right) // 2, (top + bottom) // 2)) == 255
+        assert mask.getpixel((20, 20)) == 0
+
+
 def test_detection_settings_can_test_provider_without_saving_proposal(
     tmp_path: Path, monkeypatch
 ):
@@ -605,9 +656,11 @@ def test_reset_admin_template_detection(tmp_path: Path):
     data = res.get_json()
     assert data["success"] is True
     tpl = data["template"]
-    assert tpl["raw_artwork_area"] != {"regions": [{"x": 10, "y": 10, "width": 50, "height": 50}]}
+    # Reset clears detection outright; it must not leave a fresh one behind.
+    assert tpl["raw_artwork_area"] is None
     assert tpl["mask_name"] is None
-    assert tpl["detection_provider"] == "classic"
+    assert tpl["detection_provider"] is None
+    assert tpl["detection_confidence"] is None
     assert not mask_file.is_file()
 
 

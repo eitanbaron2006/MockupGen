@@ -7,8 +7,8 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>MockupGen · Server Pulse & Operations</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=22">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/server_pulse.css') }}?v=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v={{ asset_version('admin/admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/server_pulse.css') }}?v={{ asset_version('admin/server_pulse.css') }}">
 </head>
 
 <body class="pulse-page">
@@ -235,7 +235,7 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='admin/server_pulse.js') }}?v=1"></script>
+  <script src="{{ url_for('static', filename='admin/server_pulse.js') }}?v={{ asset_version('admin/server_pulse.js') }}"></script>
 </body>
 
 </html>

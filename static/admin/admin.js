@@ -2041,6 +2041,8 @@
         const crossOpacity = (style.crossOpacity || 100) / 100;
         const halfSize = 12 / state.zoom;
         const hitboxR = 14 / state.zoom;
+        const badgeRadius = 11 / state.zoom;
+        const deleteBadges = [];
 
         template.raw_artwork_area.regions.forEach((region, rIdx) => {
           const corners = region.corners || region.inner_corners || areaCorners(region);
@@ -2122,37 +2124,56 @@
             tag.textContent = `Frame ${rIdx + 1}`;
             multiGroup.appendChild(tag);
 
-            // Interactive Delete badge '✕' on top-right corner
-            const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            badgeG.setAttribute("class", "region-delete-badge");
-            badgeG.style.cursor = "pointer";
-
-            const badgeCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            badgeCircle.setAttribute("cx", maxX);
-            badgeCircle.setAttribute("cy", minY - 8);
-            badgeCircle.setAttribute("r", "8");
-            badgeCircle.setAttribute("fill", "#ef4444");
-            badgeCircle.setAttribute("stroke", "#ffffff");
-            badgeCircle.setAttribute("stroke-width", "1.5");
-
-            const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            badgeText.setAttribute("x", maxX);
-            badgeText.setAttribute("y", minY - 5);
-            badgeText.setAttribute("text-anchor", "middle");
-            badgeText.setAttribute("fill", "#ffffff");
-            badgeText.setAttribute("font-size", "10px");
-            badgeText.setAttribute("font-weight", "bold");
-            badgeText.setAttribute("pointer-events", "none");
-            badgeText.textContent = "✕";
-
-            badgeG.appendChild(badgeCircle);
-            badgeG.appendChild(badgeText);
-            badgeG.onclick = (e) => {
-              e.stopPropagation();
-              removeDetectedRegion(rIdx);
-            };
-            multiGroup.appendChild(badgeG);
+            // Delete badges are drawn after every region so a neighbouring
+            // frame's polygon can never sit on top of one and eat the click.
+            deleteBadges.push({ rIdx, x: maxX, y: minY - badgeRadius - 2 });
           }
+        });
+
+        deleteBadges.forEach(({ rIdx, x, y }) => {
+          const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          badgeG.setAttribute("class", "region-delete-badge");
+          badgeG.style.cursor = "pointer";
+          // The parent SVG sets pointer-events:none; opt back in explicitly so
+          // the badge stays clickable even against a stale cached stylesheet.
+          badgeG.style.pointerEvents = "auto";
+
+          const badgeCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          badgeCircle.setAttribute("cx", x);
+          badgeCircle.setAttribute("cy", y);
+          badgeCircle.setAttribute("r", badgeRadius);
+          badgeCircle.setAttribute("fill", "#ef4444");
+          badgeCircle.setAttribute("stroke", "#ffffff");
+          badgeCircle.setAttribute("stroke-width", 1.5 / state.zoom);
+
+          const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          badgeText.setAttribute("x", x);
+          badgeText.setAttribute("y", y + badgeRadius * 0.36);
+          badgeText.setAttribute("text-anchor", "middle");
+          badgeText.setAttribute("fill", "#ffffff");
+          badgeText.setAttribute("font-size", `${badgeRadius * 1.25}px`);
+          badgeText.setAttribute("font-weight", "bold");
+          badgeText.setAttribute("pointer-events", "none");
+          badgeText.textContent = "✕";
+
+          const badgeTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          badgeTitle.textContent = `Remove frame ${rIdx + 1}`;
+
+          badgeG.appendChild(badgeCircle);
+          badgeG.appendChild(badgeText);
+          badgeG.appendChild(badgeTitle);
+          // Swallow the pointerdown so the canvas drag handler never starts a
+          // gesture here; the click that follows then reaches the badge.
+          badgeG.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          });
+          badgeG.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            removeDetectedRegion(rIdx);
+          });
+          multiGroup.appendChild(badgeG);
         });
       }
     } else {
@@ -3448,11 +3469,9 @@
         updateWizardUI(
           "STAGE 1",
           "Automatic Multi-Frame Detection",
-          `Found ${detectedRegions.length} frames across this mockup. Click '✕' on any frame to remove it, or pick manually:`,
+          `Found ${detectedRegions.length} frames across this mockup. Click '✕' on any frame to remove it:`,
           [
             { text: `Approve (${detectedRegions.length})`, class: "primary", onclick: () => approveWizardSelection() },
-            { text: "Pick Frames (Points)", class: "secondary", onclick: () => runFramePointsMode() },
-            { text: "Single Frame (SAM)", class: "secondary", onclick: () => runStage2SamCenter() },
             { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
           ]
         );
@@ -3779,8 +3798,10 @@
     state.selected.raw_artwork_area.regions.splice(rIdx, 1);
     const regions = state.selected.raw_artwork_area.regions;
     if (regions.length === 0) {
-      toast("All frames removed. Switching to manual point selection.");
-      runFramePointsMode();
+      // Removing the last frame leaves nothing to approve; drop back to the
+      // pre-detection state rather than pulling the user into another mode.
+      toast("All frames removed. Detection cancelled.");
+      cancelDetection();
       return;
     }
     // Re-index remaining frames
@@ -3806,8 +3827,6 @@
         `Showing ${regions.length} frame(s). Click '✕' to remove any frame:`,
         [
           { text: `Approve (${regions.length})`, class: "primary", onclick: () => approveWizardSelection() },
-          { text: "Pick Frames (Points)", class: "secondary", onclick: () => runFramePointsMode() },
-          { text: "Single Frame (SAM)", class: "secondary", onclick: () => runStage2SamCenter() },
           { text: "Cancel", class: "danger", onclick: () => cancelDetection() }
         ]
       );
@@ -4692,6 +4711,9 @@
       formData.append("template_id", template.template_id);
       formData.append("artwork", file);
       formData.append("realism", realism ? "true" : "false");
+      // Canvas previews are throwaway, so the server keeps only the newest few
+      // instead of letting every redraw pile up in the outputs folder.
+      formData.append("preview", "true");
 
       let resolvedFitMode = template.fit_mode;
       if (resolvedFitMode === "auto") {
@@ -6899,7 +6921,8 @@
           formData.append("template_id", state.selected.template_id);
           formData.append("artwork", file);
           formData.append("realism", "true");
-          
+          formData.append("preview", "true");
+
           let resolvedFitMode = state.selected.fit_mode;
           if (resolvedFitMode === "auto") {
             resolvedFitMode = resolveFitMode(

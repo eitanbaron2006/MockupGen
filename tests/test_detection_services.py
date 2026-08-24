@@ -174,9 +174,14 @@ def test_classic_detection_uses_visible_inner_boundary_without_ai(tmp_path: Path
 
     proposal = ClassicDetectionProvider().detect(image_path)
 
-    assert abs(proposal.artwork_area["x"] - 195) <= 3
-    assert abs(proposal.artwork_area["y"] - 185) <= 3
+    # The opening starts just inside the 2px inner stroke, and the proposal is
+    # inset a further 3px so artwork tucks under the border instead of over it.
+    assert abs(proposal.artwork_area["x"] - 200) <= 4
+    assert abs(proposal.artwork_area["y"] - 190) <= 4
     assert proposal.provider == "classic"
+    assert proposal.raw_artwork_area["mode"] == "geometry"
+    # One frame in the image means the layer picker, not the multi-frame path.
+    assert "regions" not in proposal.raw_artwork_area
 
 
 def test_classic_green_frames_mode_detects_skewed_green_mockup_region(tmp_path: Path):
@@ -206,6 +211,36 @@ def test_classic_green_frames_mode_rejects_images_without_green_region(tmp_path:
 
     with pytest.raises(DetectionError):
         ClassicDetectionProvider().detect(image_path, mode="green_frames_mockups")
+
+
+def _draw_blank_frame(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int]) -> None:
+    """A wall frame: dark border, lighter mat, blank white opening."""
+    left, top, right, bottom = box
+    draw.rectangle(box, fill=(255, 255, 255), outline=(60, 48, 38), width=6)
+    draw.rectangle((left + 10, top + 10, right - 10, bottom - 10), outline=(150, 140, 130), width=2)
+
+
+def test_classic_auto_detection_returns_every_frame_of_a_multi_frame_mockup(tmp_path: Path):
+    image_path = tmp_path / "gallery-wall.png"
+    image = Image.new("RGB", (900, 700), (232, 226, 216))
+    draw = ImageDraw.Draw(image)
+    boxes = [(80, 90, 320, 430), (350, 90, 590, 430), (620, 90, 860, 430)]
+    for box in boxes:
+        _draw_blank_frame(draw, box)
+    image.save(image_path)
+
+    proposal = ClassicDetectionProvider().detect(image_path, mode="geometry")
+
+    regions = proposal.raw_artwork_area["regions"]
+    assert len(regions) == len(boxes)
+    # Regions come back ordered top-to-bottom then left-to-right.
+    for region, (left, top, right, bottom) in zip(regions, boxes):
+        assert abs(region["x"] - left) <= 16
+        assert abs(region["y"] - top) <= 16
+        assert abs(region["width"] - (right - left)) <= 32
+        assert abs(region["height"] - (bottom - top)) <= 32
+        assert len(region["corners"]) == 4
+    assert "3 artwork frames" in proposal.reason
 
 
 def test_build_provider_passes_green_frames_default_to_classic_provider():

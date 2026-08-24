@@ -11,6 +11,8 @@ SERVER_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
+import services.simple_mockup_service as render_module
+
 
 def image_bytes(size: tuple[int, int], color: tuple[int, int, int, int]) -> io.BytesIO:
     stream = io.BytesIO()
@@ -1146,3 +1148,51 @@ def test_targeted_realism_effects(tmp_path):
         assert 225 <= art_pixel[0] <= 250
         assert art_pixel[1] <= 20
         assert art_pixel[2] <= 20
+
+
+def test_preview_renders_leave_nothing_on_disk(tmp_path):
+    client, folders = build_client(tmp_path)
+    write_template(folders["TEMPLATES_FOLDER"])
+    outputs = folders["OUTPUT_FOLDER"]
+    uploads = folders["UPLOAD_FOLDER"]
+
+    for _ in range(6):
+        response = post_render(client, preview="true")
+        assert response.status_code == 200
+        assert response.get_json()["output_url"].startswith("data:image/png;base64,")
+
+    # Neither the render nor the artwork it was given may be kept.
+    assert list(outputs.glob("*")) == []
+    assert list(uploads.glob("*")) == []
+
+    # A real render alongside them is still saved and served from /outputs.
+    response = post_render(client)
+    assert response.status_code == 200
+    assert response.get_json()["output_url"].startswith("/outputs/")
+    assert len(list(outputs.glob("mockup_*"))) == 1
+    assert len(list(uploads.glob("*"))) == 1
+
+
+def test_startup_sweeps_preview_files_left_by_older_builds(tmp_path):
+    client, folders = build_client(tmp_path)
+    outputs = folders["OUTPUT_FOLDER"]
+    stale = outputs / f"{render_module.PREVIEW_PREFIX}20260101_000000_abc.png"
+    keeper = outputs / "mockup_20260101_000000_def.png"
+    stale.write_bytes(b"stale")
+    keeper.write_bytes(b"keep")
+
+    render_module.prune_preview_outputs(outputs)
+
+    assert not stale.exists()
+    assert keeper.exists()
+
+
+def test_normal_renders_are_never_pruned(tmp_path):
+    client, folders = build_client(tmp_path)
+    write_template(folders["TEMPLATES_FOLDER"])
+
+    for _ in range(5):
+        assert post_render(client).status_code == 200
+
+    outputs = folders["OUTPUT_FOLDER"]
+    assert len(list(outputs.glob("mockup_*"))) == 5

@@ -6,6 +6,7 @@ from PIL import Image
 
 from services.catalog_service import orientation_for_size
 from services.detection_service import DetectionError, DetectionProposal, validate_proposal
+from services.frame_geometry_service import find_frames
 from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
 from services.green_frame_mockup_service import (
     GreenFrameSettings,
@@ -14,8 +15,48 @@ from services.green_frame_mockup_service import (
     green_mask_image,
 )
 
+# Pixels the mask reaches past the detected opening, so artwork tucks under the
+# frame border instead of leaving a rim of bare mockup showing around it.
+_OPENING_BLEED = 3
+
 _SAM_MODEL_INSTANCE = None
 _SAM_MODEL_LOCK = threading.Lock()
+
+
+def _corner_dicts(points, width: int, height: int) -> list[dict[str, int]]:
+    """Clamp a quad to the canvas and express it as clockwise {x, y} dicts."""
+    return [
+        {
+            "x": int(max(0, min(width - 1, round(float(point[0]))))),
+            "y": int(max(0, min(height - 1, round(float(point[1]))))),
+        }
+        for point in points
+    ]
+
+
+def _inset_corners(
+    corners: list[dict[str, int]], amount: float, width: int, height: int
+) -> list[dict[str, int]]:
+    """Pull each corner towards the centroid so artwork lands inside the border."""
+    points = np.array([[c["x"], c["y"]] for c in corners], dtype="float64")
+    centroid = points.mean(axis=0)
+    moved = []
+    for point in points:
+        vector = centroid - point
+        norm = float(np.linalg.norm(vector))
+        moved.append(point + (vector / norm) * amount if norm > 0 else point)
+    return _corner_dicts(moved, width, height)
+
+
+def _corner_bounds(corners: list[dict[str, int]]) -> dict[str, int]:
+    xs = [c["x"] for c in corners]
+    ys = [c["y"] for c in corners]
+    return {
+        "x": min(xs),
+        "y": min(ys),
+        "width": max(1, max(xs) - min(xs)),
+        "height": max(1, max(ys) - min(ys)),
+    }
 
 
 def _get_sam_model():
@@ -80,6 +121,37 @@ class ClassicDetectionProvider:
         chosen_pts = np.array([[point["x"], point["y"]] for point in first], dtype="int32")
         return chosen_pts, raw
 
+    def _geometric_regions(self, img: np.ndarray) -> tuple[list[dict], list[list[dict]]]:
+        """Detect every artwork quad geometrically.
+
+        Returns the region dictionaries (green-frame schema, so the shared
+        multi-frame rendering path applies) plus the nesting border layers of
+        the first frame, which drive the single-frame layer picker.
+        """
+        frames = find_frames(img)
+        if not frames:
+            return [], []
+
+        width, height = img.shape[1], img.shape[0]
+        regions = []
+        for frame in frames:
+            corners = _corner_dicts(frame["corners"], width, height)
+            regions.append(
+                {
+                    **_corner_bounds(corners),
+                    "area": int(round(frame["area"])),
+                    "corners": corners,
+                    "inner_corners": corners,
+                    # The renderer warps artwork onto the outer quad and lets the
+                    # mask trim it, so this is the opening plus a hairline of
+                    # bleed -- never the frame's outer edge, which would shrink
+                    # the artwork to fit the border as well as the opening.
+                    "outer_corners": _inset_corners(corners, -_OPENING_BLEED, width, height),
+                }
+            )
+        layers = [_corner_dicts(layer, width, height) for layer in frames[0]["layers"]]
+        return regions, layers
+
     def detect(self, background_path: Path, mode: str | None = None, point: dict = None) -> DetectionProposal:
         mode = mode or self.default_mode
         # Load background image via OpenCV
@@ -88,15 +160,13 @@ class ClassicDetectionProvider:
             raise FileNotFoundError(f"Could not open image: {background_path}")
 
         h, w, _ = img.shape
-        img_area = w * h
 
         chosen_pts = None
         is_geometric = False
         is_sam = False
         is_green_frame = False
         all_layers = []
-        multi_artwork_area = None
-        multi_raw_artwork_area = None
+        multi_regions = None
 
         if mode == "green_frames_mockups":
             chosen_pts, raw_artwork_area = self._detect_green_frame(img)
@@ -104,56 +174,18 @@ class ClassicDetectionProvider:
                 raise DetectionError("No green frame mockup region could be detected.")
             is_green_frame = True
 
-        # 1. Step 1 (geometry): Canny & contours (Run if mode is "auto" or "geometry")
+        # 1. Step 1 (geometry): every artwork quad in the mockup, not just one
         if chosen_pts is None and mode in ("auto", "geometry"):
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            edged = cv2.Canny(blurred, 50, 150)
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            dilated = cv2.dilate(edged, kernel, iterations=1)
+            geometric_regions, all_layers = self._geometric_regions(img)
 
-            contours, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-            valid_rectangles = []
-
-            for c in contours:
-                peri = cv2.arcLength(c, True)
-                approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-                if len(approx) == 4:
-                    approx = np.clip(approx, 0, [w - 1, h - 1])
-                    area = cv2.contourArea(approx)
-                    # Filter by relative scale in the mockup
-                    if (img_area * 0.02) < area < (img_area * 0.90):
-                        x, y, box_w, box_h = cv2.boundingRect(approx)
-                        aspect_ratio = float(box_w) / max(1, box_h)
-                        if 0.2 < aspect_ratio < 5.0:
-                            valid_rectangles.append((area, approx))
-
-            unique_layers = []
-            if valid_rectangles:
-                # Sort the rectangles from largest (outermost) to smallest (innermost)
-                valid_rectangles.sort(key=lambda x: x[0], reverse=True)
-
-                # Filter out duplicate or near-identical rectangles (less than 1.5% difference in area)
-                for r in valid_rectangles:
-                    if not unique_layers or abs(r[0] - unique_layers[-1][0]) > (img_area * 0.015):
-                        unique_layers.append(r)
-
-            if unique_layers:
-                # Populate all layers clockwise
-                for layer_idx, (_, approx) in enumerate(unique_layers):
-                    pts = approx.reshape(4, 2)
-                    pts = np.clip(pts, 0, [w - 1, h - 1])
-                    sorted_pts = np.zeros((4, 2), dtype="int32")
-                    s = pts.sum(axis=1)
-                    sorted_pts[0] = pts[np.argmin(s)]  # TL
-                    sorted_pts[2] = pts[np.argmax(s)]  # BR
-                    diff = np.diff(pts, axis=1)
-                    sorted_pts[1] = pts[np.argmin(diff)]  # TR
-                    sorted_pts[3] = pts[np.argmax(diff)]  # BL
-                    all_layers.append([{"x": int(pt[0]), "y": int(pt[1])} for pt in sorted_pts])
-
-                # Innermost layer (smallest) is the selected one by default
-                chosen_pts = np.array([[pt["x"], pt["y"]] for pt in all_layers[-1]], dtype="int32")
+            if geometric_regions:
+                if len(geometric_regions) > 1:
+                    multi_regions = geometric_regions
+                # The innermost layer of the first frame drives the single-frame
+                # preview; the layer picker walks the rest.
+                chosen_pts = np.array(
+                    [[c["x"], c["y"]] for c in geometric_regions[0]["corners"]], dtype="int32"
+                )
                 is_geometric = True
             else:
                 # Fallback to geometric gradient inner opening
@@ -242,52 +274,36 @@ class ClassicDetectionProvider:
         if mode in ("sam_center", "sam_point", "green_frames_mockups") and chosen_pts is None:
             raise DetectionError(f"No boundary corners could be resolved using {mode} mode.")
 
-        # If we successfully found corners (either from Canny or SAM), apply 3px Inset
+        # If we successfully found corners (either from geometry or SAM), apply 3px Inset
         if chosen_pts is not None:
             if is_green_frame:
-                final_corners = [{"x": int(max(0, min(w - 1, round(pt[0])))), "y": int(max(0, min(h - 1, round(pt[1]))))} for pt in chosen_pts]
-                xs = [c["x"] for c in final_corners]
-                ys = [c["y"] for c in final_corners]
-                artwork_area = {
-                    "x": min(xs),
-                    "y": min(ys),
-                    "width": max(xs) - min(xs),
-                    "height": max(ys) - min(ys),
-                    "corners": final_corners,
-                }
-                refined = True
-            else:
-                # Apply a 3-pixel inset towards the centroid to guarantee exact placement inside the frame borders
-                centroid = np.mean(chosen_pts, axis=0)
-                final_corners = []
-                for pt in chosen_pts:
-                    vec = centroid - pt
-                    norm = np.linalg.norm(vec)
-                    if norm > 0:
-                        inset_pt = pt + (vec / norm) * 3
-                    else:
-                        inset_pt = pt
-                    final_corners.append({
-                        "x": int(max(0, min(w - 1, round(inset_pt[0])))),
-                        "y": int(max(0, min(h - 1, round(inset_pt[1])))),
-                    })
-
-                xs = [c["x"] for c in final_corners]
-                ys = [c["y"] for c in final_corners]
-                min_x, max_x = max(0, min(xs)), min(w - 1, max(xs))
-                min_y, max_y = max(0, min(ys)), min(h - 1, max(ys))
-                artwork_area = {
-                    "x": min_x,
-                    "y": min_y,
-                    "width": max(1, max_x - min_x),
-                    "height": max(1, max_y - min_y),
-                    "corners": final_corners,
-                }
-                refined = True
+                final_corners = _corner_dicts(chosen_pts, w, h)
+            elif multi_regions:
+                # Several frames render through the mask, and the mask alone
+                # decides what is visible. Insetting here would leave a rim of
+                # bare mockup showing between the artwork and the frame border,
+                # so the opening is kept exact and the mask bleeds outwards.
+                final_corners = multi_regions[0]["corners"]
                 raw_artwork_area = {
+                    "mode": "geometry",
                     "layers": all_layers,
-                    "original_corners": [{"x": int(max(0, min(w - 1, round(pt[0])))), "y": int(max(0, min(h - 1, round(pt[1]))))} for pt in chosen_pts],
+                    "regions": multi_regions,
+                    "original_corners": final_corners,
                 }
+            else:
+                # Inset towards the centroid to guarantee exact placement inside the frame borders
+                final_corners = _inset_corners(_corner_dicts(chosen_pts, w, h), 3, w, h)
+                raw_artwork_area = {
+                    "mode": "geometry",
+                    "layers": all_layers,
+                    "original_corners": _corner_dicts(chosen_pts, w, h),
+                }
+
+            refined = True
+            # With several frames the regions carry the geometry; artwork_area
+            # stays on the first one so orientation reflects a single artwork
+            # rather than the meaningless box around the whole set.
+            artwork_area = {**_corner_bounds(final_corners), "corners": final_corners}
         else:
             # 3. Fallback to legacy centered offline estimation if both failed
             refined = False
@@ -333,6 +349,8 @@ class ClassicDetectionProvider:
                 "reason": (
                     "Green frame mockup region detected from color mask with perspective corners."
                     if is_green_frame
+                    else f"{len(multi_regions)} artwork frames detected geometrically with 3px edge inset."
+                    if is_geometric and multi_regions
                     else "Innermost geometric mockup frame layer detected with 3px edge inset."
                     if is_geometric
                     else "Innermost local SAM 2.1 prediction frame isolated with 3px edge inset."

@@ -7,7 +7,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Mockup Studio</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v=23">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v={{ asset_version('admin/admin.css') }}">
 </head>
 
 <body class="admin-page">
@@ -1296,7 +1296,7 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='admin/admin.js') }}?v=47"></script>
+  <script src="{{ url_for('static', filename='admin/admin.js') }}?v={{ asset_version('admin/admin.js') }}"></script>
 </body>
 
 </html>
@@ -1306,4 +1306,4 @@
 
 
 
-
+

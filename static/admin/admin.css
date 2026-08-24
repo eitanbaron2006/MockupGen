@@ -3954,13 +3954,31 @@ input[type="checkbox"]:disabled {
   text-decoration: underline;
 }
 
+/* .selection-svg turns pointer events off, so every interactive child of the
+   multi-region group has to opt back in or its clicks fall through. */
 .multi-region-polygon {
   stroke-linejoin: round;
+  pointer-events: auto;
   transition: stroke-width 0.1s ease, fill-opacity 0.1s ease;
 }
 
 .multi-region-polygon:hover {
   stroke-width: 3px !important;
   fill-opacity: 0.3 !important;
+}
+
+.region-delete-badge {
+  pointer-events: auto;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.region-delete-badge:hover {
+  transform: scale(1.18);
+}
+
+.region-delete-badge:active {
+  transform: scale(0.94);
 }
 
