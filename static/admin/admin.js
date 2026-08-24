@@ -2760,6 +2760,10 @@
     // If classic detection is active, run the selected internal classic submode.
     if ((state.settings.DETECTION_PROVIDER || "classic") === "classic") {
       const submode = state.settings.CLASSIC_SUBMODE || "auto";
+      if (submode === "green_frames") {
+        runClassicGreenFramesDetection();
+        return;
+      }
       if (submode === "color_pick") {
         runColorPickMode();
         return;
@@ -4012,7 +4016,9 @@
       const vLoc = ($("vertexLocation") && $("vertexLocation").value) || "global";
       const lModel = ($("localModel") && $("localModel").value) || "Choose an installed model";
       const sub = state.settings.CLASSIC_SUBMODE || "auto";
-      const subTitle = sub === "frame_points" ? "Frame Points" : sub === "color_pick" ? "Color Pick" : "Auto Detect";
+      const subTitle = sub === "frame_points" ? "Frame Points"
+        : sub === "green_frames" ? "Green Frames"
+        : sub === "color_pick" ? "Color Pick" : "Auto Detect";
       $("engineModel").textContent = provider === "vertex"
         ? `${vModel} / ${vLoc}`
         : provider === "local" ? lModel

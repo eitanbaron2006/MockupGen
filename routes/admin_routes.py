@@ -753,7 +753,7 @@ def update_detection_settings():
         return json_error("Unsupported refinement mode", 400)
     if settings.get("CLASSIC_INTERNAL_MODE") not in {None, "auto", "green_frames_mockups"}:
         return json_error("Unsupported classic internal mode", 400)
-    if settings.get("CLASSIC_SUBMODE") not in {None, "auto", "frame_points", "color_pick"}:
+    if settings.get("CLASSIC_SUBMODE") not in {None, "auto", "frame_points", "green_frames", "color_pick"}:
         return json_error("Unsupported classic submode", 400)
     if "CLASSIC_GREEN_EDGE_EXPAND" in settings:
         try:

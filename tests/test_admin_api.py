@@ -667,3 +667,28 @@ def test_reset_admin_template_detection(tmp_path: Path):
 
 
 
+
+
+def test_green_frames_is_its_own_classic_submode(tmp_path: Path):
+    """Green frames and colour pick are separate choices.
+
+    Colour pick samples whatever colour the admin clicks, which is the tool for
+    frames that are not green; green frames runs the fixed chroma pass that the
+    studio relied on before the submodes existed.
+    """
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+
+    saved = client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "green_frames"},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert saved.status_code == 200
+    settings = client.get("/api/admin/settings/detection").get_json()["settings"]
+    assert settings["CLASSIC_SUBMODE"] == "green_frames"
+
+    page = client.get("/admin").data
+    for submode in (b"auto", b"frame_points", b"green_frames", b"color_pick"):
+        assert b'data-submode="' + submode + b'"' in page
