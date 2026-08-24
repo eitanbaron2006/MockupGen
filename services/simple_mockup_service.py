@@ -609,11 +609,9 @@ def _render_green_frame_mockup(
                         rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
                         rw, rh = int(r.get("width", r.get("w", 1))), int(r.get("height", r.get("h", 1)))
                         draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
-                if mask_name and (template_folder / mask_name).parent.is_dir():
-                    try:
-                        mask_img.save(template_folder / mask_name)
-                    except Exception:
-                        pass
+                # Rendering never writes to the template folder. This used to
+                # save the derived mask over the detected one, which quietly
+                # destroyed the real outline the moment a frame was rendered.
                 detection = detection_from_mask(mask_img, raw_artwork_area, settings)
             else:
                 detection = detect_green_frames(background, settings)

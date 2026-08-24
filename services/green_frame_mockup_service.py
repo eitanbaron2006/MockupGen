@@ -375,6 +375,9 @@ def detection_from_mask(
     raw_mask = alpha >= 0.06
     detect_mask = _dilate_mask(raw_mask, settings.edge_expand)
     raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+    corners_edited = bool(
+        isinstance(raw_artwork_area, dict) and raw_artwork_area.get("corners_edited")
+    )
     regions: list[GreenRegion] = []
     has_raw_regions = isinstance(raw_regions, list) and bool(raw_regions)
     if isinstance(raw_regions, list):
@@ -394,6 +397,17 @@ def detection_from_mask(
             region.corners = _list_to_corners(item.get("corners") or item.get("inner_corners"))
             region.inner_corners = _list_to_corners(item.get("inner_corners")) or region.corners
             region.outer_corners = _list_to_corners(item.get("outer_corners")) or region.corners
+            if corners_edited and region.inner_corners:
+                # The opening belongs to the mockup: it stays where the mask
+                # put it, whatever the admin has dragged. Only the artwork
+                # inside follows the edited corners.
+                xs = [point["x"] for point in region.inner_corners.values()]
+                ys = [point["y"] for point in region.inner_corners.values()]
+                region.x = int(min(xs))
+                region.y = int(min(ys))
+                region.w = max(1, int(max(xs) - min(xs)))
+                region.h = max(1, int(max(ys) - min(ys)))
+                region.outer_corners = region.corners
             regions.append(region)
     if not regions:
         regions = _connected_regions(detect_mask, max(8, min(settings.min_area, int(raw_mask.size * 0.5))))

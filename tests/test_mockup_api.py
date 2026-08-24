@@ -1354,3 +1354,150 @@ def test_editing_a_detected_frame_changes_what_gets_rendered(tmp_path):
     # Trusting the stale mask or a stale copy of the quad caps it near 1.3.
     grew = int(after[window].sum()) / max(1, int(before[window].sum()))
     assert grew > 1.6, f"the enlarged frame did not reach the render (ratio {grew:.2f})"
+
+
+def test_editing_a_frame_moves_the_artwork_but_never_the_mask(tmp_path):
+    """The mask belongs to the mockup, not to the artwork placed in it.
+
+    Editing a frame changes how artwork is warped inside the opening. The
+    opening itself is a property of the mockup and must not move, be rebuilt,
+    or be rewritten by the edit.
+    """
+    import numpy as np
+    from PIL import ImageDraw
+
+    templates_folder = tmp_path / "templates_data"
+    template_id = "template_masked"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (300, 200)
+
+    # An elliptical opening, so a squared-off substitute would be obvious.
+    opening = (20, 40, 120, 160)
+    mask = Image.new("L", canvas, 0)
+    ImageDraw.Draw(mask).ellipse(opening, fill=255)
+    mask.save(folder / "mask.png")
+    mask_before = (folder / "mask.png").read_bytes()
+
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+
+    def quad(box):
+        left, top, right, bottom = box
+        return [
+            {"x": left, "y": top}, {"x": right, "y": top},
+            {"x": right, "y": bottom}, {"x": left, "y": bottom},
+        ]
+
+    def render(corners_box, edited):
+        region = {
+            "x": corners_box[0], "y": corners_box[1],
+            "width": corners_box[2] - corners_box[0],
+            "height": corners_box[3] - corners_box[1],
+            "area": 1, "corners": quad(corners_box), "inner_corners": quad(opening),
+        }
+        raw = {"mode": "green_frames_mockups", "regions": [region]}
+        if edited:
+            raw["corners_edited"] = True
+        (folder / "manifest.json").write_text(json.dumps({
+            "template_id": template_id, "name": "masked",
+            "canvas_width": canvas[0], "canvas_height": canvas[1],
+            "artwork_area": {"x": corners_box[0], "y": corners_box[1],
+                             "width": region["width"], "height": region["height"],
+                             "corners": region["corners"]},
+            "fit_mode": "stretch", "background": "background.png", "foreground": None,
+            "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+            "raw_artwork_area": raw, "detection_provider": "classic",
+        }), encoding="utf-8")
+        artwork = tmp_path / "art.png"
+        # Half magenta, half cyan: which half lands where shows the placement.
+        art = Image.new("RGB", (100, 100), (255, 0, 255))
+        ImageDraw.Draw(art).rectangle((0, 0, 100, 50), fill=(0, 255, 255))
+        art.save(artwork)
+        result = render_module.render_simple_mockup(
+            template_id=template_id, artwork_path=artwork, output_format="png",
+            templates_folder=templates_folder, output_folder=tmp_path / "outputs",
+            fit_mode="stretch", realism=False, raw_artwork_area=raw, mask_name="mask.png",
+        )
+        return np.asarray(
+            Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+        ).astype(int)
+
+    def painted(pixels):
+        return (np.abs(pixels - np.array([255, 0, 255])).sum(axis=2) < 90) | (
+            np.abs(pixels - np.array([0, 255, 255])).sum(axis=2) < 90
+        )
+
+    before = render(opening, edited=False)
+    # Drag the frame's top edge down: the artwork should shift inside the hole.
+    after = render((20, 100, 120, 160), edited=True)
+
+    # The mask file was not touched.
+    assert (folder / "mask.png").read_bytes() == mask_before
+
+    # Nothing was painted outside the opening the mask describes, before or
+    # after: the edit moves artwork within the hole, it does not reshape it.
+    hole = np.asarray(Image.open(folder / "mask.png").convert("L")) > 127
+    assert not (painted(before) & ~hole).any(), "artwork escaped the mask"
+    assert not (painted(after) & ~hole).any(), "the edit let artwork escape the mask"
+
+    # But the artwork inside it did move: the cyan half sits lower now.
+    def cyan_top(pixels):
+        rows = np.where((np.abs(pixels - np.array([0, 255, 255])).sum(axis=2) < 90).any(axis=1))[0]
+        return int(rows.min()) if rows.size else -1
+
+    assert cyan_top(after) > cyan_top(before), "editing the frame did not move the artwork"
+
+
+def test_rendering_never_modifies_the_template_mask(tmp_path):
+    """A render reads the template; it must not write to it.
+
+    The mask carries the detected outline. Overwriting it during a render
+    destroyed that outline permanently, and no later render could recover it.
+    """
+    from PIL import ImageDraw
+
+    templates_folder = tmp_path / "templates_data"
+    template_id = "template_readonly"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (300, 200)
+
+    mask = Image.new("L", canvas, 0)
+    ImageDraw.Draw(mask).ellipse((20, 40, 120, 160), fill=255)
+    mask.save(folder / "mask.png")
+    before = (folder / "mask.png").read_bytes()
+
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+    corners = [{"x": 20, "y": 40}, {"x": 120, "y": 40},
+               {"x": 120, "y": 160}, {"x": 20, "y": 160}]
+    raw_artwork_area = {
+        "mode": "vertex",
+        "regions": [{"x": 20, "y": 40, "width": 100, "height": 120,
+                     "area": 12000, "corners": corners}],
+    }
+    (folder / "manifest.json").write_text(json.dumps({
+        "template_id": template_id, "name": "readonly",
+        "canvas_width": canvas[0], "canvas_height": canvas[1],
+        "artwork_area": {"x": 20, "y": 40, "width": 100, "height": 120, "corners": corners},
+        "fit_mode": "stretch", "background": "background.png", "foreground": None,
+        "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+        "raw_artwork_area": raw_artwork_area, "detection_provider": "vertex",
+    }), encoding="utf-8")
+
+    artwork = tmp_path / "art.png"
+    Image.new("RGB", (100, 100), (255, 0, 255)).save(artwork)
+    render_module.render_simple_mockup(
+        template_id=template_id,
+        artwork_path=artwork,
+        output_format="png",
+        templates_folder=templates_folder,
+        output_folder=tmp_path / "outputs",
+        fit_mode="stretch",
+        realism=False,
+        raw_artwork_area=raw_artwork_area,
+        mask_name="mask.png",
+    )
+
+    assert (folder / "mask.png").read_bytes() == before, "the render rewrote the template mask"

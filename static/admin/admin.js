@@ -671,6 +671,8 @@
     });
   }
 
+  let maskVersion = 0;
+
   async function api(url, options = {}) {
     const headers = { ...(options.headers || {}), "X-CSRF-Token": csrf };
     if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
@@ -695,6 +697,9 @@
       }
       if (response.status === 401) window.location.href = "/admin/login";
       if (!response.ok) throw new Error(payload.error || "Request failed");
+      // Detection rewrites mask.png in place, so the canvas has to stop
+      // serving the previous one out of the browser cache.
+      if (url.includes("/detect")) maskVersion += 1;
       return payload;
     } catch (err) {
       if (timeoutId) clearTimeout(timeoutId);
@@ -1848,6 +1853,42 @@
     ];
   }
 
+  function templateMaskUrl(template) {
+    const maskName = template.mask_name || template.mask;
+    return maskName
+      ? `/api/admin/templates/${template.template_id}/asset/${maskName}?v=${maskVersion}`
+      : null;
+  }
+
+  /** Clip the artwork layer with the mask, pinned to the mockup underneath.
+   *
+   * The mask describes the mockup -- where its openings are -- so it is
+   * anchored to the background image and never moves. Editing a frame changes
+   * how artwork is warped inside an opening, never the opening itself.
+   */
+  function applyOverlayMask(overlayDiv, maskUrl, rect) {
+    if (!maskUrl) {
+      overlayDiv.style.maskImage = "";
+      overlayDiv.style.webkitMaskImage = "";
+      return;
+    }
+    const size = `${rect.width}px ${rect.height}px`;
+    const position = `${rect.left}px ${rect.top}px`;
+    overlayDiv.style.maskImage = `url("${maskUrl}")`;
+    overlayDiv.style.webkitMaskImage = `url("${maskUrl}")`;
+    // The mask is a greyscale image with no alpha channel, and CSS masks read
+    // alpha by default -- which would be opaque everywhere and clip nothing.
+    // Read it as luminance instead: white shows the artwork, black hides it.
+    overlayDiv.style.maskMode = "luminance";
+    overlayDiv.style.webkitMaskSourceType = "luminance";
+    overlayDiv.style.maskRepeat = "no-repeat";
+    overlayDiv.style.webkitMaskRepeat = "no-repeat";
+    overlayDiv.style.maskSize = size;
+    overlayDiv.style.webkitMaskSize = size;
+    overlayDiv.style.maskPosition = position;
+    overlayDiv.style.webkitMaskPosition = position;
+  }
+
   function renderGreenFrameArtworkOverlay(template, image) {
     const overlayDiv = $("selectionImageOverlay");
     const overlayImg = $("selectionOverlayImg");
@@ -1871,6 +1912,16 @@
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;
     const naturalW = state.selectionStyle.overlayImageWidth || overlayImg.naturalWidth || 100;
     const naturalH = state.selectionStyle.overlayImageHeight || overlayImg.naturalHeight || 100;
+
+    // With a mask in play the artwork is drawn oversized and trimmed by it, so
+    // the canvas shows the mask's true outline instead of a four-corner
+    // approximation that leaves the placeholder peeking out at the edges.
+    overlayDiv.style.maskImage = "";
+    overlayDiv.style.webkitMaskImage = "";
+    // The mask only ever removes from what is drawn, so drawing on the frame's
+    // own corners is what keeps the editing frame an exact bound on the image:
+    // never larger than the frame, never smaller.
+    applyOverlayMask(overlayDiv, templateMaskUrl(template), rect);
 
     greenFrameOverlayRegions(template).forEach((region) => {
       const corners = region.corners;
@@ -2388,6 +2439,9 @@
       }
 
       region.corners = nextCorners;
+      // The opening belongs to the mockup and never moves; this only records
+      // that the artwork inside it is now placed by hand.
+      template.raw_artwork_area.corners_edited = true;
       const xs = nextCorners.map(c => c.x);
       const ys = nextCorners.map(c => c.y);
       region.x = Math.min(...xs);
