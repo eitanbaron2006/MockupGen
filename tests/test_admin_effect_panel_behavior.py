@@ -308,3 +308,86 @@ def test_the_download_button_never_points_at_an_empty_href():
     background = js.split("Background render failed:", 1)[1].split("} finally {", 1)[0]
     assert "clearDownloadTarget(" in background
     assert "style.pointerEvents = \"auto\"" not in background
+
+
+def test_canvas_toolbars_are_vertical_draggable_and_dockable():
+    """The zoom HUD and the style toolbar are one rail in two places.
+
+    They share their chrome -- a slim, square, vertical bar -- and are moved by
+    the grip at their head. Dragged near the left or right wall of the
+    workspace they sit flush against it, and two on the same wall read as a
+    single rail split by one line.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    align = js.split("function alignDockedToolbars(", 1)[1].split(end_of_function, 1)[0]
+    drag = js.split("function makeToolbarDraggable(", 1)[1].split(end_of_function, 1)[0]
+
+    # A grip on each toolbar, and nothing else claims to be one.
+    assert html.count("data-drag-handle") == 2
+    assert 'makeToolbarDraggable($("zoomHud"), "zoomHud")' in js
+    assert 'makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar")' in js
+
+    # Both are the same object: one slim, square rail, not two different cards.
+    assert html.count('class="canvas-rail ') == 2
+    rail = css.split(".canvas-rail {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: column" in rail
+    assert "border-radius: 0" in rail
+    assert "width: 38px" in rail
+    # Nothing in either toolbar's own rules may put the chrome back.
+    for block in (".zoom-hud {", ".selection-style-toolbar {"):
+        own = css.split(block, 1)[1].split("}", 1)[0]
+        assert "border-radius" not in own and "background" not in own and "padding" not in own
+
+    # Dragging, docking, and remembering where a toolbar was left.
+    assert "setPointerCapture" in drag
+    assert "TOOLBAR_DOCK_DISTANCE" in drag and "canvas-toolbar-docked-left" in drag
+    assert "TOOLBAR_POSITION_KEY" in js
+
+    # Merged rails travel together while the drag is happening, not once it is
+    # over: the companions are picked up on pointerdown and moved on every
+    # pointermove, and every rail that moved is remembered.
+    assert "companions" in drag
+    assert "drag.companions.forEach" in drag
+    assert "canvasToolbars.forEach((entry) => {" in drag
+
+    # They travel together along the wall only. Pulling one off the wall is how
+    # it comes out of the bar, or nothing could ever be separated again.
+    assert "placed.dock !== drag.dockedFrom" in drag
+    assert "drag.companions = [];" in drag
+
+    # Two on the same edge share a width and meet on one line.
+    assert "element.offsetHeight - 1" in align
+    assert "canvas-toolbar-merged-first" in align and "canvas-toolbar-merged-last" in align
+    assert ".canvas-toolbar-merged" in css
+
+    # The observer reacts to visibility alone: watching every class change would
+    # see docking's own classes and chase its own tail.
+    assert "if (hidden === wasHidden) return;" in drag
+
+    # Every control in either rail answers the same way, and the zoom rail has
+    # exactly one divider: under the zoom controls, drawn above the button so
+    # its own outline stays even on hover.
+    assert ".canvas-rail .zoom-btn:hover" in css and ".canvas-rail .style-tool:hover" in css
+    assert ".canvas-rail .zoom-btn.lock-btn.active:hover" in css
+    assert ".canvas-rail #zoomResetBtn::before" in css
+    rail_buttons = css.split(".canvas-rail .zoom-btn.reset-btn,", 1)[1].split("}", 1)[0]
+    assert "border-top" not in rail_buttons
+
+    # Nothing in a rail is round: a rounded button with a border on top draws an
+    # arc where the divider between two buttons should be a line.
+    for block in (".zoom-btn {", ".zoom-btn.reset-btn {", ".zoom-btn.lock-btn {"):
+        rule = css.split(block, 1)[1].split("}", 1)[0]
+        assert "border-radius: 50%" not in rule
+
+    # The head is the top of the rail, edge to edge -- no strip of rail above it.
+    assert "padding: 0 0 3px" in rail
+
+    # Each head carries one of the two button colours, so the rails are told
+    # apart at a glance -- including when they are docked together.
+    style_head = css.split("#selectionStyleToolbar .hud-grip {", 1)[1].split("}", 1)[0]
+    zoom_head = css.split("#zoomHud .hud-grip {", 1)[1].split("}", 1)[0]
+    assert "color: var(--success)" in style_head
+    assert "color: var(--accent)" in zoom_head

@@ -7250,6 +7250,256 @@
     }
   }
 
+  // Both canvas toolbars are dragged by the grip at their head and remember
+  // where they were left. Positions are stored per toolbar and clamped to the
+  // workspace, so a toolbar can never be parked out of reach -- including
+  // after the window is resized.
+  const TOOLBAR_POSITION_KEY = "mockupStudio.canvasToolbarPositions";
+
+  function readToolbarPositions() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(TOOLBAR_POSITION_KEY) || "{}");
+      return stored && typeof stored === "object" ? stored : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  // Dragged within this many pixels of the workspace edge, a toolbar docks to
+  // it and stays there when the window is resized.
+  const TOOLBAR_DOCK_DISTANCE = 40;
+  // A docked rail sits on the wall of the workspace, not near it.
+  const TOOLBAR_DOCK_MARGIN = 0;
+
+  const canvasToolbars = [];
+  let aligningToolbars = false;
+
+  function toolbarDockSide(toolbar) {
+    if (toolbar.classList.contains("canvas-toolbar-docked-left")) return "left";
+    if (toolbar.classList.contains("canvas-toolbar-docked-right")) return "right";
+    return null;
+  }
+
+  /** Toolbars docked to the same edge read as one bar, split by a single rule.
+   *
+   * They share a width and sit flush against each other, in the order they were
+   * left in, with their borders overlapping so the seam is one line rather than
+   * two -- the way a docked panel behaves in a drawing application.
+   */
+  function alignDockedToolbars() {
+    if (aligningToolbars) return;
+    aligningToolbars = true;
+    try {
+      ["left", "right"].forEach((side) => {
+        const members = canvasToolbars
+          .map((entry) => entry.element)
+          .filter((element) => !element.classList.contains("hidden") && toolbarDockSide(element) === side);
+        members.forEach((element) => {
+          element.classList.remove("canvas-toolbar-merged", "canvas-toolbar-merged-first", "canvas-toolbar-merged-last");
+          element.style.width = "";
+        });
+        if (members.length < 2) return;
+        const parent = members[0].offsetParent || members[0].parentElement;
+        if (!parent) return;
+        const bounds = parent.getBoundingClientRect();
+        members.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        const width = Math.max(...members.map((element) => element.offsetWidth));
+        members.forEach((element) => {
+          element.style.width = `${width}px`;
+        });
+        const stackHeight = members.reduce((total, element) => total + element.offsetHeight, 0) - (members.length - 1);
+        const left = side === "left"
+          ? TOOLBAR_DOCK_MARGIN
+          : Math.max(0, bounds.width - width - TOOLBAR_DOCK_MARGIN);
+        let top = Math.min(
+          Math.max(0, members[0].getBoundingClientRect().top - bounds.top),
+          Math.max(0, bounds.height - stackHeight)
+        );
+        members.forEach((element, index) => {
+          element.style.left = `${Math.round(left)}px`;
+          element.style.top = `${Math.round(top)}px`;
+          element.classList.add("canvas-toolbar-merged");
+          if (index === 0) element.classList.add("canvas-toolbar-merged-first");
+          if (index === members.length - 1) element.classList.add("canvas-toolbar-merged-last");
+          // Overlap the 1px borders so the two toolbars meet on one line.
+          top += element.offsetHeight - 1;
+        });
+      });
+    } finally {
+      aligningToolbars = false;
+    }
+  }
+
+  function makeToolbarDraggable(toolbar, key) {
+    if (!toolbar) return;
+    const handle = toolbar.querySelector("[data-drag-handle]");
+    if (!handle) return;
+
+    let drag = null;
+
+    const setDock = (side) => {
+      toolbar.classList.toggle("canvas-toolbar-docked-left", side === "left");
+      toolbar.classList.toggle("canvas-toolbar-docked-right", side === "right");
+    };
+
+    const place = (left, top, { snap = true } = {}) => {
+      const parent = toolbar.offsetParent || toolbar.parentElement;
+      if (!parent || !toolbar.offsetWidth) return null;
+      const bounds = parent.getBoundingClientRect();
+      const maxLeft = Math.max(0, bounds.width - toolbar.offsetWidth);
+      const maxTop = Math.max(0, bounds.height - toolbar.offsetHeight);
+      let x = Math.min(Math.max(0, left), maxLeft);
+      const y = Math.min(Math.max(0, top), maxTop);
+      let dock = null;
+      if (snap && x <= TOOLBAR_DOCK_DISTANCE) {
+        dock = "left";
+        x = Math.min(TOOLBAR_DOCK_MARGIN, maxLeft);
+      } else if (snap && x >= maxLeft - TOOLBAR_DOCK_DISTANCE) {
+        dock = "right";
+        x = Math.max(0, maxLeft - TOOLBAR_DOCK_MARGIN);
+      }
+      setDock(dock);
+      toolbar.style.left = `${Math.round(x)}px`;
+      toolbar.style.top = `${Math.round(y)}px`;
+      toolbar.style.right = "auto";
+      toolbar.style.bottom = "auto";
+      return { x, y, dock };
+    };
+
+    const restore = () => {
+      // Dragging toggles classes of its own, and the observer below watches for
+      // exactly that; putting the toolbar back mid-drag would fight the hand.
+      if (drag || aligningToolbars) return;
+      const saved = readToolbarPositions()[key];
+      if (!saved || toolbar.classList.contains("hidden")) return;
+      // A docked toolbar is measured from the edge it is docked to, so it stays
+      // on that edge whatever the workspace is resized to.
+      if (saved.dock === "right") {
+        const parent = toolbar.offsetParent || toolbar.parentElement;
+        if (parent) {
+          const bounds = parent.getBoundingClientRect();
+          place(bounds.width - toolbar.offsetWidth - TOOLBAR_DOCK_MARGIN, saved.y);
+          alignDockedToolbars();
+          return;
+        }
+      }
+      place(saved.x, saved.y);
+      alignDockedToolbars();
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const parent = toolbar.offsetParent || toolbar.parentElement;
+      if (!parent) return;
+      event.preventDefault();
+      const bounds = parent.getBoundingClientRect();
+      const box = toolbar.getBoundingClientRect();
+      // Rails merged into one bar are dragged as one *along the wall*: the
+      // others keep their offset from this one for as long as the drag stays
+      // docked. Pulling away from the wall is how one is taken out of the bar.
+      const companions = toolbar.classList.contains("canvas-toolbar-merged")
+        ? canvasToolbars
+          .map((entry) => entry.element)
+          .filter((element) => element !== toolbar
+            && !element.classList.contains("hidden")
+            && element.classList.contains("canvas-toolbar-merged"))
+          .map((element) => {
+            const other = element.getBoundingClientRect();
+            return { element, dx: other.left - box.left, dy: other.top - box.top };
+          })
+        : [];
+      drag = {
+        pointerId: event.pointerId,
+        offsetX: event.clientX - box.left,
+        offsetY: event.clientY - box.top,
+        parentLeft: bounds.left,
+        parentTop: bounds.top,
+        companions,
+        dockedFrom: toolbarDockSide(toolbar),
+      };
+      handle.setPointerCapture(event.pointerId);
+      toolbar.classList.add("canvas-toolbar-dragging");
+    });
+
+    const leaveTheBar = () => {
+      toolbar.classList.remove("canvas-toolbar-merged", "canvas-toolbar-merged-first", "canvas-toolbar-merged-last");
+      toolbar.style.width = "";
+    };
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!drag.companions.length) leaveTheBar();
+      const placed = place(
+        event.clientX - drag.parentLeft - drag.offsetX,
+        event.clientY - drag.parentTop - drag.offsetY
+      );
+      if (!placed) return;
+      if (drag.companions.length && placed.dock !== drag.dockedFrom) {
+        // Off the wall: this rail comes out of the bar and the rest stay put.
+        drag.companions = [];
+        leaveTheBar();
+        alignDockedToolbars();
+        return;
+      }
+      drag.companions.forEach(({ element, dx, dy }) => {
+        element.style.left = `${Math.round(placed.x + dx)}px`;
+        element.style.top = `${Math.round(placed.y + dy)}px`;
+        element.style.right = "auto";
+        element.style.bottom = "auto";
+        element.classList.toggle("canvas-toolbar-docked-left", placed.dock === "left");
+        element.classList.toggle("canvas-toolbar-docked-right", placed.dock === "right");
+      });
+    });
+
+    const endDragging = (event) => {
+      if (!drag || (event && event.pointerId !== drag.pointerId)) return;
+      drag = null;
+      toolbar.classList.remove("canvas-toolbar-dragging");
+      const parent = toolbar.offsetParent || toolbar.parentElement;
+      if (!parent) return;
+      alignDockedToolbars();
+      // Everything that moved is remembered, not only the rail under the hand:
+      // a companion dragged along would otherwise come back to where it was.
+      const bounds = parent.getBoundingClientRect();
+      const positions = readToolbarPositions();
+      canvasToolbars.forEach((entry) => {
+        if (entry.element.classList.contains("hidden")) return;
+        const box = entry.element.getBoundingClientRect();
+        positions[entry.key] = {
+          x: box.left - bounds.left,
+          y: box.top - bounds.top,
+          dock: toolbarDockSide(entry.element),
+        };
+      });
+      try {
+        localStorage.setItem(TOOLBAR_POSITION_KEY, JSON.stringify(positions));
+      } catch (_error) {
+        // Remembering where a toolbar sits is a convenience, not a requirement.
+      }
+    };
+    handle.addEventListener("pointerup", endDragging);
+    handle.addEventListener("pointercancel", endDragging);
+
+    // A hidden toolbar has no size to clamp against, so wait until it is shown.
+    // Only a change in visibility is worth reacting to. Watching every class
+    // change would see the ones dragging and docking make, put the toolbar back
+    // where it was stored, and chase its own tail.
+    let wasHidden = toolbar.classList.contains("hidden");
+    new MutationObserver(() => {
+      const hidden = toolbar.classList.contains("hidden");
+      if (hidden === wasHidden) return;
+      wasHidden = hidden;
+      if (!hidden) restore();
+      else alignDockedToolbars();
+    }).observe(toolbar, { attributes: true, attributeFilter: ["class"] });
+    window.addEventListener("resize", restore);
+    canvasToolbars.push({ element: toolbar, key });
+    restore();
+  }
+
+  makeToolbarDraggable($("zoomHud"), "zoomHud");
+  makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar");
+
   if ($("previewMockupButton")) $("previewMockupButton").onclick = togglePreviewMode;
   if ($("toolbarPreviewButton")) $("toolbarPreviewButton").onclick = togglePreviewMode;
 

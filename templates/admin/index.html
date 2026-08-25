@@ -173,7 +173,9 @@
               <!-- Mask Detection: floating dots layer for Frame Points mode -->
               <div id="maskDetectionDotsLayer" class="mask-detection-dots-layer hidden" aria-hidden="true"></div>
             </div>
-            <div class="selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
+            <div class="canvas-rail selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
+              <div class="hud-grip" data-drag-handle role="button" tabindex="0"
+                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
               <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode"
                 title="Overlay mode">
                 <span class="style-image-icon"></span>
@@ -280,7 +282,9 @@
             </div>
 
             <!-- Floating Premium Zoom Controls HUD -->
-            <div class="zoom-hud hidden" id="zoomHud">
+            <div class="canvas-rail zoom-hud hidden" id="zoomHud">
+              <div class="hud-grip" data-drag-handle role="button" tabindex="0"
+                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
               <button class="zoom-btn" id="zoomOutBtn" type="button" title="Zoom Out (Scroll Down)">−</button>
               <span class="zoom-text" id="zoomText">100%</span>
               <button class="zoom-btn" id="zoomInBtn" type="button" title="Zoom In (Scroll Up)">+</button>
