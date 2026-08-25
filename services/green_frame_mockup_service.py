@@ -72,6 +72,13 @@ class GreenFrameDetection:
 # opening does not, so the fill still follows gradients inside the opening.
 _EDGE_BARRIER = 220.0
 
+# How straight a side of the fill has to be before the region is trimmed back
+# to it: within this many pixels of the fitted line, for this share of the
+# side, and no more tilted than this. A leaked edge misses all three.
+_EDGE_INLIER_PX = 1.5
+_EDGE_MIN_INLIERS = 0.9
+_EDGE_MAX_TILT = 10.0
+
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
@@ -635,7 +642,104 @@ def _refine_region_boundaries(rgb: np.ndarray, region_mask: np.ndarray, max_snap
 
     out = region_mask.copy()
     out[best_y0 : best_y1 + 1, best_x0 : best_x1 + 1] = True
-    return out
+    return _straighten_sides(out, region_mask, (best_x0, best_y0, best_x1, best_y1))
+
+
+def _fitted_edge(samples: list[tuple[int, int]]) -> Optional[tuple[float, float]]:
+    """The line the samples lie on, or None when they do not lie on one.
+
+    Only a boundary that really is straight is worth trusting: where the fill
+    has leaked, its edge wanders, and a line through it would tilt the frame
+    away from the opening.
+    """
+    points = np.asarray(samples, dtype=np.float64)
+    if len(points) < 24:
+        return None
+    slope, intercept = np.polyfit(points[:, 0], points[:, 1], 1)
+    for _ in range(2):
+        residual = np.abs(points[:, 1] - (slope * points[:, 0] + intercept))
+        keep = residual <= max(_EDGE_INLIER_PX, float(np.median(residual)) * 2.0)
+        if int(keep.sum()) < 12:
+            return None
+        slope, intercept = np.polyfit(points[keep][:, 0], points[keep][:, 1], 1)
+    residual = np.abs(points[:, 1] - (slope * points[:, 0] + intercept))
+    if float((residual <= _EDGE_INLIER_PX).mean()) < _EDGE_MIN_INLIERS:
+        return None
+    if abs(math.degrees(math.atan(slope))) > _EDGE_MAX_TILT:
+        return None
+    return float(slope), float(intercept)
+
+
+def _straighten_sides(
+    squared: np.ndarray, region_mask: np.ndarray, snapped: tuple[int, int, int, int]
+) -> np.ndarray:
+    """Cut the squared-off region back to the straight sides the fill found.
+
+    Snapping the bounding box to the frame's edges squares the region off, and
+    a mockup photographed at a slight angle then loses that angle: its top edge
+    comes out level while the frame it belongs to is a couple of degrees off,
+    which is plain to see once artwork is drawn in it. Where a side of the fill
+    is a straight line, the region takes that line's angle.
+
+    Only the angle: each side keeps the reach the snap gave it, and stays
+    outside every pixel the fill found. Trimming back to the fitted line itself
+    would pull each side in by the pixel or two the fill stops short of the
+    opening, and the artwork would no longer reach the frame.
+    """
+    ys, xs = np.where(region_mask)
+    if len(xs) < 100:
+        return squared
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+    if x1 - x0 < 40 or y1 - y0 < 40:
+        return squared
+
+    top: list[tuple[int, int]] = []
+    bottom: list[tuple[int, int]] = []
+    left: list[tuple[int, int]] = []
+    right: list[tuple[int, int]] = []
+    for x in range(x0 + (x1 - x0) // 12, x1 - (x1 - x0) // 12):
+        column = np.where(region_mask[:, x])[0]
+        if len(column):
+            top.append((x, int(column.min())))
+            bottom.append((x, int(column.max())))
+    for y in range(y0 + (y1 - y0) // 12, y1 - (y1 - y0) // 12):
+        row = np.where(region_mask[y])[0]
+        if len(row):
+            left.append((y, int(row.min())))
+            right.append((y, int(row.max())))
+
+    snap_x0, snap_y0, snap_x1, snap_y1 = snapped
+    reach = {
+        "top": max(0.0, float(y0 - snap_y0)),
+        "bottom": max(0.0, float(snap_y1 - y1)),
+        "left": max(0.0, float(x0 - snap_x0)),
+        "right": max(0.0, float(snap_x1 - x1)),
+    }
+
+    out = squared.copy()
+    height, width = squared.shape
+    columns = np.arange(width, dtype=np.float64)[None, :]
+    rows = np.arange(height, dtype=np.float64)[:, None]
+    for samples, side in ((top, "top"), (bottom, "bottom"), (left, "left"), (right, "right")):
+        fit = _fitted_edge(samples)
+        if fit is None:
+            continue
+        slope, intercept = fit
+        points = np.asarray(samples, dtype=np.float64)
+        along = points[:, 0]
+        across = points[:, 1]
+        # Push the line past the last pixel of the fill on this side, then out
+        # again by however far the snap reached, so the side keeps its angle
+        # without giving up any of the coverage it had.
+        overshoot = float(np.max((slope * along + intercept) - across)) if side in ("top", "left")             else float(np.max(across - (slope * along + intercept)))
+        offset = max(0.0, overshoot) + reach[side] + 1.0
+        if side in ("top", "bottom"):
+            line = slope * columns + intercept
+            out &= (rows >= line - offset) if side == "top" else (rows <= line + offset)
+        else:
+            line = slope * rows + intercept
+            out &= (columns >= line - offset) if side == "left" else (columns <= line + offset)
+    return out if int(out.sum()) >= 80 else squared
 
 
 def detect_frames_from_points(

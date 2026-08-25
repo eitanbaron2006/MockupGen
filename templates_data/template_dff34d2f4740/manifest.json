@@ -12,7 +12,7 @@
     "corners": [
       {
         "x": 497,
-        "y": 101
+        "y": 105
       },
       {
         "x": 944,
@@ -112,12 +112,12 @@
   },
   "raw_artwork_area": {
     "edge_expand": 0,
-    "green_pixels": 260952,
+    "green_pixels": 260430,
     "mode": "green_frames_mockups",
     "original_corners": [
       {
         "x": 497,
-        "y": 101
+        "y": 105
       },
       {
         "x": 944,
@@ -134,11 +134,11 @@
     ],
     "regions": [
       {
-        "area": 260952,
+        "area": 260430,
         "corners": [
           {
             "x": 497,
-            "y": 101
+            "y": 105
           },
           {
             "x": 944,
@@ -157,7 +157,7 @@
         "inner_corners": [
           {
             "x": 497,
-            "y": 102
+            "y": 106
           },
           {
             "x": 943,
@@ -175,7 +175,7 @@
         "outer_corners": [
           {
             "x": 497,
-            "y": 102
+            "y": 106
           },
           {
             "x": 943,

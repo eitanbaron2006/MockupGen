@@ -142,6 +142,33 @@ An earlier attempt measured the tolerance against the seed colour
 20 up but under-filled badly at the low tolerances actually in use, so it was
 reverted -- do not reapply it without measuring at tolerance 5.
 
+## FRAME POINTS: a frame that is not level keeps its angle
+
+`_refine_region_boundaries` snaps the region's bounding box to the frame's
+edges and fills that box, which squares the region off. A mockup photographed
+a couple of degrees off level therefore came back level: on
+`template_71df1eb48bad` the fill found a top edge at -2.19° and the saved frame
+read -0.49°, so artwork drawn in it sat crooked against the frame around it.
+
+`_straighten_sides` now gives each side the angle of the line the fill found,
+and **only** the angle: the side keeps the reach the snap gave it and stays
+outside every pixel of the fill, so nothing is trimmed. Taking the fitted line
+itself pulls each side in by the pixel or two the fill stops short of the
+opening, and the mockup's own background then shows as a sliver down the edge
+of the artwork -- which is exactly what happened on the first attempt.
+
+A side is only trusted when it really is a straight line: 90% of its samples
+within 1.5px of the fitted line and no more than 10° of tilt
+(`_EDGE_INLIER_PX`, `_EDGE_MIN_INLIERS`, `_EDGE_MAX_TILT`). Where the fill has
+leaked its boundary wanders, fails the test, and the squared box stands, so a
+line fitted through a leak cannot skew the frame.
+
+Measured over the 53 single-opening templates, against the same code without
+the straightening: no region lost, and the bounding box is within a pixel on
+41/45 at tolerance 5 and 43/45 at tolerance 20 (median change 0px) -- the
+angles move, the coverage does not. The two mockups that prompted this read
+-2.13° against an opening of -2.19°, and -0.77° against -1.06°.
+
 ## Things already fixed (do not reintroduce)
 
 - The render used to save its derived mask over the detected one, destroying
@@ -160,6 +187,8 @@ reverted -- do not reapply it without measuring at tolerance 5.
   `effects.green_frame_mockups.fit_mode`, so the two fitted artwork differently.
 - FRAME POINTS' fill slipped through soft spots in a frame's bezel and took
   the moulding with it — see the section above.
+- A frame that is not level came back level, because the region was squared
+  off to its bounding box — see the section above.
 - A mask-backed template drew no polygon and refused every drag, so a FRAME
   POINTS or COLOR PICK result could not be adjusted at all. Its frames are
   edited like any other now (`renderRegionFrames`).
@@ -307,6 +336,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 115 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 116 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.

@@ -769,3 +769,41 @@ def test_frame_points_does_not_leak_through_a_gap_in_a_hard_bezel(tmp_path: Path
     region = green_detection_raw(state, 0)["regions"][0]
     assert region["width"] <= (opening[2] - opening[0]) + 12, "the fill escaped through the bezel"
     assert region["x"] >= opening[0] - 12, "the fill escaped through the bezel"
+
+
+def test_frame_points_keeps_the_angle_of_a_frame_that_is_not_level(tmp_path: Path):
+    """A mockup shot at a slight angle keeps that angle.
+
+    Snapping the region's bounding box to the frame's edges squares it off, so
+    a frame a couple of degrees off level came back level -- and the artwork
+    drawn in it sat crooked against the frame around it. Where a side of the
+    fill is a straight line, the region is trimmed back to it.
+    """
+    import math
+    import numpy as np
+    import cv2
+    from services.green_frame_mockup_service import (
+        GreenFrameSettings, detect_frames_from_points, green_detection_raw)
+
+    tilt = 3.0
+    canvas = np.full((420, 520, 3), 236, np.uint8)                     # wall
+    corners = np.array([[90, 90], [430, 90], [430, 330], [90, 330]], np.float32)
+    centre = corners.mean(axis=0)
+    rotation = cv2.getRotationMatrix2D(tuple(centre), tilt, 1.0)
+    tilted = cv2.transform(corners[None], rotation)[0]
+    cv2.fillConvexPoly(canvas, np.round(tilted).astype(np.int32), (70, 62, 55))   # the frame
+    inner = centre + (tilted - centre) * 0.9
+    cv2.fillConvexPoly(canvas, np.round(inner).astype(np.int32), (250, 250, 250))  # the opening
+    image = Image.fromarray(canvas, "RGB").convert("RGBA")
+
+    state = detect_frames_from_points(
+        image, [{"x": int(centre[0]), "y": int(centre[1])}], 20,
+        GreenFrameSettings(tolerance=20, min_area=80),
+    )
+
+    assert len(state.regions) == 1
+    frame = green_detection_raw(state, 0)["regions"][0]["corners"]
+    top = math.degrees(math.atan2(frame[1]["y"] - frame[0]["y"], frame[1]["x"] - frame[0]["x"]))
+    bottom = math.degrees(math.atan2(frame[2]["y"] - frame[3]["y"], frame[2]["x"] - frame[3]["x"]))
+    assert abs(top + tilt) <= 1.0, f"the top edge came back at {top:+.2f} degrees, not {-tilt:+.2f}"
+    assert abs(bottom + tilt) <= 1.0, f"the bottom edge came back at {bottom:+.2f} degrees"
