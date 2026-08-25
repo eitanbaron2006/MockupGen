@@ -218,3 +218,19 @@ def test_editor_waits_for_the_new_background_before_laying_out_overlays():
     assert "canvas.complete && canvas.naturalWidth > 0" in apply_background
     assert 'image.src.indexOf(`/templates/${template.template_id}/`) === -1' in guard
     assert 'image.addEventListener("load", () => drawSelection(), { once: true })' in guard
+
+
+def test_overlay_falls_back_to_the_template_fit_mode_when_the_green_effect_has_none():
+    """parse_green_frame_settings falls back to the template's own fit mode.
+
+    The panel defaults carry "cover", so reading them instead of the effect
+    cropped the sides off artwork on a template set to stretch -- the editor
+    showed a crop the render never made.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    overlay = js.split("function renderGreenFrameArtworkOverlay(", 1)[1].split(end_of_function, 1)[0]
+
+    assert "template.effects.green_frame_mockups.fit_mode" in overlay
+    assert "(placementSettings && greenFitMode) || templateFit" in overlay
+    assert "placementSettings.fit_mode" not in overlay

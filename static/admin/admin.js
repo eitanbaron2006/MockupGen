@@ -2011,8 +2011,14 @@
     // the green settings; everywhere else the renderer fits the artwork to the
     // frame's bounding box and warps it straight onto the corners.
     const placementSettings = usesGreenFramePipeline(template) ? greenSettings : null;
+    // parse_green_frame_settings falls back to the template's own fit mode when
+    // the green effect does not name one, so read the effect itself rather than
+    // the panel defaults -- those carry "cover", which cropped the sides off
+    // artwork on a template set to stretch.
+    const greenFitMode = template.effects && template.effects.green_frame_mockups
+      && template.effects.green_frame_mockups.fit_mode;
     const templateFit = ($("fitMode") && $("fitMode").value) || template.fit_mode;
-    const rawFitMode = (placementSettings && placementSettings.fit_mode) || templateFit || "cover";
+    const rawFitMode = (placementSettings && greenFitMode) || templateFit || "cover";
     const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
     const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;

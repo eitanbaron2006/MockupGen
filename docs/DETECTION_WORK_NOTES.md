@@ -118,6 +118,13 @@ CLASSIC are:
   so the canvas mask clipped nothing until `mask-mode: luminance` was set.
 - The canvas read `#fitMode` while the renderer reads the template's
   `effects.green_frame_mockups.fit_mode`, so the two fitted artwork differently.
+- The overlay then read the fit mode off the *panel defaults* rather than off
+  the template's green effect. Those defaults carry `cover`, so a template set
+  to stretch had the sides cropped off its artwork in the editor — visible the
+  moment a mask-backed mode (FRAME POINTS, COLOR PICK) took over from AUTO
+  DETECT on the same template. `parse_green_frame_settings` falls back to the
+  template's own fit mode when the effect names none, and the editor now does
+  the same.
 - The editor warped the artwork onto the frame while the renderer warped onto
   the detection-time `outer_corners`, and sized its fit box from the top and
   left edges while the renderer used the longer of each pair of opposite sides.
@@ -255,6 +262,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 113 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 114 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.
