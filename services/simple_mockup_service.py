@@ -609,6 +609,32 @@ def _green_detection_cache_key(
     )
 
 
+def _mask_from_regions(regions: list[dict], canvas_size: tuple[int, int]) -> Image.Image:
+    """The opening each saved frame describes, drawn as a mask.
+
+    Used where no mask file stands behind the template: the frames carry exact
+    corners, so they describe their own shape.
+    """
+    from PIL import ImageDraw
+
+    mask = Image.new("L", canvas_size, 0)
+    draw = ImageDraw.Draw(mask)
+    for region in regions or []:
+        if not isinstance(region, dict):
+            continue
+        corners = region.get("corners") or region.get("inner_corners") or region.get("outer_corners")
+        if corners and len(corners) >= 3:
+            draw.polygon(
+                [(int(round(point["x"])), int(round(point["y"]))) for point in corners], fill=255
+            )
+        else:
+            left, top = int(region.get("x", 0)), int(region.get("y", 0))
+            width = int(region.get("width", region.get("w", 1)))
+            height = int(region.get("height", region.get("h", 1)))
+            draw.rectangle([left, top, left + width, top + height], fill=255)
+    return mask
+
+
 def _render_green_frame_mockup(
     *,
     background: Image.Image,
@@ -643,22 +669,12 @@ def _render_green_frame_mockup(
         if regions_define_mask:
             raw_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
             if raw_regions:
-                from PIL import ImageDraw
-                mask_img = Image.new("L", canvas_size, 0)
-                draw = ImageDraw.Draw(mask_img)
-                for r in raw_regions:
-                    corners = r.get("corners") or r.get("inner_corners") or r.get("outer_corners")
-                    if corners and len(corners) >= 3:
-                        pts = [(int(round(p["x"])), int(round(p["y"]))) for p in corners]
-                        draw.polygon(pts, fill=255)
-                    else:
-                        rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
-                        rw, rh = int(r.get("width", r.get("w", 1))), int(r.get("height", r.get("h", 1)))
-                        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=255)
                 # Rendering never writes to the template folder. This used to
                 # save the derived mask over the detected one, which quietly
                 # destroyed the real outline the moment a frame was rendered.
-                detection = detection_from_mask(mask_img, raw_artwork_area, settings)
+                detection = detection_from_mask(
+                    _mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
+                )
             else:
                 detection = detect_green_frames(background, settings)
 
@@ -673,6 +689,15 @@ def _render_green_frame_mockup(
                 if mask_name and (template_folder / mask_name).is_file():
                     full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
                     detection = detection_from_mask(full_mask, raw_artwork_area, settings)
+                elif raw_has_perspective:
+                    # No mask beside the template, but the frames carry their
+                    # own outline, so draw it. A template whose mask file has
+                    # gone missing used to fail to render at all -- and in the
+                    # admin that surfaced as a Download button with nothing
+                    # behind it.
+                    detection = detection_from_mask(
+                        _mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
+                    )
 
             if raw_regions and isinstance(raw_regions, list):
                 from services.green_frame_mockup_service import _list_to_corners

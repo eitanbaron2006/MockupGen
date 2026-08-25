@@ -1,7 +1,7 @@
 {
   "template_id": "template_8350a906c799",
-  "name": "ChatGPT Image Aug 21 2026 11 51 34 PM 1",
-  "product_type": "horizontal-wall-art",
+  "name": "V3-6",
+  "product_type": "vertival-wall-art-frame",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
@@ -88,7 +88,7 @@
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
-      "enabled": false,
+      "enabled": true,
       "left": 10,
       "opacity": 0.4,
       "right": 10,
@@ -96,7 +96,7 @@
       "top": 10
     },
     "matte_finish": {
-      "contrast": -0.15,
+      "contrast": -0.14,
       "enabled": false,
       "shadow_lift": 0.08,
       "target": "artwork"

@@ -280,3 +280,31 @@ def test_detection_leaves_preview_mode_before_it_draws():
     assert "if (state.isPreviewingMockup) await togglePreviewMode();" in detect
     # The early return is why leaving preview mode has to come first.
     assert "if (state.isPreviewingMockup) {" in draw
+
+
+def test_the_download_button_never_points_at_an_empty_href():
+    """A link with no href downloads the page itself.
+
+    It arrives named mockup.png and will not open, which is what a failed
+    render used to produce: the button was re-enabled with nothing behind it.
+    And a rendered mockup runs to megabytes, so the link is a blob rather than
+    a data: URL the browser would have to swallow whole.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    setter = js.split("function setDownloadTarget(", 1)[1].split(end_of_function, 1)[0]
+    clearer = js.split("function clearDownloadTarget(", 1)[1].split(end_of_function, 1)[0]
+
+    assert "URL.createObjectURL" in setter
+    assert "URL.revokeObjectURL" in setter and "URL.revokeObjectURL" in clearer
+    assert 'button.removeAttribute("href")' in clearer
+    assert 'button.style.pointerEvents = "none"' in clearer
+
+    # Nothing assigns the href on its own any more.
+    assert '$("downloadMockupButton").href =' not in js
+    assert '$("toolbarDownloadButton").href =' not in js
+
+    # A failed render disables the button instead of enabling an empty one.
+    background = js.split("Background render failed:", 1)[1].split("} finally {", 1)[0]
+    assert "clearDownloadTarget(" in background
+    assert "style.pointerEvents = \"auto\"" not in background

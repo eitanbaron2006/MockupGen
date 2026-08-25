@@ -1739,3 +1739,61 @@ def test_a_stale_manifest_never_wins_over_the_catalog(tmp_path):
     # And picking a template by product type reads the catalog's category too.
     auto = post_render(client, template_id="", product_type="wall-art")
     assert auto.status_code == 200, auto.get_json()
+
+
+def test_a_template_renders_from_its_frames_when_its_mask_file_is_missing(tmp_path):
+    """The frames describe their own shape.
+
+    A mask-backed template whose mask.png is not beside it -- published before
+    the mask was drawn, or the file lost since -- used to fail the render
+    outright with "Green frame mask has no usable regions". In the admin that
+    arrived as a Download button with nothing behind it, which saved the page
+    itself under an image's name.
+    """
+    from PIL import ImageDraw
+
+    templates_folder = tmp_path / "templates_data"
+    template_id = "template_maskless"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (240, 240)
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+    # No mask.png here, on purpose.
+
+    frame = [
+        {"x": 60, "y": 60}, {"x": 180, "y": 60},
+        {"x": 180, "y": 180}, {"x": 60, "y": 180},
+    ]
+    raw = {
+        "mode": "green_frames_mockups",
+        "regions": [{"x": 60, "y": 60, "width": 120, "height": 120, "area": 1, "corners": frame}],
+    }
+    (folder / "manifest.json").write_text(json.dumps({
+        "template_id": template_id, "name": "V1-1",
+        "canvas_width": canvas[0], "canvas_height": canvas[1],
+        "artwork_area": {"x": 60, "y": 60, "width": 120, "height": 120, "corners": frame},
+        "fit_mode": "stretch", "background": "background.png", "foreground": None,
+        "mask": "mask.png", "preview": "preview.png",
+        "supported_modes": ["simple"], "output_format": "png",
+        "raw_artwork_area": raw, "detection_provider": "classic",
+    }), encoding="utf-8")
+
+    artwork = tmp_path / "art.png"
+    art = Image.new("RGB", (100, 100), (255, 0, 255))
+    ImageDraw.Draw(art).rectangle((0, 0, 99, 30), fill=(20, 220, 40))
+    art.save(artwork)
+
+    result = render_module.render_simple_mockup(
+        template_id=template_id, artwork_path=artwork, output_format="png",
+        templates_folder=templates_folder, output_folder=tmp_path / "outputs",
+        fit_mode="stretch", realism=False, raw_artwork_area=raw, mask_name="mask.png",
+    )
+
+    import numpy as np
+    pixels = np.asarray(
+        Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+    ).astype(int)
+    # The artwork fills the frame the region describes, and stays inside it.
+    assert np.abs(pixels[120, 120] - np.array([255, 0, 255])).sum() < 90
+    assert np.abs(pixels[30, 30] - np.array([240, 240, 240])).sum() < 30

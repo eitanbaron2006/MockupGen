@@ -201,6 +201,17 @@ angles move, the coverage does not. The two mockups that prompted this read
   frames for the same reason from the other direction: `drawSelection` returns
   early while `state.isPreviewingMockup` is set, so clearing the preview and
   then redrawing produced nothing. Detection leaves preview mode first.
+- A template whose `mask.png` was not beside it — five of them, the file
+  living only in the draft folder — failed to render at all with "Green frame
+  mask has no usable regions". The frames carry exact corners, so the render
+  draws the opening from them when no mask file stands behind the template
+  (`_mask_from_regions`).
+- That failure surfaced in the admin as a Download button enabled with an empty
+  href, which downloads the page itself under the name mockup.png: an image
+  file that will not open. The download link is set in one place now
+  (`setDownloadTarget`), it hands over a blob rather than a multi-megabyte
+  `data:` URL, and a render that fails leaves the button disabled
+  (`clearDownloadTarget`) with the reason on it.
 - The overlay then read the fit mode off the *panel defaults* rather than off
   the template's green effect. Those defaults carry `cover`, so a template set
   to stretch had the sides cropped off its artwork in the editor — visible the
@@ -241,18 +252,6 @@ angles move, the coverage does not. The two mockups that prompted this read
   **`template_ac1671aa932f` carries `corners_edited: true`** — its frames were
   adjusted by hand, and re-detecting would throw that work away.
   `template_44ab02ba0914` has already been re-run and carries the level frame.
-- **Five live templates reference a `mask.png` they do not have.** It sits in
-  their draft folder only: `template_0dfe70ef0983`, `template_44ab02ba0914`,
-  `template_5ac5c64ca9cd`, `template_8350a906c799`, `template_a752f783758f`.
-  Renders survive because their regions carry corners and the pipeline falls
-  back to live green detection, and the canvas no longer blanks out over the
-  missing file, but any path that needs the mask itself 500s with
-  `Template asset not found: mask.png`.
-- The **Green frames controls** panel is hidden for multi-region templates
-  (`isGreenFrameTemplate` returns false when `isMultiRegionTemplate` is true),
-  so perspective, envelope and fit cannot be changed from the UI on exactly the
-  templates that have several frames.
-
 ## Diagnostics
 
 Frame vs mask orientation and enclosure, per region:
@@ -346,6 +345,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 118 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 122 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.

@@ -56,6 +56,63 @@
     return new File([u8arr], filename, { type: mime });
   }
 
+  // A rendered mockup runs to several megabytes, and a data: URL that size
+  // makes a poor download link: the browser saves what it can and the file will
+  // not open. Hand the buttons a blob instead -- nothing touches disk on the
+  // server either way -- and name the file after what was actually rendered.
+  let downloadObjectUrl = null;
+
+  function setDownloadTarget(outputUrl) {
+    if (downloadObjectUrl) {
+      URL.revokeObjectURL(downloadObjectUrl);
+      downloadObjectUrl = null;
+    }
+    if (!outputUrl) {
+      clearDownloadTarget("The mockup could not be rendered");
+      return;
+    }
+    let href = outputUrl;
+    let filename = "mockup.png";
+    if (outputUrl.startsWith("data:")) {
+      try {
+        const mime = outputUrl.slice(5, outputUrl.indexOf(";"));
+        const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1] || "png";
+        filename = `mockup.${extension}`;
+        downloadObjectUrl = URL.createObjectURL(dataURLtoFile(outputUrl, filename));
+        href = downloadObjectUrl;
+      } catch (error) {
+        console.error("Could not prepare the download:", error);
+      }
+    } else {
+      const clean = outputUrl.split("?")[0];
+      filename = clean.slice(clean.lastIndexOf("/") + 1) || filename;
+    }
+    [$("downloadMockupButton"), $("toolbarDownloadButton")].forEach((button) => {
+      if (!button) return;
+      button.href = href;
+      button.setAttribute("download", filename);
+      button.style.pointerEvents = "auto";
+      button.style.opacity = "1";
+      button.setAttribute("title", "Download realistic mockup");
+    });
+  }
+
+  function clearDownloadTarget(reason) {
+    if (downloadObjectUrl) {
+      URL.revokeObjectURL(downloadObjectUrl);
+      downloadObjectUrl = null;
+    }
+    // A link with an empty href downloads the page itself, which arrives as an
+    // image file that will not open. Leave it disabled instead.
+    [$("downloadMockupButton"), $("toolbarDownloadButton")].forEach((button) => {
+      if (!button) return;
+      button.removeAttribute("href");
+      button.style.pointerEvents = "none";
+      button.style.opacity = "0.5";
+      button.setAttribute("title", reason || "Generating high-fidelity download...");
+    });
+  }
+
   function resolveFitMode(fitMode, artworkWidth, artworkHeight, frameWidth, frameHeight) {
     if (fitMode !== "auto") return fitMode;
     if (!artworkWidth || !artworkHeight || !frameWidth || !frameHeight) {
@@ -4979,20 +5036,11 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Rendering failed");
 
-      if (realism && $("downloadMockupButton")) {
-        $("downloadMockupButton").href = data.output_url;
-        $("downloadMockupButton").style.pointerEvents = "auto";
-        $("downloadMockupButton").style.opacity = "1";
-      }
-      if (realism && $("toolbarDownloadButton")) {
-        $("toolbarDownloadButton").href = data.output_url;
-        $("toolbarDownloadButton").style.pointerEvents = "auto";
-        $("toolbarDownloadButton").style.opacity = "1";
-        $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
-      }
+      if (realism) setDownloadTarget(data.output_url);
       return data.output_url;
     } catch (err) {
       console.error("Live-preview refresh render failed:", err);
+      if (realism) clearDownloadTarget("The mockup could not be rendered");
       return null;
     }
   }
@@ -7085,20 +7133,15 @@
       
       // Sync Header buttons
       if ($("previewMockupButton")) $("previewMockupButton").textContent = "Preview Mockup";
-      if ($("downloadMockupButton")) {
-        $("downloadMockupButton").classList.add("hidden");
-        $("downloadMockupButton").href = "";
-      }
-      
+      if ($("downloadMockupButton")) $("downloadMockupButton").classList.add("hidden");
+
       // Sync Toolbar buttons
       if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.remove("active");
-      if ($("toolbarDownloadButton")) {
-        $("toolbarDownloadButton").classList.add("hidden");
-        $("toolbarDownloadButton").href = "";
-        $("toolbarDownloadButton").style.pointerEvents = "auto";
-        $("toolbarDownloadButton").style.opacity = "1";
-        $("toolbarDownloadButton").removeAttribute("title");
-      }
+      if ($("toolbarDownloadButton")) $("toolbarDownloadButton").classList.add("hidden");
+
+      // Leaving preview drops the render, so drop what was downloadable with
+      // it -- and give the blob back to the browser.
+      clearDownloadTarget("Preview the mockup to download it");
 
       // Hide rendered mockup preview
       if ($("selectionRenderedMockup")) {
@@ -7135,17 +7178,9 @@
       setStatus("High-fidelity mockup preview active");
 
       // 4. Show download buttons as "Generating..." (Disabled / Loading)
-      if ($("downloadMockupButton")) {
-        $("downloadMockupButton").classList.remove("hidden");
-        $("downloadMockupButton").style.pointerEvents = "none";
-        $("downloadMockupButton").style.opacity = "0.5";
-      }
-      if ($("toolbarDownloadButton")) {
-        $("toolbarDownloadButton").classList.remove("hidden");
-        $("toolbarDownloadButton").style.pointerEvents = "none";
-        $("toolbarDownloadButton").style.opacity = "0.5";
-        $("toolbarDownloadButton").setAttribute("title", "Generating high-fidelity download...");
-      }
+      if ($("downloadMockupButton")) $("downloadMockupButton").classList.remove("hidden");
+      if ($("toolbarDownloadButton")) $("toolbarDownloadButton").classList.remove("hidden");
+      clearDownloadTarget("Generating high-fidelity download...");
 
       // Lock input interaction and show custom realistic preview loading state
       setBusy(true);
@@ -7196,31 +7231,15 @@
             }
             $("selectionImageOverlay").classList.add("hidden");
 
-            // Enable download buttons
-            if ($("downloadMockupButton")) {
-              $("downloadMockupButton").href = data.output_url;
-              $("downloadMockupButton").style.pointerEvents = "auto";
-              $("downloadMockupButton").style.opacity = "1";
-            }
-            if ($("toolbarDownloadButton")) {
-              $("toolbarDownloadButton").href = data.output_url;
-              $("toolbarDownloadButton").style.pointerEvents = "auto";
-              $("toolbarDownloadButton").style.opacity = "1";
-              $("toolbarDownloadButton").setAttribute("title", "Download realistic mockup");
-            }
+            setDownloadTarget(data.output_url);
           }
         } catch (err) {
           console.error("Background render failed:", err);
-          toast("Realistic background optimization failed, standard download is active");
-          
-          // Fallback to enabled download buttons
-          if (state.isPreviewingMockup) {
-            if ($("toolbarDownloadButton")) {
-              $("toolbarDownloadButton").style.pointerEvents = "auto";
-              $("toolbarDownloadButton").style.opacity = "1";
-              $("toolbarDownloadButton").setAttribute("title", "Download mockup");
-            }
-          }
+          toast(`Could not render this mockup: ${err.message || err}`);
+          // The render is what the download is: with nothing to hand over, the
+          // button stays disabled. Enabling it with an empty href downloaded
+          // the page itself, saved under an image's name.
+          clearDownloadTarget("The mockup could not be rendered");
         } finally {
           // Unlock the UI and restore default detection panel labels
           setBusy(false);
