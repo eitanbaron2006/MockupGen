@@ -391,3 +391,72 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
     zoom_head = css.split("#zoomHud .hud-grip {", 1)[1].split("}", 1)[0]
     assert "color: var(--success)" in style_head
     assert "color: var(--accent)" in zoom_head
+
+
+def test_the_sidebar_slides_open_under_the_pointer_and_locks_open():
+    """The sidebar is a rail that slides open when the pointer is on it.
+
+    It slides over the page rather than pushing it, so opening a drawer never
+    reflows the canvas, and it keeps its controls and the workspace icons while
+    narrow. The lock pins it open: it takes its column back and stops sliding.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    assert 'id="sidebarCollapseToggle"' in html and 'id="sidebarLockToggle"' in html
+    assert "SIDEBAR_LOCKED_KEY" in js
+
+    # Pointer in, pointer out -- with a moment's grace on the way out.
+    assert 'sidebar.addEventListener("pointerenter"' in js
+    assert 'sidebar.addEventListener("pointerleave"' in js
+    assert "SIDEBAR_SLIDE_AWAY_MS" in js
+    # The keyboard gets in and out of it too.
+    assert 'sidebar.addEventListener("focusin"' in js
+
+    # Locked means pinned open and no sliding at all.
+    assert 'document.body.classList.toggle("sidebar-auto", !sidebarLocked)' in js
+    assert "if (!sidebar || sidebarLocked) return;" in js
+
+    # A fixed sidebar leaves the grid, so the page has to be told to stay in the
+    # second column -- otherwise it slides into the rail's column and is
+    # squeezed to nothing.
+    auto_shell = css.split("body.sidebar-auto .shell {", 1)[1].split("}", 1)[0]
+    assert "grid-column: 2" in auto_shell
+
+    # Sliding happens over the page: the column stays a rail while it does.
+    auto_sidebar = css.split("body.sidebar-auto .sidebar {", 1)[1].split("}", 1)[0]
+    assert "position: fixed" in auto_sidebar
+    assert "transition: width" in auto_sidebar
+    auto_app = css.split("body.sidebar-auto .app {", 1)[1].split("}", 1)[0]
+    assert "var(--sidebar-rail" in auto_app
+
+    # Narrow, the rail still shows something to click.
+    assert ".sidebar.is-narrow .category-list," in css
+    collapsed_nav = css.split(".sidebar.is-narrow .nav-item .nav-icon {", 1)[1].split("}", 1)[0]
+    assert "font-size: 15px" in collapsed_nav
+
+    # The wiring sits with the rest of the DOM wiring at the end of the file:
+    # attached where the document has been parsed, or the buttons do nothing.
+    assert js.index("SIDEBAR_LOCKED_KEY") > js.index("function drawSelection()")
+
+
+def test_corner_lists_with_no_coordinates_are_never_drawn():
+    """Older detections left corner lists like [{}, {"x": null}] behind.
+
+    Fed to an SVG they become "NaN,NaN", which the browser rejects attribute by
+    attribute: a console full of errors and no outline on the canvas. Every
+    place that reads corners for drawing checks them first and falls back to
+    the area's own box.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    guard = js.split("function usableCorners(", 1)[1].split(end_of_function, 1)[0]
+
+    assert "Number.isFinite(Number(point.x))" in guard
+    assert "Number.isFinite(Number(point.y))" in guard
+
+    # Nothing reads a corner list straight into the drawing any more.
+    assert "area.corners || areaCorners(area)" not in js
+    assert "region.corners || region.inner_corners || areaCorners(region)" not in js
+    assert js.count("usableCorners(") >= 4

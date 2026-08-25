@@ -1893,6 +1893,20 @@
     });
   }
 
+  /** Are these four corners something that can be drawn?
+   *
+   * Older detections left corner lists like [{}, {"x": null}, ...] behind. Fed
+   * to an SVG they become "NaN,NaN", which the browser rejects attribute by
+   * attribute -- a console full of errors and no outline on the canvas.
+   */
+  function usableCorners(corners) {
+    return Array.isArray(corners)
+      && corners.length >= 4
+      && corners.every((point) => point
+        && Number.isFinite(Number(point.x))
+        && Number.isFinite(Number(point.y)));
+  }
+
   function areaCorners(area) {
     if (area && Array.isArray(area.corners) && area.corners.length >= 4) return area.corners;
     if (!area) return [];
@@ -1913,13 +1927,15 @@
         .filter((region) => region && Number(region.width) > 0 && Number(region.height) > 0)
         .map((region) => ({
           ...region,
-          corners: region.corners || region.inner_corners || areaCorners(region)
+          corners: usableCorners(region.corners) ? region.corners
+            : usableCorners(region.inner_corners) ? region.inner_corners
+              : areaCorners(region)
         }))
         .filter((region) => Array.isArray(region.corners) && region.corners.length >= 4);
     }
     const area = template.artwork_area;
     if (!area) return [];
-    const corners = area.corners || areaCorners(area);
+    const corners = usableCorners(area.corners) ? area.corners : areaCorners(area);
     return [
       {
         ...area,
@@ -2203,8 +2219,10 @@
     const deleteBadges = [];
 
     regions.forEach((region, rIdx) => {
-      const corners = region.corners || region.inner_corners || areaCorners(region);
-      if (!region.corners) region.corners = corners;
+      const corners = usableCorners(region.corners) ? region.corners
+        : usableCorners(region.inner_corners) ? region.inner_corners
+          : areaCorners(region);
+      if (!usableCorners(region.corners)) region.corners = corners;
 
       const displayPoints = corners.map(p => ({
         x: (p.x / template.canvas_width) * rect.width,
@@ -2496,17 +2514,12 @@
 
       const rawPolygon = $("rawSelectionPolygon");
       const rawTag = $("svgRawZoneTag");
-      if (template.raw_artwork_area && rawPolygon) {
-        if (!template.raw_artwork_area.corners) {
-          const rawA = template.raw_artwork_area;
-          template.raw_artwork_area.corners = [
-            { x: rawA.x, y: rawA.y },
-            { x: rawA.x + rawA.width, y: rawA.y },
-            { x: rawA.x + rawA.width, y: rawA.y + rawA.height },
-            { x: rawA.x, y: rawA.y + rawA.height }
-          ];
-        }
-        const rawCorners = template.raw_artwork_area.corners;
+      const rawArea = template.raw_artwork_area;
+      const rawBox = rawArea && Number.isFinite(Number(rawArea.x)) && Number.isFinite(Number(rawArea.width))
+        ? areaCorners(rawArea)
+        : null;
+      const rawCorners = usableCorners(rawArea && rawArea.corners) ? rawArea.corners : rawBox;
+      if (rawCorners && rawPolygon) {
         const rawPointsStr = rawCorners.map(p => {
           const cx = (p.x / template.canvas_width) * rect.width;
           const cy = (p.y / template.canvas_height) * rect.height;
@@ -7496,6 +7509,125 @@
     canvasToolbars.push({ element: toolbar, key });
     restore();
   }
+
+  // The sidebar sits at the left edge as a rail and slides open under the
+  // pointer, over the page rather than pushing it -- opening a drawer should
+  // not reflow the canvas. Locking it pins it open: it takes its column back
+  // and stops sliding.
+  const SIDEBAR_LOCKED_KEY = "mockupStudio.sidebarLocked";
+  // Short: while the drawer is open it covers the left of the page, so the
+  // grace period on the way out is only long enough to survive a wobble on the
+  // boundary -- not long enough to swallow a click meant for what is behind it.
+  const SIDEBAR_SLIDE_AWAY_MS = 140;
+
+  let sidebarLocked = false;
+  let sidebarCloseTimer = null;
+
+  function sidebarElements() {
+    return {
+      sidebar: document.querySelector(".sidebar"),
+      collapseToggle: $("sidebarCollapseToggle"),
+      lockToggle: $("sidebarLockToggle"),
+    };
+  }
+
+  function openSidebar() {
+    const { sidebar, collapseToggle } = sidebarElements();
+    if (!sidebar) return;
+    window.clearTimeout(sidebarCloseTimer);
+    sidebar.classList.remove("is-narrow");
+    if (collapseToggle) collapseToggle.setAttribute("aria-expanded", "true");
+  }
+
+  function closeSidebar({ immediate = false } = {}) {
+    const { sidebar, collapseToggle } = sidebarElements();
+    if (!sidebar || sidebarLocked) return;
+    window.clearTimeout(sidebarCloseTimer);
+    const shut = () => {
+      sidebar.classList.add("is-narrow");
+      if (collapseToggle) collapseToggle.setAttribute("aria-expanded", "false");
+    };
+    if (immediate) shut();
+    // A moment's grace on the way out, so crossing a corner of the sidebar
+    // does not slam it shut under the hand.
+    else sidebarCloseTimer = window.setTimeout(shut, SIDEBAR_SLIDE_AWAY_MS);
+  }
+
+  function applySidebarLock({ persist = true } = {}) {
+    const { sidebar, collapseToggle, lockToggle } = sidebarElements();
+    if (!sidebar) return;
+    document.body.classList.toggle("sidebar-auto", !sidebarLocked);
+    if (sidebarLocked) {
+      window.clearTimeout(sidebarCloseTimer);
+      sidebar.classList.remove("is-narrow");
+    } else {
+      sidebar.classList.add("is-narrow");
+    }
+    if (collapseToggle) {
+      collapseToggle.disabled = sidebarLocked;
+      collapseToggle.title = sidebarLocked ? "The sidebar is locked open" : "Slide the sidebar shut";
+      collapseToggle.setAttribute("aria-label", collapseToggle.title);
+      collapseToggle.setAttribute("aria-expanded", String(!sidebar.classList.contains("is-narrow")));
+    }
+    if (lockToggle) {
+      lockToggle.setAttribute("aria-pressed", String(sidebarLocked));
+      lockToggle.title = sidebarLocked ? "Let the sidebar slide again" : "Lock the sidebar open";
+      lockToggle.setAttribute("aria-label", lockToggle.title);
+      const open = lockToggle.querySelector(".lock-icon-open");
+      const closed = lockToggle.querySelector(".lock-icon-closed");
+      if (open) open.classList.toggle("hidden", sidebarLocked);
+      if (closed) closed.classList.toggle("hidden", !sidebarLocked);
+    }
+    if (persist) {
+      try {
+        localStorage.setItem(SIDEBAR_LOCKED_KEY, String(sidebarLocked));
+      } catch (_error) {
+        // Remembering the lock is a convenience, not a requirement.
+      }
+    }
+    // Only the lock changes how much room is left for the canvas; sliding
+    // happens over the page and leaves the workspace alone.
+    requestAnimationFrame(() => {
+      if (state.selected) drawSelection();
+    });
+  }
+
+  (() => {
+    const { sidebar, collapseToggle, lockToggle } = sidebarElements();
+    if (!sidebar) return;
+
+    sidebar.addEventListener("pointerenter", () => {
+      if (!sidebarLocked) openSidebar();
+    });
+    sidebar.addEventListener("pointerleave", () => closeSidebar());
+    sidebar.addEventListener("focusin", () => {
+      if (!sidebarLocked) openSidebar();
+    });
+    sidebar.addEventListener("focusout", (event) => {
+      if (!sidebar.contains(event.relatedTarget)) closeSidebar();
+    });
+
+    if (collapseToggle) {
+      collapseToggle.addEventListener("click", () => {
+        if (sidebarLocked) return;
+        closeSidebar({ immediate: true });
+      });
+    }
+
+    if (lockToggle) {
+      lockToggle.addEventListener("click", () => {
+        sidebarLocked = !sidebarLocked;
+        applySidebarLock();
+      });
+    }
+
+    try {
+      sidebarLocked = localStorage.getItem(SIDEBAR_LOCKED_KEY) === "true";
+    } catch (_error) {
+      // Unlocked by default.
+    }
+    applySidebarLock({ persist: false });
+  })();
 
   makeToolbarDraggable($("zoomHud"), "zoomHud");
   makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar");
