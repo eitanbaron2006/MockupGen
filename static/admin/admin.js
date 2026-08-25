@@ -2104,6 +2104,166 @@
     });
   }
 
+  /** Draw an editable frame over every detected region: a polygon with a
+   * crosshair handle on each corner.
+   *
+   * A frame is a frame however detection found it, so a mask-backed template
+   * -- GREEN FRAMES, COLOR PICK, FRAME POINTS -- is edited exactly the way a
+   * multi-frame one is. Only the delete badge is held back where there is a
+   * single frame: removing it would leave the template with none.
+   */
+  function renderRegionFrames(template, regions, rect, showDelete) {
+    const multiGroup = $("multiRegionSvgGroup");
+    if (!multiGroup) return;
+    multiGroup.classList.remove("hidden");
+    multiGroup.innerHTML = "";
+
+    const style = state.selectionStyle;
+    const strokeColor = style.polygonColor || "#ed6f5c";
+    const strokeWidth = style.polygonWidth || 2;
+    const fillColor = style.polygonColor || "#ed6f5c";
+    const fillOpacity = (style.polygonOpacity || 15) / 100;
+    const crossColor = style.crossColor || "#ed6f5c";
+    const crossStrokeWidth = style.crossWidth || 1.5;
+    const crossOpacity = (style.crossOpacity || 100) / 100;
+    const halfSize = 12 / state.zoom;
+    const hitboxR = 14 / state.zoom;
+    const badgeRadius = 11 / state.zoom;
+    const deleteBadges = [];
+
+    regions.forEach((region, rIdx) => {
+      const corners = region.corners || region.inner_corners || areaCorners(region);
+      if (!region.corners) region.corners = corners;
+
+      const displayPoints = corners.map(p => ({
+        x: (p.x / template.canvas_width) * rect.width,
+        y: (p.y / template.canvas_height) * rect.height
+      }));
+      const pointsStr = displayPoints.map(p => `${p.x},${p.y}`).join(" ");
+
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      poly.setAttribute("points", pointsStr);
+      poly.setAttribute("class", "multi-region-polygon");
+      poly.dataset.regionIndex = String(rIdx);
+      poly.style.fill = fillColor;
+      poly.style.fillOpacity = String(fillOpacity);
+      poly.style.stroke = strokeColor;
+      poly.style.strokeWidth = `${strokeWidth}px`;
+      poly.style.cursor = "move";
+      multiGroup.appendChild(poly);
+
+      corners.forEach((p, cIdx) => {
+        const cx = (p.x / template.canvas_width) * rect.width;
+        const cy = (p.y / template.canvas_height) * rect.height;
+
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("class", "handle-group");
+        g.dataset.regionIndex = String(rIdx);
+        g.dataset.cornerIndex = String(cIdx);
+
+        const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        hLine.setAttribute("class", "cross-line h-line");
+        hLine.setAttribute("x1", cx - halfSize);
+        hLine.setAttribute("x2", cx + halfSize);
+        hLine.setAttribute("y1", cy);
+        hLine.setAttribute("y2", cy);
+        hLine.style.stroke = crossColor;
+        hLine.style.strokeWidth = `${crossStrokeWidth}px`;
+        hLine.style.opacity = String(crossOpacity);
+        hLine.style.pointerEvents = "none";
+
+        const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        vLine.setAttribute("class", "cross-line v-line");
+        vLine.setAttribute("x1", cx);
+        vLine.setAttribute("x2", cx);
+        vLine.setAttribute("y1", cy - halfSize);
+        vLine.setAttribute("y2", cy + halfSize);
+        vLine.style.stroke = crossColor;
+        vLine.style.strokeWidth = `${crossStrokeWidth}px`;
+        vLine.style.opacity = String(crossOpacity);
+        vLine.style.pointerEvents = "none";
+
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("class", "svg-handle handle-hitbox");
+        circle.setAttribute("cx", cx);
+        circle.setAttribute("cy", cy);
+        circle.setAttribute("r", hitboxR);
+        circle.dataset.regionIndex = String(rIdx);
+        circle.dataset.cornerIndex = String(cIdx);
+        circle.style.cursor = "crosshair";
+        circle.style.fill = "transparent";
+
+        g.appendChild(hLine);
+        g.appendChild(vLine);
+        g.appendChild(circle);
+        multiGroup.appendChild(g);
+      });
+
+      if (displayPoints.length > 0) {
+        const minX = Math.min(...displayPoints.map(p => p.x));
+        const maxX = Math.max(...displayPoints.map(p => p.x));
+        const minY = Math.min(...displayPoints.map(p => p.y));
+
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tag.setAttribute("class", "svg-zone-tag");
+        tag.setAttribute("x", minX);
+        tag.setAttribute("y", minY - 8);
+        tag.textContent = `Frame ${rIdx + 1}`;
+        multiGroup.appendChild(tag);
+
+        // Delete badges are drawn after every region so a neighbouring
+        // frame's polygon can never sit on top of one and eat the click.
+        deleteBadges.push({ rIdx, x: maxX, y: minY - badgeRadius - 2 });
+      }
+    });
+
+    if (showDelete) deleteBadges.forEach(({ rIdx, x, y }) => {
+      const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      badgeG.setAttribute("class", "region-delete-badge");
+      badgeG.style.cursor = "pointer";
+      // The parent SVG sets pointer-events:none; opt back in explicitly so
+      // the badge stays clickable even against a stale cached stylesheet.
+      badgeG.style.pointerEvents = "auto";
+
+      const badgeCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      badgeCircle.setAttribute("cx", x);
+      badgeCircle.setAttribute("cy", y);
+      badgeCircle.setAttribute("r", badgeRadius);
+      badgeCircle.setAttribute("fill", "#ef4444");
+      badgeCircle.setAttribute("stroke", "#ffffff");
+      badgeCircle.setAttribute("stroke-width", 1.5 / state.zoom);
+
+      const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      badgeText.setAttribute("x", x);
+      badgeText.setAttribute("y", y + badgeRadius * 0.36);
+      badgeText.setAttribute("text-anchor", "middle");
+      badgeText.setAttribute("fill", "#ffffff");
+      badgeText.setAttribute("font-size", `${badgeRadius * 1.25}px`);
+      badgeText.setAttribute("font-weight", "bold");
+      badgeText.setAttribute("pointer-events", "none");
+      badgeText.textContent = "✕";
+
+      const badgeTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      badgeTitle.textContent = `Remove frame ${rIdx + 1}`;
+
+      badgeG.appendChild(badgeCircle);
+      badgeG.appendChild(badgeText);
+      badgeG.appendChild(badgeTitle);
+      // Swallow the pointerdown so the canvas drag handler never starts a
+      // gesture here; the click that follows then reaches the badge.
+      badgeG.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      badgeG.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        removeDetectedRegion(rIdx);
+      });
+      multiGroup.appendChild(badgeG);
+    });
+  }
+
   function drawSelection() {
     if (state.globalOverlayPlacementActive) {
       $("selectionSvg").classList.add("hidden");
@@ -2148,12 +2308,23 @@
     const multiGroup = $("multiRegionSvgGroup");
 
     if (isGreenFrameTemplate(template)) {
-      selectionSvg.classList.add("hidden");
-      $("selectionPolygon").classList.add("hidden");
-      if (multiGroup) {
-        multiGroup.innerHTML = "";
-        multiGroup.classList.add("hidden");
+      // A mask-backed frame is still a frame: draw it with the same polygon
+      // and corner handles a multi-frame template gets, so a detection made
+      // by colour or by seed points can be adjusted like any other.
+      const maskedRegions = template.raw_artwork_area && Array.isArray(template.raw_artwork_area.regions)
+        ? template.raw_artwork_area.regions.filter((region) => region && (region.corners || region.width))
+        : [];
+      if (maskedRegions.length) {
+        selectionSvg.classList.remove("hidden");
+        renderRegionFrames(template, maskedRegions, rect, maskedRegions.length > 1);
+      } else {
+        selectionSvg.classList.add("hidden");
+        if (multiGroup) {
+          multiGroup.innerHTML = "";
+          multiGroup.classList.add("hidden");
+        }
       }
+      $("selectionPolygon").classList.add("hidden");
       for (let i = 0; i < 4; i++) {
         const hg = $(`handle_group_${i}`);
         if (hg) hg.classList.add("hidden");
@@ -2199,155 +2370,7 @@
       if ($("svgRawZoneTag")) $("svgRawZoneTag").classList.add("hidden");
       if ($("rawSelectionPolygon")) $("rawSelectionPolygon").classList.add("hidden");
 
-      if (multiGroup) {
-        multiGroup.classList.remove("hidden");
-        multiGroup.innerHTML = "";
-
-        const style = state.selectionStyle;
-        const strokeColor = style.polygonColor || "#ed6f5c";
-        const strokeWidth = style.polygonWidth || 2;
-        const fillColor = style.polygonColor || "#ed6f5c";
-        const fillOpacity = (style.polygonOpacity || 15) / 100;
-        const crossColor = style.crossColor || "#ed6f5c";
-        const crossStrokeWidth = style.crossWidth || 1.5;
-        const crossOpacity = (style.crossOpacity || 100) / 100;
-        const halfSize = 12 / state.zoom;
-        const hitboxR = 14 / state.zoom;
-        const badgeRadius = 11 / state.zoom;
-        const deleteBadges = [];
-
-        template.raw_artwork_area.regions.forEach((region, rIdx) => {
-          const corners = region.corners || region.inner_corners || areaCorners(region);
-          if (!region.corners) region.corners = corners;
-
-          const displayPoints = corners.map(p => ({
-            x: (p.x / template.canvas_width) * rect.width,
-            y: (p.y / template.canvas_height) * rect.height
-          }));
-          const pointsStr = displayPoints.map(p => `${p.x},${p.y}`).join(" ");
-
-          const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-          poly.setAttribute("points", pointsStr);
-          poly.setAttribute("class", "multi-region-polygon");
-          poly.dataset.regionIndex = String(rIdx);
-          poly.style.fill = fillColor;
-          poly.style.fillOpacity = String(fillOpacity);
-          poly.style.stroke = strokeColor;
-          poly.style.strokeWidth = `${strokeWidth}px`;
-          poly.style.cursor = "move";
-          multiGroup.appendChild(poly);
-
-          corners.forEach((p, cIdx) => {
-            const cx = (p.x / template.canvas_width) * rect.width;
-            const cy = (p.y / template.canvas_height) * rect.height;
-
-            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            g.setAttribute("class", "handle-group");
-            g.dataset.regionIndex = String(rIdx);
-            g.dataset.cornerIndex = String(cIdx);
-
-            const hLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            hLine.setAttribute("class", "cross-line h-line");
-            hLine.setAttribute("x1", cx - halfSize);
-            hLine.setAttribute("x2", cx + halfSize);
-            hLine.setAttribute("y1", cy);
-            hLine.setAttribute("y2", cy);
-            hLine.style.stroke = crossColor;
-            hLine.style.strokeWidth = `${crossStrokeWidth}px`;
-            hLine.style.opacity = String(crossOpacity);
-            hLine.style.pointerEvents = "none";
-
-            const vLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            vLine.setAttribute("class", "cross-line v-line");
-            vLine.setAttribute("x1", cx);
-            vLine.setAttribute("x2", cx);
-            vLine.setAttribute("y1", cy - halfSize);
-            vLine.setAttribute("y2", cy + halfSize);
-            vLine.style.stroke = crossColor;
-            vLine.style.strokeWidth = `${crossStrokeWidth}px`;
-            vLine.style.opacity = String(crossOpacity);
-            vLine.style.pointerEvents = "none";
-
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("class", "svg-handle handle-hitbox");
-            circle.setAttribute("cx", cx);
-            circle.setAttribute("cy", cy);
-            circle.setAttribute("r", hitboxR);
-            circle.dataset.regionIndex = String(rIdx);
-            circle.dataset.cornerIndex = String(cIdx);
-            circle.style.cursor = "crosshair";
-            circle.style.fill = "transparent";
-
-            g.appendChild(hLine);
-            g.appendChild(vLine);
-            g.appendChild(circle);
-            multiGroup.appendChild(g);
-          });
-
-          if (displayPoints.length > 0) {
-            const minX = Math.min(...displayPoints.map(p => p.x));
-            const maxX = Math.max(...displayPoints.map(p => p.x));
-            const minY = Math.min(...displayPoints.map(p => p.y));
-
-            const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            tag.setAttribute("class", "svg-zone-tag");
-            tag.setAttribute("x", minX);
-            tag.setAttribute("y", minY - 8);
-            tag.textContent = `Frame ${rIdx + 1}`;
-            multiGroup.appendChild(tag);
-
-            // Delete badges are drawn after every region so a neighbouring
-            // frame's polygon can never sit on top of one and eat the click.
-            deleteBadges.push({ rIdx, x: maxX, y: minY - badgeRadius - 2 });
-          }
-        });
-
-        deleteBadges.forEach(({ rIdx, x, y }) => {
-          const badgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          badgeG.setAttribute("class", "region-delete-badge");
-          badgeG.style.cursor = "pointer";
-          // The parent SVG sets pointer-events:none; opt back in explicitly so
-          // the badge stays clickable even against a stale cached stylesheet.
-          badgeG.style.pointerEvents = "auto";
-
-          const badgeCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          badgeCircle.setAttribute("cx", x);
-          badgeCircle.setAttribute("cy", y);
-          badgeCircle.setAttribute("r", badgeRadius);
-          badgeCircle.setAttribute("fill", "#ef4444");
-          badgeCircle.setAttribute("stroke", "#ffffff");
-          badgeCircle.setAttribute("stroke-width", 1.5 / state.zoom);
-
-          const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          badgeText.setAttribute("x", x);
-          badgeText.setAttribute("y", y + badgeRadius * 0.36);
-          badgeText.setAttribute("text-anchor", "middle");
-          badgeText.setAttribute("fill", "#ffffff");
-          badgeText.setAttribute("font-size", `${badgeRadius * 1.25}px`);
-          badgeText.setAttribute("font-weight", "bold");
-          badgeText.setAttribute("pointer-events", "none");
-          badgeText.textContent = "✕";
-
-          const badgeTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
-          badgeTitle.textContent = `Remove frame ${rIdx + 1}`;
-
-          badgeG.appendChild(badgeCircle);
-          badgeG.appendChild(badgeText);
-          badgeG.appendChild(badgeTitle);
-          // Swallow the pointerdown so the canvas drag handler never starts a
-          // gesture here; the click that follows then reaches the badge.
-          badgeG.addEventListener("pointerdown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          });
-          badgeG.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            removeDetectedRegion(rIdx);
-          });
-          multiGroup.appendChild(badgeG);
-        });
-      }
+      renderRegionFrames(template, template.raw_artwork_area.regions, rect, true);
     } else {
       if (multiGroup) {
         multiGroup.innerHTML = "";
@@ -2473,12 +2496,13 @@
   function beginDrag(event) {
     if (!state.selected || !state.selected.artwork_area || state.busy) return;
     if (state.polygonLocked) return;
-    if (isGreenFrameTemplate(state.selected)) return;
 
     const target = event.target;
     const template = state.selected;
 
-    // Check if dragging a multi-region frame
+    // Check if dragging a multi-region frame. A mask-backed template edits the
+    // same way: its frames live in raw_artwork_area.regions too, and that is
+    // what the renderer reads, so dragging one moves the artwork it holds.
     if (target.dataset && target.dataset.regionIndex !== undefined) {
       event.preventDefault();
       const rIdx = Number(target.dataset.regionIndex);
@@ -2500,6 +2524,10 @@
       };
       return;
     }
+
+    // Below here the whole artwork area is dragged as one rectangle, which a
+    // mask-backed template does not use: its geometry lives in its regions.
+    if (isGreenFrameTemplate(template)) return;
 
     let handle = "move";
     let index = -1;
@@ -2576,6 +2604,11 @@
       template.artwork_area.y = Math.min(...allYs);
       template.artwork_area.width = Math.max(...allXs) - template.artwork_area.x;
       template.artwork_area.height = Math.max(...allYs) - template.artwork_area.y;
+      if (template.raw_artwork_area.regions.length === 1) {
+        // Detection writes the single frame's corners into the artwork area as
+        // well; keep the two telling the same story once it has been dragged.
+        template.artwork_area.corners = nextCorners.map(c => ({ ...c }));
+      }
 
       updateCoordinateLabels();
       drawSelection();

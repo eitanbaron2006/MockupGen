@@ -126,21 +126,31 @@ def test_preview_effect_updates_can_persist_while_preview_render_is_busy():
     assert "persistTemplateState(state.selected, { force: state.isPreviewingMockup })" in js
 
 
-def test_mask_and_green_frame_templates_hide_polygon_and_disable_drag():
+def test_mask_backed_templates_edit_their_frames_like_any_other():
+    """A frame is a frame however detection found it.
+
+    GREEN FRAMES, COLOR PICK and FRAME POINTS all save their frames in
+    raw_artwork_area.regions, and that is what the renderer reads, so those
+    frames get the same polygon and corner handles a multi-frame template has.
+    Only the whole-artwork-area rectangle stays out of it: a mask-backed
+    template's geometry lives in its regions, not in that box.
+    """
     js = ADMIN_JS.read_text(encoding="utf-8")
 
-    # Verify isGreenFrameTemplate recognizes green frames, color pick, and frame points modes
+    # isGreenFrameTemplate recognises green frames, colour pick and frame points
     assert 'raw.mode === "color_pick" || raw.provider === "color_pick"' in js
     assert 'raw.mode === "frame_points" || raw.provider === "frame_points"' in js
 
-    # Verify drawSelection hides SVG and polygon handles for mask/green frame templates
     green_branch = js.split("if (isGreenFrameTemplate(template)) {", 1)[1].split("return;", 1)[0]
-    assert 'selectionSvg.classList.add("hidden")' in green_branch
+    assert "renderRegionFrames(template, maskedRegions, rect, maskedRegions.length > 1)" in green_branch
     assert '$("selectionPolygon").classList.add("hidden")' in green_branch
 
-    # Verify beginDrag disables manual polygon dragging for mask/green frame templates
-    drag_body = js.split("function beginDrag(event) {", 1)[1].split("const target = event.target;", 1)[0]
-    assert "if (isGreenFrameTemplate(state.selected)) return;" in drag_body
+    # The region handles are read before anything bails out for a mask-backed
+    # template, and the whole-area drag is still refused after them.
+    drag_body = js.split("function beginDrag(event) {", 1)[1].split("let handle = \"move\";", 1)[0]
+    assert "target.dataset.regionIndex !== undefined" in drag_body
+    assert drag_body.index("target.dataset.regionIndex") < drag_body.index("isGreenFrameTemplate(template)")
+    assert "if (isGreenFrameTemplate(template)) return;" in drag_body
 
 
 def test_green_frame_overlay_places_artwork_where_the_renderer_will():

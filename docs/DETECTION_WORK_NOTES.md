@@ -95,7 +95,15 @@ CLASSIC are:
    another frame's corners.
 6. **Geometric multi-frame templates never use a mask.** They render straight
    onto their corners via `_render_geometric_frames`.
-7. **The editor is a promise about the render.** Anything that decides where
+7. **Every detected frame is editable, however it was found.** GREEN FRAMES,
+   COLOR PICK and FRAME POINTS all save their frames in
+   `raw_artwork_area.regions`, which is what the renderer reads, so they get
+   the same polygon and corner handles a multi-frame template has
+   (`renderRegionFrames`). Only the whole-artwork-area rectangle stays out of
+   it on a mask-backed template: its geometry lives in its regions. The delete
+   badge is held back where there is a single frame -- removing it would leave
+   the template with none.
+8. **The editor is a promise about the render.** Anything that decides where
    the artwork lands — perspective warp, coverage envelope, fit mode, scale,
    offset — has to be read the same way in `admin.js` as in
    `green_frame_mockup_service.py`.
@@ -147,6 +155,19 @@ CLASSIC are:
   envelope only decides what lands in the sliver beyond it.
 
 ## Open follow-ups
+
+- **FRAME POINTS reads a few pixels wide on soft-bevelled frames.** Its flood
+  fill compares each pixel with its *neighbour*, so it walks down a frame's
+  bevel and onto the moulding, and `_refine_region_boundaries` then snaps each
+  edge to the strongest gradient within 6px -- which is the frame's outer
+  silhouette, not the opening. On `template_dff34d2f4740` (opening x 504–943,
+  y 99–682) tolerance 5 returns x 486–953, y 87–683. Measuring the tolerance
+  against the seed colour instead (`cv2.FLOODFILL_FIXED_RANGE`, delta floored
+  around 8 so a low tolerance stays usable) gives x 497–944, y 100–683 there
+  and keeps the slider meaningful above 10, where the present rule floods the
+  whole mockup. It was tried once and reverted: with delta = 0.35 × tolerance
+  it under-filled badly at the low tolerances actually in use. Not to be
+  reapplied without asking.
 
 - **Saved corners predate the `_region_quad` fix.** The render now honours the
   saved frame, so a template whose frame was recorded tilted renders tilted
