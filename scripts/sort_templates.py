@@ -1,9 +1,11 @@
 """Sort templates into the existing wall-art categories by their frames.
 
-A template belongs with the shape of the frames it holds: portrait frames in
-the vertical category, landscape in the horizontal, square in the square. The
-category slug is also the `product_type` the public API filters on and the
-automatic picker matches against, so this is what makes a request for
+A template belongs with the shape of the frames it holds, and with how many of
+them it holds: one portrait frame is a vertical wall art template, three are a
+vertical set, and a mockup whose frames do not share one shape -- a laptop
+beside a phone, a gallery wall of mixed frames -- is a varied set. The category
+slug is also the `product_type` the public API filters on and the automatic
+picker matches against, so this is what makes a request for
 `horizontal-wall-art` return templates that actually are.
 
 Templates in a Main category are left alone. Run without arguments to see the
@@ -22,29 +24,33 @@ from config import Config
 from services.catalog_service import CatalogService
 from scripts.rename_templates import _frame_boxes, _orientation
 
-TARGET_BY_SHAPE = {
+SINGLE_BY_SHAPE = {
     "V": "vertival-wall-art-frame",
     "H": "horizontal-wall-art",
     "S": "square-wall-art",
 }
+SET_BY_SHAPE = {
+    "V": "vertival-wall-art-frame-sets",
+    "H": "horizontal-wall-art-frame-sets",
+}
+VARIED_SET = "varient-wall-art-frame-sets"
 
 
-def shape_of(record: dict) -> tuple[str, str]:
-    """The shape the template's frames make, and how that was decided."""
+def target_slug(record: dict) -> tuple[str, str]:
+    """Which category the template belongs in, and why."""
     boxes = _frame_boxes(record)
     if not boxes:
         return "", "no frames"
     counts = Counter(_orientation(width, height) for width, height in boxes)
-    (top, top_count), *rest = counts.most_common()
-    if rest and rest[0][1] == top_count:
-        # A tie between shapes: fall back to the shape of the whole artwork area.
-        area = record.get("artwork_area") or {}
-        if area.get("width") and area.get("height"):
-            fallback = _orientation(float(area["width"]), float(area["height"]))
-            return fallback, f"mixed {dict(counts)}, artwork area is {fallback}"
-        return top, f"mixed {dict(counts)}"
-    detail = f"{top_count} of {sum(counts.values())} frames" if len(counts) > 1 else f"{top_count} frames"
-    return top, detail
+    shapes = sorted(counts)
+    if len(boxes) == 1:
+        shape = shapes[0]
+        return SINGLE_BY_SHAPE.get(shape, ""), f"one {shape} frame"
+    if len(shapes) == 1 and shapes[0] in SET_BY_SHAPE:
+        return SET_BY_SHAPE[shapes[0]], f"{len(boxes)} {shapes[0]} frames"
+    # Frames that do not share one shape -- and a set of square frames, which
+    # has no category of its own -- belong with the varied sets.
+    return VARIED_SET, f"{len(boxes)} frames, " + ", ".join(f"{count}{shape}" for shape, count in sorted(counts.items()))
 
 
 def plan(catalog: CatalogService) -> list[dict]:
@@ -56,9 +62,8 @@ def plan(catalog: CatalogService) -> list[dict]:
         current_name = current["name"] if current else "(none)"
         if current_name.strip().lower().startswith("main"):
             continue
-        shape, why = shape_of(record)
-        target_slug = TARGET_BY_SHAPE.get(shape)
-        target = categories.get(target_slug) if target_slug else None
+        slug, why = target_slug(record)
+        target = categories.get(slug) if slug else None
         if not target:
             moves.append({"record": record, "from": current_name, "to": None, "why": why})
             continue

@@ -80,11 +80,20 @@ code is stable as long as its frame count and orientation are.
 
 A category's slug is also the `product_type` the public API filters on and the
 automatic picker matches against, so a template belongs with the shape of the
-frames it holds: portrait frames in `vertival-wall-art-frame`, landscape in
-`horizontal-wall-art`, square in `square-wall-art`. Where a template's frames
-disagree the majority decides, and an even split falls back to the shape of the
-whole artwork area — which is how the laptop-and-phone mockups land under
-horizontal.
+frames it holds *and* with how many of them it holds:
+
+| frames | shape | category |
+|---|---|---|
+| one | portrait | `vertival-wall-art-frame` |
+| one | landscape | `horizontal-wall-art` |
+| one | square | `square-wall-art` |
+| several | all portrait | `vertival-wall-art-frame-sets` |
+| several | all landscape | `horizontal-wall-art-frame-sets` |
+| several | anything else | `varient-wall-art-frame-sets` |
+
+"Anything else" is a mockup whose frames do not share one shape — a laptop
+beside a phone, a gallery wall of mixed frames — and a set of square frames,
+which has no category of its own.
 
 `scripts/sort_templates.py` prints the moves and makes them with `--apply`. It
 leaves every template in a **Main** category alone:
