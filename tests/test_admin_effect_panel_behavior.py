@@ -244,3 +244,23 @@ def test_overlay_falls_back_to_the_template_fit_mode_when_the_green_effect_has_n
     assert "template.effects.green_frame_mockups.fit_mode" in overlay
     assert "(placementSettings && greenFitMode) || templateFit" in overlay
     assert "placementSettings.fit_mode" not in overlay
+
+
+def test_a_mask_that_cannot_load_never_hides_the_artwork():
+    """A CSS mask that 404s masks everything out.
+
+    The geometry wizard named a mask.png its template does not have, so during
+    a detection review every frame came back empty and the artwork only
+    returned once the detection was approved. Geometric frames carry no mask,
+    and a mask that fails to load is dropped rather than left hiding what it
+    was applied to.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    wizard = js.split("async function runStage1Geometry(", 1)[1].split(end_of_function, 1)[0]
+    mask = js.split("function applyOverlayMask(", 1)[1].split(end_of_function, 1)[0]
+
+    assert 'mask_name: payload.template?.mask_name || "mask.png"' not in wizard
+    assert "mask_name: payload.template?.mask_name || null" in wizard
+    assert 'maskAvailability.get(maskUrl) === "missing"' in mask
+    assert "probe.onerror" in mask

@@ -5,34 +5,34 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 335,
-    "y": 233,
-    "width": 788,
-    "height": 552,
+    "x": 334,
+    "y": 234,
+    "width": 787,
+    "height": 548,
     "corners": [
       {
-        "x": 335,
-        "y": 233
+        "x": 334,
+        "y": 234
       },
       {
-        "x": 1122,
-        "y": 233
+        "x": 1121,
+        "y": 234
       },
       {
-        "x": 1123,
-        "y": 785
+        "x": 1121,
+        "y": 782
       },
       {
-        "x": 335,
-        "y": 784
+        "x": 334,
+        "y": 782
       }
     ]
   },
-  "fit_mode": "stretch",
+  "fit_mode": "auto",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": null,
+  "mask": "mask.png",
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -86,14 +86,14 @@
       "target": "artwork"
     },
     "inner_shadow": {
-      "blur": 21,
-      "bottom": 0,
+      "blur": 2,
+      "bottom": 8,
       "enabled": true,
-      "left": 10,
+      "left": 18,
       "opacity": 0.35,
-      "right": 0,
+      "right": 8,
       "target": "artwork",
-      "top": 10
+      "top": 18
     },
     "matte_finish": {
       "contrast": -0.14,
@@ -110,7 +110,92 @@
       "target": "all"
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "edge_expand": 0,
+    "green_pixels": 432612,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 334,
+        "y": 234
+      },
+      {
+        "x": 1121,
+        "y": 234
+      },
+      {
+        "x": 1121,
+        "y": 782
+      },
+      {
+        "x": 334,
+        "y": 782
+      }
+    ],
+    "regions": [
+      {
+        "area": 432612,
+        "corners": [
+          {
+            "x": 334,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 782
+          },
+          {
+            "x": 334,
+            "y": 782
+          }
+        ],
+        "height": 549,
+        "inner_corners": [
+          {
+            "x": 334,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 782
+          },
+          {
+            "x": 334,
+            "y": 782
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 334,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 234
+          },
+          {
+            "x": 1121,
+            "y": 782
+          },
+          {
+            "x": 334,
+            "y": 782
+          }
+        ],
+        "width": 788,
+        "x": 334,
+        "y": 234
+      }
+    ]
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }

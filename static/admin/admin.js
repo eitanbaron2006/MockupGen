@@ -1958,11 +1958,25 @@
    * anchored to the background image and never moves. Editing a frame changes
    * how artwork is warped inside an opening, never the opening itself.
    */
+  // Which mask files are known to load. A mask that 404s masks everything out,
+  // so one that fails is dropped rather than left hiding the artwork.
+  const maskAvailability = new Map();
+
   function applyOverlayMask(overlayDiv, maskUrl, rect) {
-    if (!maskUrl) {
+    if (!maskUrl || maskAvailability.get(maskUrl) === "missing") {
       overlayDiv.style.maskImage = "";
       overlayDiv.style.webkitMaskImage = "";
       return;
+    }
+    if (!maskAvailability.has(maskUrl)) {
+      maskAvailability.set(maskUrl, "checking");
+      const probe = new Image();
+      probe.onload = () => maskAvailability.set(maskUrl, "ready");
+      probe.onerror = () => {
+        maskAvailability.set(maskUrl, "missing");
+        drawSelection();
+      };
+      probe.src = maskUrl;
     }
     const size = `${rect.width}px ${rect.height}px`;
     const position = `${rect.left}px ${rect.top}px`;
@@ -3669,8 +3683,13 @@
       const detectedRegions = (payload.proposal?.raw_artwork_area?.regions) || (payload.proposal?.artwork_area?.regions) || [];
       if (detectedRegions.length > 1) {
         state.selected = {
+          // Geometric frames render straight onto their corners, with no mask
+          // in play. Naming one the template does not have pointed the canvas
+          // mask at a 404, and a mask that cannot load hides everything it is
+          // applied to -- the artwork vanished from every frame until the
+          // detection was approved.
           ...payload.template,
-          mask_name: payload.template?.mask_name || "mask.png",
+          mask_name: payload.template?.mask_name || null,
           raw_artwork_area: payload.proposal.raw_artwork_area,
           artwork_area: payload.proposal.artwork_area
         };

@@ -192,6 +192,11 @@ angles move, the coverage does not. The two mockups that prompted this read
 - A mask-backed template drew no polygon and refused every drag, so a FRAME
   POINTS or COLOR PICK result could not be adjusted at all. Its frames are
   edited like any other now (`renderRegionFrames`).
+- The geometry wizard named a `mask.png` its template does not have, and a CSS
+  mask that 404s masks everything out: during an AUTO DETECT review every frame
+  came back empty and the artwork only returned once the detection was
+  approved. Geometric frames carry no mask, and `applyOverlayMask` now probes a
+  mask before trusting it and drops one that cannot load.
 - The overlay then read the fit mode off the *panel defaults* rather than off
   the template's green effect. Those defaults carry `cover`, so a template set
   to stretch had the sides cropped off its artwork in the editor — visible the
@@ -236,7 +241,8 @@ angles move, the coverage does not. The two mockups that prompted this read
   their draft folder only: `template_0dfe70ef0983`, `template_44ab02ba0914`,
   `template_5ac5c64ca9cd`, `template_8350a906c799`, `template_a752f783758f`.
   Renders survive because their regions carry corners and the pipeline falls
-  back to live green detection, but any path that needs the mask file 500s with
+  back to live green detection, and the canvas no longer blanks out over the
+  missing file, but any path that needs the mask itself 500s with
   `Template asset not found: mask.png`.
 - The **Green frames controls** panel is hidden for multi-region templates
   (`isGreenFrameTemplate` returns false when `isMultiRegionTemplate` is true),
@@ -336,6 +342,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 116 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 117 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.
