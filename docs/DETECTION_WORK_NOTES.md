@@ -110,6 +110,38 @@ CLASSIC are:
    `test_green_frame_overlay_places_artwork_where_the_renderer_will` guards the
    pairing.
 
+## FRAME POINTS: the fill stops at hard edges
+
+The seed-point fill compares each pixel with its **neighbour**, which is what
+lets it follow the shading across a blank opening -- and also what let it slip
+through a soft spot in a frame's bevel and take the moulding with it. On
+`template_dff34d2f4740` (opening x 504–943, y 99–682) tolerance 5 returned
+x 486–953, y 87–683: the artwork was then painted over the wood.
+
+A pixel sitting on a hard edge now blocks the fill (`_EDGE_BARRIER`, fed to
+`cv2.floodFill` through its mask, which it will not cross). The threshold is
+deliberately high -- a bezel clears it, shading inside an opening never does --
+because the point was to fix the frames that leak without touching the ones
+that already read correctly. Measured over the 53 single-opening templates,
+seeded at the centre of each saved artwork area, against the same code without
+the barrier:
+
+| tolerance | identical result | better | worse |
+|---|---|---|---|
+| 5 | 41/53 | 7 | 0 |
+| 20 | 39/53 | 12 | 0 |
+| 47 | 31/53 | 18 | 1 |
+
+The one at tolerance 47 is `template_351e2551773a`, which used to return the
+entire canvas and now returns nothing, so the HUD asks for a different
+tolerance instead of proposing the whole mockup. The leaking case now reads
+x 497–944, y 99–683 at tolerance 5.
+
+An earlier attempt measured the tolerance against the seed colour
+(`cv2.FLOODFILL_FIXED_RANGE`) instead. It read the openings well from tolerance
+20 up but under-filled badly at the low tolerances actually in use, so it was
+reverted -- do not reapply it without measuring at tolerance 5.
+
 ## Things already fixed (do not reintroduce)
 
 - The render used to save its derived mask over the detected one, destroying
@@ -126,6 +158,11 @@ CLASSIC are:
   so the canvas mask clipped nothing until `mask-mode: luminance` was set.
 - The canvas read `#fitMode` while the renderer reads the template's
   `effects.green_frame_mockups.fit_mode`, so the two fitted artwork differently.
+- FRAME POINTS' fill slipped through soft spots in a frame's bezel and took
+  the moulding with it — see the section above.
+- A mask-backed template drew no polygon and refused every drag, so a FRAME
+  POINTS or COLOR PICK result could not be adjusted at all. Its frames are
+  edited like any other now (`renderRegionFrames`).
 - The overlay then read the fit mode off the *panel defaults* rather than off
   the template's green effect. Those defaults carry `cover`, so a template set
   to stretch had the sides cropped off its artwork in the editor — visible the
@@ -155,19 +192,6 @@ CLASSIC are:
   envelope only decides what lands in the sliver beyond it.
 
 ## Open follow-ups
-
-- **FRAME POINTS reads a few pixels wide on soft-bevelled frames.** Its flood
-  fill compares each pixel with its *neighbour*, so it walks down a frame's
-  bevel and onto the moulding, and `_refine_region_boundaries` then snaps each
-  edge to the strongest gradient within 6px -- which is the frame's outer
-  silhouette, not the opening. On `template_dff34d2f4740` (opening x 504–943,
-  y 99–682) tolerance 5 returns x 486–953, y 87–683. Measuring the tolerance
-  against the seed colour instead (`cv2.FLOODFILL_FIXED_RANGE`, delta floored
-  around 8 so a low tolerance stays usable) gives x 497–944, y 100–683 there
-  and keeps the slider meaningful above 10, where the present rule floods the
-  whole mockup. It was tried once and reverted: with delta = 0.35 × tolerance
-  it under-filled badly at the low tolerances actually in use. Not to be
-  reapplied without asking.
 
 - **Saved corners predate the `_region_quad` fix.** The render now honours the
   saved frame, so a template whose frame was recorded tilted renders tilted
@@ -283,6 +307,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 114 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 115 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.

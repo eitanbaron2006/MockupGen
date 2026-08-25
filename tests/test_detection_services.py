@@ -739,3 +739,33 @@ def test_frame_of_a_slanted_opening_keeps_its_slant():
     assert corners is not None
     for key, (x, y) in zip(("tl", "tr", "br", "bl"), [(120, 80), (390, 105), (360, 310), (95, 280)]):
         assert abs(corners[key]["x"] - x) <= 4 and abs(corners[key]["y"] - y) <= 4
+
+
+def test_frame_points_does_not_leak_through_a_gap_in_a_hard_bezel(tmp_path: Path):
+    """A seed-point fill stops at a hard edge.
+
+    The fill compares each pixel with its neighbour, which is what lets it
+    follow shading inside an opening -- and also what let it slip through a
+    soft spot in a frame's bezel and swallow the wall behind it. A pixel that
+    sits on a hard edge now blocks the fill, so the opening stays the opening.
+    """
+    import numpy as np
+    from services.green_frame_mockup_service import (
+        GreenFrameSettings, detect_frames_from_points, green_detection_raw)
+
+    opening = (60, 60, 180, 260)
+    canvas = np.full((320, 240, 3), 246, np.uint8)              # wall, near the opening's own colour
+    canvas[50:270, 50:190] = 60                                 # the frame's hard bezel
+    canvas[opening[1]:opening[3], opening[0]:opening[2]] = 250   # the blank opening
+    # A soft spot in the bezel: a couple of rows where it fades to the wall.
+    canvas[150:152, 46:60] = np.linspace(250, 246, 14, dtype=np.uint8)[None, :, None]
+    image = Image.fromarray(canvas, "RGB").convert("RGBA")
+
+    state = detect_frames_from_points(
+        image, [{"x": 120, "y": 150}], 20, GreenFrameSettings(tolerance=20, min_area=80)
+    )
+
+    assert len(state.regions) == 1
+    region = green_detection_raw(state, 0)["regions"][0]
+    assert region["width"] <= (opening[2] - opening[0]) + 12, "the fill escaped through the bezel"
+    assert region["x"] >= opening[0] - 12, "the fill escaped through the bezel"

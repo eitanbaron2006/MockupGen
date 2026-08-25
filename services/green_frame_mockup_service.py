@@ -67,6 +67,12 @@ class GreenFrameDetection:
     green_count: int
 
 
+# How hard an edge has to be before a seed-point fill is stopped by it. Set
+# high on purpose: a frame's bezel clears it, the shading across a blank
+# opening does not, so the fill still follows gradients inside the opening.
+_EDGE_BARRIER = 220.0
+
+
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -651,6 +657,7 @@ def detect_frames_from_points(
 
     combined_mask = np.zeros((h, w), dtype=bool)
     detected_regions: list[GreenRegion] = []
+    gray_for_edges = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float32) if cv2 is not None else None
 
     for point in seed_points:
         px = int(point.get("x", 0))
@@ -666,6 +673,18 @@ def detect_frames_from_points(
         if cv2 is not None:
             delta = int(max(6, min(25, tolerance * 0.35)))
             ff_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+            # The fill compares each pixel with its neighbour, which is what
+            # lets it follow shading -- and also what let it walk down the soft
+            # bevel of a frame one small step at a time and come out on the
+            # moulding. Block it at hard edges instead: floodFill will not
+            # cross a pixel that is already set in its mask. The threshold is
+            # deliberately high, so only a real edge stops the fill and the
+            # shading inside an opening never does; a fill that lands correctly
+            # today is left exactly as it was.
+            gradient = cv2.Sobel(gray_for_edges, cv2.CV_32F, 1, 0, ksize=3)
+            ridge = np.hypot(gradient, cv2.Sobel(gray_for_edges, cv2.CV_32F, 0, 1, ksize=3)) >= _EDGE_BARRIER
+            ridge[py, px] = False
+            ff_mask[1:-1, 1:-1][ridge] = 1
             cv2.floodFill(
                 rgb.copy(),
                 ff_mask,
