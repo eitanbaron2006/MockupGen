@@ -32,12 +32,13 @@ Fixes:
   rectangle. Eight regions across the library got a tighter frame, the phones
   by 6–7%.
 - `_render_perspective_region` warps onto the region's own frame
-  (`region.corners`), expanded by the coverage envelope when that is on.
+  (`region.corners`) and nothing wider.
 - `renderGreenFrameArtworkOverlay` in `admin.js` mirrors the renderer:
-  `greenFrameWarpQuad` reproduces `_expanded_quad`, drops to the upright
-  bounding box when **Perspective warp** is off (the renderer's `_draw_rect`
-  path), and the fit box is sized by the longer of each pair of opposite sides
-  the way `_render_perspective_region` does.
+  `greenFrameArtworkPlacement` draws on the frame's own corners, drops to the
+  upright bounding box when **Perspective warp** is off (the renderer's
+  `_draw_rect` path), and sizes the fit box by the longer of each pair of
+  opposite sides the way `_render_perspective_region` does — or by the frame's
+  bounding box wherever no green pipeline runs.
 
 Measured after the fix, on the phone frame: mean editor-vs-render pixel
 difference 34.3 → 0.4, and in the live admin the overlay quad matches the
@@ -65,10 +66,20 @@ CLASSIC are:
    the template folder (guarded by
    `test_rendering_never_modifies_the_template_mask`).
 2. **The artwork is drawn on the frame's own corners** — `region.corners`, the
-   quad the admin sees and drags — pushed out by the wide coverage envelope
-   when that setting is on, and the mask can only remove from what is drawn.
-   Both the editor and the renderer read the frame, so a dragged frame changes
-   the output.
+   quad the admin sees and drags — and the mask can only remove from what is
+   drawn. Both the editor and the renderer read the frame, so a dragged frame
+   changes the output.
+   This holds with no exception, in every mode and on both sides. The wide
+   coverage envelope does not widen the quad the artwork is warped onto — it
+   pads the *source* image with replicated edge pixels, which land outside the
+   frame and give a mask that reaches past the frame something other than bare
+   background. Widening the quad instead would scale and shift every pixel
+   inside the frame and spill real artwork outside it, which is what a frame
+   dragged inwards made plain to see.
+   `usesGreenFramePipeline` in `admin.js` still mirrors the branch in
+   `render_simple_mockup`, because the two paths fit the artwork to different
+   boxes: the green pipeline to the frame's side lengths, everything else to
+   its bounding box.
 3. **The frame is the tightest four-sided shape containing the whole mask.**
    `_region_quad` in `green_frame_mockup_service.py` builds candidates — the
    convex hull's four-sided approximation with each side pushed out by the
@@ -112,6 +123,21 @@ CLASSIC are:
   left edges while the renderer used the longer of each pair of opposite sides.
 - The frame of a rounded opening was the *tilted* circumscribing quad, because
   the first four-sided approximation was kept without comparing its area.
+- The editor applied the green pipeline's coverage envelope to *every*
+  template. On a geometric multi-frame template — AUTO DETECT, no mask — that
+  drew the artwork some 10px outside its frame with nothing to clip it, so the
+  artwork visibly overhung the editing frame.
+- Switching templates left the artwork overlay scaled by the previous mockup's
+  aspect: `canvasImage.src = url` does not update `naturalWidth`/`naturalHeight`
+  until the new bitmap is swapped in, cached or not, and the redraw ran on the
+  next animation frame. Nothing redrew it afterwards, so the artwork stayed
+  squashed until the window was resized.
+- The wide coverage envelope used to warp the artwork onto a quad ~10px wider
+  than the frame. Wherever the mask reached past the frame — any frame dragged
+  inwards, which is what `corners_edited` records — real artwork was painted
+  outside the frame, and every pixel inside it was scaled and shifted with it.
+  It pads the source image instead now, so the frame bounds the artwork and the
+  envelope only decides what lands in the sliver beyond it.
 
 ## Open follow-ups
 
@@ -124,6 +150,7 @@ CLASSIC are:
   (`fa83e6c793fe` [1], `1364f4fca28f` [3], `f7ef6fbdcaac` [2]).
   **`template_ac1671aa932f` carries `corners_edited: true`** — its frames were
   adjusted by hand, and re-detecting would throw that work away.
+  `template_44ab02ba0914` has already been re-run and carries the level frame.
 - **Five live templates reference a `mask.png` they do not have.** It sits in
   their draft folder only: `template_0dfe70ef0983`, `template_44ab02ba0914`,
   `template_5ac5c64ca9cd`, `template_8350a906c799`, `template_a752f783758f`.
@@ -209,8 +236,8 @@ const m = new DOMMatrix(getComputedStyle(div).transform)   // .green-frame-regio
 const p = m.transformPoint(new DOMPoint(w, 0, 0, 1))       // corner in display px
 ```
 
-and compare it against
-`_expanded_quad(_list_to_corners(region["corners"]), max(10, edge_expand + 8))`.
+and compare it against the region's own `corners` — the renderer warps onto
+those exactly, so the two should agree to a fraction of a pixel.
 
 ## Templates worth knowing about
 
@@ -228,6 +255,6 @@ and compare it against
 
 ## Tests
 
-`python -m pytest tests/ -q` — 110 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 113 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.

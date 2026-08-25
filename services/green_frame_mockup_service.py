@@ -1010,26 +1010,30 @@ def _sample_rgba(src: np.ndarray, x: float, y: float) -> tuple[float, float, flo
 
 def _render_perspective_region(region: GreenRegion, art: Image.Image, state: GreenFrameDetection, settings: GreenFrameSettings, artwork_filter: Any = None) -> Optional[tuple[Image.Image, int, int, int, int]]:
     # The frame is what the admin sees and drags, so it -- not the corners
-    # detection happened to record once -- is what the artwork is warped onto.
-    # The outer corners never move with an edited frame, so expanding those
-    # rendered a dragged frame at its old angle and size, and the editor and
-    # the finished mockup drifted apart.
+    # detection happened to record once -- is what the artwork is warped onto,
+    # and it bounds the artwork exactly. The outer corners never move with an
+    # edited frame, so expanding those rendered a dragged frame at its old
+    # angle and size, and the editor and the finished mockup drifted apart.
     frame = region.corners or region.inner_corners or region.outer_corners
     if not frame:
         return None
-    if settings.wide_coverage_envelope:
-        expansion_amount = max(10, settings.edge_expand + 8) if state.width >= 100 else max(2, settings.edge_expand + 2)
-        warp = _expanded_quad(frame, expansion_amount)
-    else:
-        warp = frame
+    warp = frame
     target_w = max(2, round(max(_dist(warp["tl"], warp["tr"]), _dist(warp["bl"], warp["br"]))))
     target_h = max(2, round(max(_dist(warp["tl"], warp["bl"]), _dist(warp["tr"], warp["br"]))))
     src = _source_image(art, target_w, target_h, settings)
     if artwork_filter is not None:
         src = artwork_filter(src)
     
-    # Pad source image by 4 pixels to prevent edge bleeding/transparency under PIL perspective warp
+    # Pad the source image to prevent edge bleeding/transparency under PIL
+    # perspective warp. The padding is edge-replicated and lands outside the
+    # frame, which is also how the wide coverage envelope works: it bleeds the
+    # artwork's edge colour outwards so a mask that reaches past the frame has
+    # no bare pixels, without warping the artwork onto a wider quad. Widening
+    # the quad would scale and shift the artwork inside the frame, and would
+    # spill real artwork outside the frame the admin is editing.
     pad = 4
+    if settings.wide_coverage_envelope:
+        pad += max(10, settings.edge_expand + 8) if state.width >= 100 else max(2, settings.edge_expand + 2)
     W, H = src.width, src.height
     padded = Image.new("RGBA", (W + 2 * pad, H + 2 * pad))
     padded.paste(src, (pad, pad))

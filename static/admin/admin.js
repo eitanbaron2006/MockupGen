@@ -1098,11 +1098,24 @@
     editorBackgroundPreloadCache.set(backgroundUrl, preloadedBackground);
     const applyPreloadedBackground = () => {
       if (!state.selected || state.selected.template_id !== template.template_id || token !== editorBackgroundLoadToken) return;
-      $("canvasImage").onload = null;
-      $("canvasImage").src = backgroundUrl;
-      requestAnimationFrame(() => {
+      const canvas = $("canvasImage");
+      // Assigning src does not update naturalWidth/naturalHeight until the new
+      // bitmap is swapped in, cached or not, and every overlay is scaled by
+      // those. Drawing on the next frame laid the artwork out with the previous
+      // template's aspect -- and nothing redrew it afterwards -- so wait for the
+      // element to actually hold this template's mockup.
+      canvas.onload = () => {
+        canvas.onload = null;
         drawSelection();
-      });
+      };
+      canvas.src = backgroundUrl;
+      if (canvas.complete && canvas.naturalWidth > 0) {
+        // Already showing this background: no load event is coming.
+        canvas.onload = null;
+        requestAnimationFrame(() => {
+          drawSelection();
+        });
+      }
     };
     preloadedBackground.onload = () => {
       applyPreloadedBackground();
@@ -1858,44 +1871,79 @@
     ];
   }
 
-  /** The quad the renderer warps the artwork onto.
+  /** Does this template render through the green-frame pipeline?
    *
-   * Mirrors _render_perspective_region / _draw_rect in
-   * green_frame_mockup_service.py. The editor is a promise about what PREVIEW
-   * will produce, so it has to place the artwork exactly where the renderer
-   * will, not merely somewhere inside the same frame.
+   * Mirrors the branch in render_simple_mockup: a geometric multi-frame
+   * template and a single non-green detection composite straight onto their
+   * corners, and only the green pipeline widens the artwork past the frame.
    */
-  function greenFrameWarpQuad(corners, settings) {
-    if (settings.use_perspective === false) {
-      // With the perspective warp off the renderer fills the region's upright
-      // bounding box and lets the mask cut the shape out, so the editor must
-      // not slant the artwork either.
-      const xs = corners.map((point) => point.x);
-      const ys = corners.map((point) => point.y);
-      const left = Math.min(...xs);
-      const top = Math.min(...ys);
-      const right = Math.max(...xs);
-      const bottom = Math.max(...ys);
-      return [
+  function usesGreenFramePipeline(template) {
+    const raw = template.raw_artwork_area;
+    const regions = raw && Array.isArray(raw.regions) ? raw.regions : [];
+    const multiRegion = regions.length > 1;
+    const mode = raw && raw.mode;
+    const provider = template.detection_provider;
+    if (mode === "geometry" && multiRegion) return false;
+    if ((provider === "vertex" || provider === "local") && !multiRegion) return false;
+    const greenRaw = Boolean(raw)
+      && provider !== "vertex" && provider !== "local"
+      && raw.provider !== "vertex" && raw.mode !== "vertex"
+      && raw.provider !== "local" && raw.mode !== "local"
+      && (mode === "green_frames_mockups" || raw.provider === "green_frames_mockups" || multiRegion);
+    return Boolean((templateMaskUrl(template) && greenRaw) || multiRegion);
+  }
+
+  /** Where the renderer will put one frame's artwork: the quad it warps the
+   * artwork onto, and the box it fits the artwork into first.
+   *
+   * Mirrors _render_perspective_region / _draw_rect for the green pipeline and
+   * _render_geometric_frames / the single-frame path for everything else. The
+   * frame bounds the artwork exactly in all of them -- the wide coverage
+   * envelope bleeds the artwork's edge colour past the frame, it does not warp
+   * the artwork onto a wider quad -- so the editor never draws past the frame
+   * either.
+   *
+   * `settings` is null wherever no green pipeline runs; there the artwork is
+   * fitted to the frame's bounding box rather than to its side lengths.
+   */
+  function greenFrameArtworkPlacement(corners, settings) {
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
+    const left = Math.min(...xs);
+    const top = Math.min(...ys);
+    const right = Math.max(...xs);
+    const bottom = Math.max(...ys);
+
+    if (!settings) {
+      return {
+        quad: corners.map((point) => ({ ...point })),
+        width: Math.max(1, Math.round(right - left)),
+        height: Math.max(1, Math.round(bottom - top))
+      };
+    }
+
+    // With the perspective warp off the renderer fills the region's upright
+    // bounding box and lets the mask cut the shape out, so the editor must not
+    // slant the artwork either.
+    const quad = settings.use_perspective === false
+      ? [
         { x: left, y: top },
         { x: right, y: top },
         { x: right, y: bottom },
         { x: left, y: bottom }
-      ];
-    }
-    if (settings.use_vector_clip === false) return corners.map((point) => ({ ...point }));
-    // Wide coverage envelope: _expanded_quad pushes every corner straight out
-    // from the centre, so no feathered mask edge is left uncovered.
-    const amount = Math.max(10, (Number(settings.edge_expand) || 0) + 8);
-    const centreX = corners.reduce((sum, point) => sum + point.x, 0) / corners.length;
-    const centreY = corners.reduce((sum, point) => sum + point.y, 0) / corners.length;
-    return corners.map((point) => {
-      const dx = point.x - centreX;
-      const dy = point.y - centreY;
-      const length = Math.hypot(dx, dy) || 1;
-      return { x: point.x + (dx / length) * amount, y: point.y + (dy / length) * amount };
-    });
+      ]
+      : corners.map((point) => ({ ...point }));
+
+    // The renderer sizes the artwork by the longer of each pair of opposite
+    // sides, so a frame in perspective fits the same way here as there.
+    const side = (a, b) => Math.hypot(quad[b].x - quad[a].x, quad[b].y - quad[a].y);
+    return {
+      quad,
+      width: Math.max(2, Math.round(Math.max(side(0, 1), side(3, 2)))),
+      height: Math.max(2, Math.round(Math.max(side(0, 3), side(1, 2))))
+    };
   }
+
 
   function templateMaskUrl(template) {
     const maskName = template.mask_name || template.mask;
@@ -1959,8 +2007,12 @@
     // same place; the panel controls write straight into the template, so this
     // is still what the admin has just picked.
     const greenSettings = greenFrameSettings(template.effects);
+    // Only a template that renders through the green pipeline is laid out by
+    // the green settings; everywhere else the renderer fits the artwork to the
+    // frame's bounding box and warps it straight onto the corners.
+    const placementSettings = usesGreenFramePipeline(template) ? greenSettings : null;
     const templateFit = ($("fitMode") && $("fitMode").value) || template.fit_mode;
-    const rawFitMode = (templateMaskUrl(template) && greenSettings.fit_mode) || templateFit || "cover";
+    const rawFitMode = (placementSettings && placementSettings.fit_mode) || templateFit || "cover";
     const artworkScale = Number(($("greenArtworkScale") && $("greenArtworkScale").value) || 100) / 100;
     const offsetX = Number(($("greenOffsetX") && $("greenOffsetX").value) || 0) / 100;
     const offsetY = Number(($("greenOffsetY") && $("greenOffsetY").value) || 0) / 100;
@@ -1981,16 +2033,13 @@
       const corners = region.corners;
       if (!corners || corners.length < 4) return;
 
-      const warpQuad = greenFrameWarpQuad(corners, greenSettings);
-      const displayPoints = warpQuad.map(p => ({
+      const placement = greenFrameArtworkPlacement(corners, placementSettings);
+      const displayPoints = placement.quad.map(p => ({
         x: (p.x / template.canvas_width) * rect.width,
         y: (p.y / template.canvas_height) * rect.height
       }));
-      // The renderer sizes the artwork by the longer of each pair of opposite
-      // sides, so a frame in perspective fits the same way here as there.
-      const sideLength = (a, b) => Math.hypot(warpQuad[b].x - warpQuad[a].x, warpQuad[b].y - warpQuad[a].y);
-      const quadW = Math.max(2, Math.round(Math.max(sideLength(0, 1), sideLength(3, 2))));
-      const quadH = Math.max(2, Math.round(Math.max(sideLength(0, 3), sideLength(1, 2))));
+      const quadW = placement.width;
+      const quadH = placement.height;
 
       const fitMode = resolveFitMode(rawFitMode, naturalW, naturalH, quadW, quadH);
 
@@ -2067,6 +2116,14 @@
     const selectionSvg = $("selectionSvg");
     if (!template || !template.artwork_area || !image.naturalWidth) {
       selectionSvg.classList.add("hidden");
+      return;
+    }
+    // Overlays are sized from the canvas image, so one belonging to another
+    // template would scale the artwork by the wrong mockup's aspect. Draw when
+    // the right one has loaded instead.
+    if (image.src && image.src.indexOf(`/templates/${template.template_id}/`) === -1) {
+      selectionSvg.classList.add("hidden");
+      image.addEventListener("load", () => drawSelection(), { once: true });
       return;
     }
 

@@ -54,5 +54,7 @@
       "top": 10
     }
   },
-  "raw_artwork_area": null
+  "raw_artwork_area": null,
+  "detection_provider": "vertex",
+  "detection_confidence": 0.75
 }

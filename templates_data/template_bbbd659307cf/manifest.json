@@ -5,30 +5,30 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 387,
-    "y": 205,
-    "width": 596,
-    "height": 444,
+    "x": 386,
+    "y": 207,
+    "width": 597,
+    "height": 442,
     "corners": [
       {
-        "x": 387,
-        "y": 205
+        "x": 386,
+        "y": 207
       },
       {
         "x": 983,
-        "y": 205
+        "y": 207
       },
       {
         "x": 983,
         "y": 649
       },
       {
-        "x": 387,
+        "x": 386,
         "y": 649
       }
     ]
   },
-  "fit_mode": "auto",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
@@ -111,88 +111,88 @@
     }
   },
   "raw_artwork_area": {
-    "edge_expand": 1,
-    "green_pixels": 264378,
+    "edge_expand": 0,
+    "green_pixels": 264914,
     "mode": "green_frames_mockups",
     "original_corners": [
       {
-        "x": 387,
-        "y": 205
+        "x": 386,
+        "y": 207
       },
       {
         "x": 983,
-        "y": 205
+        "y": 207
       },
       {
         "x": 983,
         "y": 649
       },
       {
-        "x": 387,
+        "x": 386,
         "y": 649
       }
     ],
     "regions": [
       {
-        "area": 264905,
+        "area": 264914,
         "corners": [
           {
-            "x": 387,
-            "y": 205
+            "x": 386,
+            "y": 207
           },
           {
             "x": 983,
-            "y": 205
+            "y": 207
           },
           {
             "x": 983,
             "y": 649
           },
           {
-            "x": 387,
+            "x": 386,
             "y": 649
           }
         ],
-        "height": 445,
+        "height": 443,
         "inner_corners": [
           {
-            "x": 388,
-            "y": 206
+            "x": 386,
+            "y": 207
           },
           {
-            "x": 982,
-            "y": 205
+            "x": 983,
+            "y": 207
           },
           {
-            "x": 982,
+            "x": 983,
             "y": 649
           },
           {
-            "x": 387,
-            "y": 648
+            "x": 386,
+            "y": 649
           }
         ],
         "outer_corners": [
           {
-            "x": 388,
-            "y": 206
+            "x": 386,
+            "y": 207
           },
           {
-            "x": 982,
-            "y": 205
+            "x": 983,
+            "y": 207
           },
           {
-            "x": 982,
+            "x": 983,
             "y": 649
           },
           {
-            "x": 387,
-            "y": 648
+            "x": 386,
+            "y": 649
           }
         ],
-        "width": 597,
-        "x": 387,
-        "y": 205
+        "width": 598,
+        "x": 386,
+        "y": 207
       }
     ]
   },

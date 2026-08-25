@@ -1,30 +1,30 @@
 {
   "template_id": "template_782f55e8ee20",
   "name": "ChatGPT Image May 27 2026 10 56 24 AM 1",
-  "product_type": "vertival-wall-art-frame",
+  "product_type": "main-vertical",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 354,
-    "y": 281,
-    "width": 551,
-    "height": 848,
+    "x": 367,
+    "y": 284,
+    "width": 534,
+    "height": 841,
     "corners": [
       {
-        "x": 354,
-        "y": 281
+        "x": 368,
+        "y": 284
       },
       {
-        "x": 905,
-        "y": 281
+        "x": 901,
+        "y": 284
       },
       {
-        "x": 905,
-        "y": 1129
+        "x": 900,
+        "y": 1125
       },
       {
-        "x": 354,
-        "y": 1129
+        "x": 367,
+        "y": 1125
       }
     ]
   },
@@ -110,7 +110,78 @@
       "target": "all"
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "corners": [
+      {},
+      {
+        "x": null
+      },
+      {
+        "x": null,
+        "y": null
+      },
+      {
+        "y": null
+      }
+    ],
+    "layers": [
+      [
+        {
+          "x": 362,
+          "y": 289
+        },
+        {
+          "x": 901,
+          "y": 287
+        },
+        {
+          "x": 896,
+          "y": 1122
+        },
+        {
+          "x": 367,
+          "y": 1121
+        }
+      ],
+      [
+        {
+          "x": 368,
+          "y": 284
+        },
+        {
+          "x": 901,
+          "y": 284
+        },
+        {
+          "x": 900,
+          "y": 1125
+        },
+        {
+          "x": 367,
+          "y": 1125
+        }
+      ]
+    ],
+    "mode": "geometry",
+    "original_corners": [
+      {
+        "x": 368,
+        "y": 284
+      },
+      {
+        "x": 901,
+        "y": 284
+      },
+      {
+        "x": 900,
+        "y": 1125
+      },
+      {
+        "x": 367,
+        "y": 1125
+      }
+    ]
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }

@@ -1584,3 +1584,98 @@ def test_the_render_follows_the_frame_the_editor_shows_not_the_detected_outline(
     assert cyan_bottom(dragged, 170) - cyan_bottom(dragged, 70) > 10, (
         "the render ignored the edited frame"
     )
+
+
+def test_the_coverage_envelope_never_moves_the_artwork_inside_the_frame(tmp_path):
+    """The frame bounds the artwork, whatever the envelope is set to.
+
+    The wide coverage envelope exists so a mask reaching past the frame has no
+    bare pixels. It used to warp the artwork onto a quad ten pixels wider,
+    which scaled and shifted every pixel inside the frame and spilled real
+    artwork outside the frame the admin was editing. It bleeds the artwork's
+    edge colour outwards now, so the frame keeps bounding the artwork exactly.
+    """
+    import numpy as np
+    from PIL import ImageDraw
+
+    templates_folder = tmp_path / "templates_data"
+    template_id = "template_enveloped"
+    folder = templates_folder / template_id
+    folder.mkdir(parents=True)
+    canvas = (240, 240)
+
+    # The mask opening reaches well past the frame, the way it does after a
+    # frame is dragged inwards.
+    opening = (40, 40, 200, 200)
+    frame_box = (70, 70, 170, 170)
+    mask = Image.new("L", canvas, 0)
+    ImageDraw.Draw(mask).rectangle(opening, fill=255)
+    mask.save(folder / "mask.png")
+    save_image(folder / "background.png", canvas, (240, 240, 240, 255))
+    save_image(folder / "preview.png", canvas, (240, 240, 240, 255))
+
+    def quad(box):
+        left, top, right, bottom = box
+        return [
+            {"x": left, "y": top}, {"x": right, "y": top},
+            {"x": right, "y": bottom}, {"x": left, "y": bottom},
+        ]
+
+    artwork = tmp_path / "art.png"
+    art = Image.new("RGB", (100, 100), (255, 0, 255))
+    ImageDraw.Draw(art).ellipse((20, 20, 80, 80), fill=(0, 128, 255))
+    ImageDraw.Draw(art).rectangle((0, 0, 99, 20), fill=(20, 220, 40))
+    art.save(artwork)
+
+    def render(envelope):
+        region = {
+            "x": frame_box[0], "y": frame_box[1],
+            "width": frame_box[2] - frame_box[0], "height": frame_box[3] - frame_box[1],
+            "area": 1, "corners": quad(frame_box), "inner_corners": quad(frame_box),
+        }
+        raw = {"mode": "green_frames_mockups", "regions": [region]}
+        (folder / "manifest.json").write_text(json.dumps({
+            "template_id": template_id, "name": "enveloped",
+            "canvas_width": canvas[0], "canvas_height": canvas[1],
+            "artwork_area": {"x": frame_box[0], "y": frame_box[1],
+                             "width": region["width"], "height": region["height"],
+                             "corners": region["corners"]},
+            "fit_mode": "stretch", "background": "background.png", "foreground": None,
+            "mask": "mask.png", "supported_modes": ["simple"], "output_format": "png",
+            "raw_artwork_area": raw, "detection_provider": "classic",
+            "effects": {"green_frame_mockups": {
+                "use_perspective": True, "use_vector_clip": envelope, "fit_mode": "stretch",
+                "feather_radius": 0, "edge_aa_radius": 0,
+            }},
+        }), encoding="utf-8")
+        result = render_module.render_simple_mockup(
+            template_id=template_id, artwork_path=artwork, output_format="png",
+            templates_folder=templates_folder, output_folder=tmp_path / "outputs",
+            fit_mode="stretch", realism=False, raw_artwork_area=raw, mask_name="mask.png",
+            # Without realism the manifest's effects are skipped, so the
+            # green-frame settings have to be handed over explicitly.
+            effects={"green_frame_mockups": {
+                "use_perspective": True, "use_vector_clip": envelope, "fit_mode": "stretch",
+                "feather_radius": 0, "edge_aa_radius": 0,
+            }},
+        )
+        return np.asarray(
+            Image.open(tmp_path / "outputs" / Path(result.output_url).name).convert("RGB")
+        ).astype(int)
+
+    with_envelope = render(True)
+    without_envelope = render(False)
+
+    # Inside the frame the two renders are the same image: the envelope does
+    # not scale or shift a single pixel of the artwork.
+    inside = (slice(frame_box[1] + 2, frame_box[3] - 2), slice(frame_box[0] + 2, frame_box[2] - 2))
+    assert np.abs(with_envelope[inside] - without_envelope[inside]).max() <= 2
+
+    # And the artwork itself stays within the frame: the green stripe across
+    # the top of the artwork lands only inside it.
+    def stripe_rows(pixels):
+        rows = np.where((np.abs(pixels - np.array([20, 220, 40])).sum(axis=2) < 120).any(axis=1))[0]
+        return (int(rows.min()), int(rows.max())) if rows.size else (-1, -1)
+
+    top, bottom = stripe_rows(without_envelope)
+    assert top >= frame_box[1] and bottom <= frame_box[3]

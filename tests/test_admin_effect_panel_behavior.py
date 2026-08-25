@@ -147,24 +147,51 @@ def test_green_frame_overlay_places_artwork_where_the_renderer_will():
     """The editor overlay is a promise about the finished mockup.
 
     It has to read the same green-frame settings the renderer does and lay the
-    artwork out the same way: no perspective warp when the renderer draws
-    upright, the same wide coverage envelope, and the same fit box.
+    artwork out the same way: the frame's own corners, no perspective warp when
+    the renderer draws upright, and the same fit box.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_function = chr(10) + "  function "
+    overlay = js.split("function renderGreenFrameArtworkOverlay(", 1)[1].split(end_of_function, 1)[0]
+    placement = js.split("function greenFrameArtworkPlacement(", 1)[1].split(end_of_function, 1)[0]
+
+    assert "greenFrameSettings(template.effects)" in overlay
+    assert "greenFrameArtworkPlacement(corners, placementSettings)" in overlay
+    # Perspective off: _draw_rect fills the region's upright bounding box.
+    assert "settings.use_perspective === false" in placement
+    # Perspective on: the frame's own corners, never a widened quad. The wide
+    # coverage envelope bleeds the artwork's edge colour past the frame in the
+    # renderer; it must not move the artwork the editor shows.
+    assert ": corners.map((point) => ({ ...point }));" in placement
+    assert "use_vector_clip" not in placement
+    # The renderer sizes the artwork by the longer of each pair of opposite
+    # sides (_render_perspective_region), not by the top and left edges.
+    assert "Math.max(side(0, 1), side(3, 2))" in placement
+    assert "Math.max(side(0, 3), side(1, 2))" in placement
+
+
+def test_artwork_overlay_fills_the_frame_exactly_without_the_green_pipeline():
+    """A frame that renders without a mask must bound its artwork exactly.
+
+    Geometric multi-frame templates and single-frame detections composite
+    straight onto their corners (_render_geometric_frames and the single-frame
+    path), so the coverage envelope -- which only stays out of sight because a
+    mask clips it -- must not widen the artwork past the frame there.
     """
     js = ADMIN_JS.read_text(encoding="utf-8")
     overlay = js.split("function renderGreenFrameArtworkOverlay(", 1)[1].split("\n  function ", 1)[0]
-    warp = js.split("function greenFrameWarpQuad(", 1)[1].split("\n  function ", 1)[0]
+    pipeline = js.split("function usesGreenFramePipeline(", 1)[1].split("\n  function ", 1)[0]
+    placement = js.split("function greenFrameArtworkPlacement(", 1)[1].split("\n  function ", 1)[0]
 
-    assert "greenFrameSettings(template.effects)" in overlay
-    assert "greenFrameWarpQuad(corners, greenSettings)" in overlay
-    # The renderer sizes the artwork by the longer of each pair of opposite
-    # sides (_render_perspective_region), not by the top and left edges.
-    assert "Math.max(sideLength(0, 1), sideLength(3, 2))" in overlay
-    assert "Math.max(sideLength(0, 3), sideLength(1, 2))" in overlay
-
-    # Perspective off: _draw_rect fills the region's upright bounding box.
-    assert "settings.use_perspective === false" in warp
-    # Wide coverage envelope: _expanded_quad's radial push, same amount.
-    assert "Math.max(10, (Number(settings.edge_expand) || 0) + 8)" in warp
+    assert "usesGreenFramePipeline(template) ? greenSettings : null" in overlay
+    assert 'mode === "geometry" && multiRegion) return false' in pipeline
+    assert '(provider === "vertex" || provider === "local") && !multiRegion) return false' in pipeline
+    # Null settings: the artwork is fitted to the frame's own bounding box and
+    # warped straight onto its corners.
+    assert "if (!settings) {" in placement
+    assert "quad: corners.map((point) => ({ ...point }))" in placement
+    assert "Math.max(1, Math.round(right - left))" in placement
+    assert "Math.max(1, Math.round(bottom - top))" in placement
 
 
 def test_green_frame_control_changes_redraw_the_artwork_overlay():
@@ -172,3 +199,22 @@ def test_green_frame_control_changes_redraw_the_artwork_overlay():
     body = js.split("function updateGreenFrameSettingsFromControls()", 1)[1].split("\n  [", 1)[0]
 
     assert "drawSelection();" in body
+
+
+def test_editor_waits_for_the_new_background_before_laying_out_overlays():
+    """Overlays are scaled by the canvas image's own dimensions.
+
+    Assigning a new src does not update naturalWidth/naturalHeight until the
+    bitmap is swapped in, cached or not, so drawing on the next frame laid the
+    artwork out with the previous template's aspect -- and nothing redrew it.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    end_of_block = chr(10) + "    };"
+    apply_background = js.split("const applyPreloadedBackground = () => {", 1)[1].split(end_of_block, 1)[0]
+    guard = js.split("function drawSelection()", 1)[1].split("if (isGreenFrameTemplate(template))", 1)[0]
+
+    assert "canvas.onload = () => {" in apply_background
+    assert "canvas.src = backgroundUrl;" in apply_background
+    assert "canvas.complete && canvas.naturalWidth > 0" in apply_background
+    assert 'image.src.indexOf(`/templates/${template.template_id}/`) === -1' in guard
+    assert 'image.addEventListener("load", () => drawSelection(), { once: true })' in guard
