@@ -264,3 +264,19 @@ def test_a_mask_that_cannot_load_never_hides_the_artwork():
     assert "mask_name: payload.template?.mask_name || null" in wizard
     assert 'maskAvailability.get(maskUrl) === "missing"' in mask
     assert "probe.onerror" in mask
+
+
+def test_detection_leaves_preview_mode_before_it_draws():
+    """The editor cannot draw while a rendered preview is on screen.
+
+    drawSelection returns early in preview mode, so running a detection from
+    there cleared the preview and then drew nothing: the detected frames sat on
+    a blank canvas with no artwork in them until the result was approved.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    detect = js.split("async function detectFrame() {", 1)[1].split("saveDetectionPreState();", 1)[0]
+    draw = js.split("function drawSelection() {", 1)[1].split("const template = state.selected;", 1)[0]
+
+    assert "if (state.isPreviewingMockup) await togglePreviewMode();" in detect
+    # The early return is why leaving preview mode has to come first.
+    assert "if (state.isPreviewingMockup) {" in draw

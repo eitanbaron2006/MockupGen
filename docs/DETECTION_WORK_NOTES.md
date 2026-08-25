@@ -197,6 +197,10 @@ angles move, the coverage does not. The two mockups that prompted this read
   came back empty and the artwork only returned once the detection was
   approved. Geometric frames carry no mask, and `applyOverlayMask` now probes a
   mask before trusting it and drops one that cannot load.
+- Running a detection from PREVIEW left the canvas blank behind the detected
+  frames for the same reason from the other direction: `drawSelection` returns
+  early while `state.isPreviewingMockup` is set, so clearing the preview and
+  then redrawing produced nothing. Detection leaves preview mode first.
 - The overlay then read the fit mode off the *panel defaults* rather than off
   the template's green effect. Those defaults carry `cover`, so a template set
   to stretch had the sides cropped off its artwork in the editor — visible the
@@ -342,6 +346,6 @@ those exactly, so the two should agree to a fraction of a pixel.
 
 ## Tests
 
-`python -m pytest tests/ -q` — 117 passing. The detection and green-frame
+`python -m pytest tests/ -q` — 118 passing. The detection and green-frame
 behaviour above is covered in `tests/test_detection_services.py`,
 `tests/test_mockup_api.py` and `tests/test_admin_effect_panel_behavior.py`.

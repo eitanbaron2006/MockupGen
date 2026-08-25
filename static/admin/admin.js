@@ -2975,6 +2975,12 @@
       return;
     }
 
+    // Detection is an editing action, and the editor cannot draw while a
+    // rendered preview is on screen: drawSelection returns early in preview
+    // mode, so the detected frames were left sitting on a blank canvas with no
+    // artwork in them until the result was approved.
+    if (state.isPreviewingMockup) await togglePreviewMode();
+
     // Always save state and clear overlays before any detection flow
     saveDetectionPreState();
     clearDetectionOverlays();
