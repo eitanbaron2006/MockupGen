@@ -410,26 +410,12 @@ def update_admin_template(template_id: str):
                             mp.unlink()
                         except Exception:
                             pass
+        # The catalog holds the template's live state; every reader lays it over
+        # the manifest (merge_template_record). The manifest is the snapshot the
+        # template was published with and is not rewritten on every edit -- it
+        # used to be, which put a file change in the working tree behind every
+        # slider drag in the admin.
         updated = catalog().update_template(template_id, changes)
-        
-        # If the template is published (active), keep the manifest.json on disk synchronized!
-        if updated.get("status") == "active":
-            templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
-            manifest_path = templates_folder / template_id / "manifest.json"
-            if manifest_path.is_file():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest["name"] = updated["name"]
-                manifest["artwork_area"] = updated["artwork_area"]
-                manifest["fit_mode"] = updated["fit_mode"]
-                manifest["orientation"] = updated["orientation"]
-                manifest["mask"] = updated.get("mask_name")
-                manifest["raw_artwork_area"] = updated.get("raw_artwork_area")
-                manifest["effects"] = updated.get("effects")
-                manifest["detection_provider"] = updated.get("detection_provider")
-                manifest["detection_confidence"] = updated.get("detection_confidence")
-                manifest_path.write_text(
-                    json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-                )
     except (ValueError, CatalogError, DetectionError) as error:
         return json_error(str(error), 400)
     return jsonify({"success": True, "template": updated})
@@ -493,21 +479,6 @@ def reset_admin_template_detection(template_id: str):
             "detection_confidence": None,
         }
         updated = catalog().update_template(template_id, changes)
-
-        if updated.get("status") == "active":
-            templates_folder = Path(current_app.config["TEMPLATES_FOLDER"])
-            manifest_path = templates_folder / template_id / "manifest.json"
-            if manifest_path.is_file():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest["artwork_area"] = artwork_area
-                manifest["orientation"] = updated["orientation"]
-                manifest["mask"] = None
-                manifest["raw_artwork_area"] = None
-                manifest["detection_provider"] = None
-                manifest["detection_confidence"] = None
-                manifest_path.write_text(
-                    json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-                )
 
         from services.simple_mockup_service import _GREEN_DETECTION_CACHE, _GREEN_DETECTION_LOCK
         with _GREEN_DETECTION_LOCK:

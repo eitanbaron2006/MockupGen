@@ -1,1 +1,5 @@
-*.sqlite3
+# Anything with credentials in it stays out of the repository; the catalog
+# itself (mockup_catalog.sqlite3) is tracked.
+secrets.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

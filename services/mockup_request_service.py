@@ -25,6 +25,7 @@ from services.simple_mockup_service import (
     RenderValidationError,
     TemplateNotFoundError,
     load_manifest,
+    merge_template_record,
     render_simple_mockup,
 )
 from services.template_selection_service import (
@@ -209,6 +210,27 @@ def _build_criteria(item: dict, artwork_paths: list[Path]) -> SelectionCriteria:
     )
 
 
+def _catalog_records(
+    lookup: Callable[[str], dict | None] | None, templates_folder: Path
+) -> dict[str, dict] | None:
+    """The catalog's live state for every template on disk, for the selectors.
+
+    Automatic selection scores templates by product type, orientation and frame
+    count -- all of which the admin edits -- so it has to read the catalog and
+    not the manifest snapshots.
+    """
+    if lookup is None or not templates_folder.is_dir():
+        return None
+    records: dict[str, dict] = {}
+    for folder in templates_folder.iterdir():
+        if not folder.is_dir():
+            continue
+        record = lookup(folder.name)
+        if isinstance(record, dict):
+            records[folder.name] = record
+    return records
+
+
 def execute_batch_render(
     spec: Any,
     files: Mapping[str, Any],
@@ -253,7 +275,9 @@ def execute_batch_render(
             selection_meta: dict[str, Any] = {"mode": "manual" if template_id else "auto"}
             if not template_id:
                 criteria = _build_criteria(item, artwork_paths)
-                template_id = select_best_template(templates_folder, criteria) or ""
+                template_id = select_best_template(
+                    templates_folder, criteria, _catalog_records(template_record_lookup, templates_folder)
+                ) or ""
                 if not template_id:
                     raise RenderValidationError(
                         "No template matches the requested criteria"
@@ -277,8 +301,9 @@ def execute_batch_render(
             # Map artworks onto the template's numbered frames: explicit
             # 'frame' picks win, the rest auto-place by aspect-ratio match.
             _, manifest = load_manifest(templates_folder, template_id)
-            raw_artwork_area = record.get("raw_artwork_area") or manifest.get("raw_artwork_area")
-            frames = template_frames({**manifest, "raw_artwork_area": raw_artwork_area})
+            manifest = merge_template_record(manifest, record)
+            raw_artwork_area = manifest.get("raw_artwork_area")
+            frames = template_frames(manifest)
             ordered_paths = _align_artworks_to_frames(
                 artwork_specs, artwork_paths, frames, item_id
             )

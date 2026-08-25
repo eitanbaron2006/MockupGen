@@ -692,3 +692,56 @@ def test_green_frames_is_its_own_classic_submode(tmp_path: Path):
     page = client.get("/admin").data
     for submode in (b"auto", b"frame_points", b"green_frames", b"color_pick"):
         assert b'data-submode="' + submode + b'"' in page
+
+
+def test_editing_a_published_template_leaves_its_manifest_alone(tmp_path: Path):
+    """The catalog holds a template's live state; the manifest is its snapshot.
+
+    Every edit used to rewrite manifest.json, which put a tracked file change in
+    the working tree behind every rename, drag and slider in the admin. The
+    manifest is written when a template is published and left alone after that,
+    and every reader lays the catalog over it.
+    """
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    imported = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "living-room.png")]},
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    template_id = imported.get_json()["templates"][0]["template_id"]
+    assert client.post(f"/api/admin/templates/{template_id}/activate", headers=headers).status_code == 200
+
+    manifest_path = Path(app.config["TEMPLATES_FOLDER"]) / template_id / "manifest.json"
+    published = manifest_path.read_bytes()
+    published_name = json.loads(published.decode("utf-8"))["name"]
+
+    renamed = client.patch(
+        f"/api/admin/templates/{template_id}",
+        json={
+            "name": "V1-7",
+            "artwork_area": {"x": 12, "y": 14, "width": 260, "height": 380},
+            "fit_mode": "contain",
+        },
+        headers=headers,
+    )
+    assert renamed.status_code == 200
+
+    # Nothing on disk moved...
+    assert manifest_path.read_bytes() == published
+    assert json.loads(manifest_path.read_text("utf-8"))["name"] == published_name
+
+    # ...and every reader still reports the edit.
+    listed = client.get("/api/mockups/templates").get_json()
+    assert [entry["name"] for entry in listed if entry["template_id"] == template_id] == ["V1-7"]
+    detail = client.get(f"/api/mockups/templates/{template_id}").get_json()
+    assert detail["name"] == "V1-7"
+    assert detail["fit_mode"] == "contain"
+    assert detail["frames"][0]["width"] == 260

@@ -185,7 +185,48 @@ def _validated_canvas_and_area(
     return canvas, area
 
 
-def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
+# The catalog record is a template's live state; the manifest on disk is the
+# snapshot written when it was published. Readers overlay one on the other here
+# rather than each keeping its own idea of which wins, so an admin edit takes
+# effect everywhere without the manifest being rewritten on every change.
+#
+# A field the admin can clear -- the mask, the detected regions, the provider --
+# is taken from the record even when it is empty; the rest fall back to the
+# manifest wherever the record has nothing to say.
+_RECORD_FIELDS = (
+    "name",
+    "product_type",
+    "orientation",
+    "artwork_area",
+    "fit_mode",
+    "effects",
+)
+_RECORD_CLEARABLE = (
+    "raw_artwork_area",
+    "detection_provider",
+    "detection_confidence",
+)
+
+
+def merge_template_record(manifest: dict[str, Any], record: dict[str, Any] | None) -> dict[str, Any]:
+    """`manifest` with the catalog's live values laid over it."""
+    if not isinstance(record, dict):
+        return manifest
+    merged = dict(manifest)
+    for field in _RECORD_FIELDS:
+        if record.get(field) is not None:
+            merged[field] = record[field]
+    for field in _RECORD_CLEARABLE:
+        if field in record:
+            merged[field] = record[field]
+    if "mask_name" in record:
+        merged["mask"] = record["mask_name"]
+    return merged
+
+
+def list_templates(
+    templates_folder: Path, records: dict[str, dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     templates: list[dict[str, Any]] = []
     if not templates_folder.is_dir():
         return templates
@@ -194,6 +235,7 @@ def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
             _, manifest = load_manifest(templates_folder, template_folder.name)
         except (TemplateNotFoundError, InvalidTemplateError):
             continue
+        manifest = merge_template_record(manifest, (records or {}).get(template_folder.name))
         preview_name = manifest.get("preview", "preview.png")
         try:
             _safe_asset_path(template_folder, preview_name)
@@ -228,7 +270,10 @@ def list_templates(templates_folder: Path) -> list[dict[str, Any]]:
 
 
 def select_template_for_artwork(
-    templates_folder: Path, product_type: str, artwork_path: Path
+    templates_folder: Path,
+    product_type: str,
+    artwork_path: Path,
+    records: dict[str, dict[str, Any]] | None = None,
 ) -> str | None:
     artwork = load_rgba(artwork_path)
     artwork_ratio = artwork.width / artwork.height
@@ -242,6 +287,7 @@ def select_template_for_artwork(
             _, manifest = load_manifest(templates_folder, template_folder.name)
         except (TemplateNotFoundError, InvalidTemplateError):
             continue
+        manifest = merge_template_record(manifest, (records or {}).get(template_folder.name))
         if str(manifest.get("product_type", "")).lower() != product_type.lower():
             continue
         area = manifest["artwork_area"]

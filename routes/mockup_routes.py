@@ -14,6 +14,7 @@ from services.simple_mockup_service import (
     TemplateNotFoundError,
     list_templates,
     load_manifest,
+    merge_template_record,
     render_simple_mockup,
     select_template_for_artwork,
 )
@@ -68,29 +69,15 @@ def health_check():
 
 @mockup_routes.get("/api/mockups/templates")
 def get_templates():
-    templates = list_templates(Path(current_app.config["TEMPLATES_FOLDER"]))
-
-    # The catalog DB is the source of truth for admin-managed fields
-    # (category/product_type, orientation, detected frame regions) — the
-    # on-disk manifests can lag behind admin edits.
+    # The catalog is the source of truth for everything the admin edits — name,
+    # category, orientation, the detected frames. The manifest on disk is only
+    # the snapshot written when the template was published.
     catalog = current_app.extensions.get("catalog_service")
-    if catalog:
-        records_by_id = {
-            record["template_id"]: record
-            for record in catalog.list_templates(status="active")
-        }
-        for template in templates:
-            record = records_by_id.get(template["template_id"])
-            if not record:
-                continue
-            if record.get("product_type"):
-                template["product_type"] = record["product_type"]
-            if record.get("orientation"):
-                template["orientation"] = record["orientation"]
-            raw_area = record.get("raw_artwork_area")
-            regions = raw_area.get("regions") if isinstance(raw_area, dict) else None
-            if isinstance(regions, list) and regions:
-                template["frame_count"] = len(regions)
+    records_by_id = {
+        record["template_id"]: record
+        for record in (catalog.list_templates(status="active") if catalog else [])
+    }
+    templates = list_templates(Path(current_app.config["TEMPLATES_FOLDER"]), records_by_id)
 
     product_type = request.args.get("product_type", "").strip().lower()
     if product_type:
@@ -116,12 +103,11 @@ def get_template_detail(template_id: str):
     except InvalidTemplateError as error:
         return error_response(str(error), 500)
 
-    raw_artwork_area = manifest.get("raw_artwork_area")
     catalog = current_app.extensions.get("catalog_service")
-    if catalog:
-        record = catalog.get_template(template_id)
-        if record and record.get("raw_artwork_area"):
-            raw_artwork_area = record["raw_artwork_area"]
+    manifest = merge_template_record(
+        manifest, catalog.get_template(template_id) if catalog else None
+    )
+    raw_artwork_area = manifest.get("raw_artwork_area")
 
     preview_name = manifest.get("preview", "preview.png")
     return jsonify(
@@ -222,8 +208,17 @@ def render_mockup():
         )
         if mode == "simple":
             if not template_id:
+                # Picking by product type has to read the catalog: the category
+                # is an admin-edited field, and the manifests only carry the
+                # value each template was published with.
+                picker_catalog = current_app.extensions.get("catalog_service")
+                picker_records = {
+                    record["template_id"]: record
+                    for record in (picker_catalog.list_templates(status="active") if picker_catalog else [])
+                }
                 template_id = select_template_for_artwork(
-                    Path(current_app.config["TEMPLATES_FOLDER"]), product_type, artwork_path
+                    Path(current_app.config["TEMPLATES_FOLDER"]), product_type, artwork_path,
+                    picker_records,
                 ) or ""
                 if not template_id:
                     return error_response("No suitable template found for product type", 404)

@@ -2,7 +2,11 @@
 .venv/
 __pycache__/
 *.pyc
-data/*.sqlite3
+# The catalog carries the templates themselves -- names, categories, detected
+# frames, effects -- so it belongs in the repository. Its write-ahead log and
+# shared-memory files are transient and do not.
+data/*.sqlite3-wal
+data/*.sqlite3-shm
 draft_templates/*
 !draft_templates/.gitkeep
 uploads/*

@@ -34,6 +34,20 @@ class CatalogService:
         connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
+    def _checkpoint(self) -> None:
+        """Fold the write-ahead log back into the database file.
+
+        The catalog is what a template *is* -- its name, category, frames and
+        effects -- and it is committed to the repository, so a change that
+        lived only in the -wal file would be missing from that copy and from
+        any backup taken by copying the database.
+        """
+        try:
+            with sqlite3.connect(self.database_path, timeout=15.0) as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            pass
+
     def initialize(self, templates_folder: Path) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -111,6 +125,15 @@ class CatalogService:
                     "foreground_name": manifest.get("foreground"),
                     "mask_name": manifest.get("mask"),
                     "source_filename": manifest["background"],
+                    # The manifest is the snapshot a template was published
+                    # with, and seeding is how a catalog is rebuilt from those
+                    # snapshots -- so carry the detection across too. Leaving it
+                    # behind used to hand a rebuilt catalog templates with no
+                    # frames and no effects.
+                    "raw_artwork_area": manifest.get("raw_artwork_area"),
+                    "effects": manifest.get("effects"),
+                    "detection_provider": manifest.get("detection_provider"),
+                    "detection_confidence": manifest.get("detection_confidence"),
                 }
             )
 
@@ -139,8 +162,8 @@ class CatalogService:
             except sqlite3.IntegrityError as error:
                 raise CatalogError("Category already exists") from error
             category_id = cursor.lastrowid
+        self._checkpoint()
         return self.get_category(category_id)
-
     def get_category(self, category_id: int) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -179,8 +202,8 @@ class CatalogService:
             )
             if not cursor.rowcount:
                 raise CatalogError("Category not found")
+        self._checkpoint()
         return self.get_category(category_id)
-
     def delete_empty_category(self, category_id: int) -> None:
         with self._connect() as connection:
             template_count = connection.execute(
@@ -191,7 +214,7 @@ class CatalogService:
             cursor = connection.execute("DELETE FROM categories WHERE id = ?", (category_id,))
             if not cursor.rowcount:
                 raise CatalogError("Category not found")
-
+        self._checkpoint()
     def list_categories(self, *, active_only: bool = False) -> list[dict[str, Any]]:
         condition = "WHERE t.status = 'active'" if active_only else ""
         query = f"""
@@ -239,8 +262,8 @@ class CatalogService:
                     timestamp,
                 ),
             )
+        self._checkpoint()
         return self.get_template(record["template_id"])
-
     def get_template(self, template_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -321,6 +344,7 @@ class CatalogService:
             )
             if not cursor.rowcount:
                 raise CatalogError("Template not found")
+        self._checkpoint()
         return self.get_template(template_id)
 
     def delete_template(self, template_id: str) -> None:
@@ -330,6 +354,7 @@ class CatalogService:
             )
             if not cursor.rowcount:
                 raise CatalogError("Template not found")
+        self._checkpoint()
 
     def set_settings(self, settings: dict[str, str]) -> None:
         with self._connect() as connection:
@@ -341,6 +366,7 @@ class CatalogService:
                     """,
                     (key, value),
                 )
+        self._checkpoint()
 
     def get_settings(self) -> dict[str, str]:
         with self._connect() as connection:

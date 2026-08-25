@@ -21,6 +21,7 @@ from services.simple_mockup_service import (
     InvalidTemplateError,
     TemplateNotFoundError,
     load_manifest,
+    merge_template_record,
 )
 
 
@@ -131,8 +132,17 @@ def _ratio_distance(a: float, b: float) -> float:
     return abs(math.log(a / b))
 
 
-def rank_templates(templates_folder: Path, criteria: SelectionCriteria) -> list[dict[str, Any]]:
-    """Score every usable template against the criteria, best first."""
+def rank_templates(
+    templates_folder: Path,
+    criteria: SelectionCriteria,
+    records: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Score every usable template against the criteria, best first.
+
+    `records` carries the catalog's live state for each template, which is what
+    the admin edits; the manifest on disk is only the snapshot taken when the
+    template was published.
+    """
     ranked: list[dict[str, Any]] = []
     if not templates_folder.is_dir():
         return ranked
@@ -144,6 +154,7 @@ def rank_templates(templates_folder: Path, criteria: SelectionCriteria) -> list[
             _, manifest = load_manifest(templates_folder, template_folder.name)
         except (TemplateNotFoundError, InvalidTemplateError):
             continue
+        manifest = merge_template_record(manifest, (records or {}).get(template_folder.name))
         if "simple" not in (manifest.get("supported_modes") or []):
             continue
         if requested_type and str(manifest.get("product_type") or "").lower() != requested_type:
@@ -192,6 +203,10 @@ def rank_templates(templates_folder: Path, criteria: SelectionCriteria) -> list[
     return ranked
 
 
-def select_best_template(templates_folder: Path, criteria: SelectionCriteria) -> str | None:
-    ranked = rank_templates(templates_folder, criteria)
+def select_best_template(
+    templates_folder: Path,
+    criteria: SelectionCriteria,
+    records: dict[str, dict[str, Any]] | None = None,
+) -> str | None:
+    ranked = rank_templates(templates_folder, criteria, records)
     return ranked[0]["template_id"] if ranked else None

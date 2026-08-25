@@ -1679,3 +1679,63 @@ def test_the_coverage_envelope_never_moves_the_artwork_inside_the_frame(tmp_path
 
     top, bottom = stripe_rows(without_envelope)
     assert top >= frame_box[1] and bottom <= frame_box[3]
+
+
+def test_a_stale_manifest_never_wins_over_the_catalog(tmp_path):
+    """The catalog is where a template's frames and category live.
+
+    The manifests on disk are the snapshots their templates were published
+    with, and they are not rewritten on every edit any more, so a render, the
+    public listing and automatic template selection all have to read the
+    catalog first -- otherwise an edited template would keep rendering the way
+    it was published.
+    """
+    from app import create_app
+
+    templates_folder = tmp_path / "templates_data"
+    template_folder = write_template(templates_folder)
+    manifest_path = template_folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artwork_area"] = {"x": 0, "y": 0, "width": 2, "height": 2}
+    manifest["name"] = "the name it was published with"
+    manifest["product_type"] = "old-category"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    app = create_app(
+        {
+            "TESTING": True,
+            "MAX_CONTENT_LENGTH": 1024 * 1024,
+            "ENABLE_SIMPLE_MODE": True,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+            "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            "TEMPLATES_FOLDER": str(templates_folder),
+            "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+            "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+        }
+    )
+    catalog = app.extensions["catalog_service"]
+    category = catalog.get_or_create_category("Wall Art")
+    catalog.update_template(
+        "template_001",
+        {
+            "name": "H1-4",
+            "category_id": category["id"],
+            "artwork_area": {"x": 2, "y": 2, "width": 8, "height": 8},
+        },
+    )
+    client = app.test_client()
+
+    listed = client.get("/api/mockups/templates").get_json()
+    assert listed[0]["name"] == "H1-4"
+    assert listed[0]["product_type"] == "wall-art"
+
+    # The artwork lands where the catalog says, not on the published 2x2 box.
+    response = post_render(client)
+    assert response.status_code == 200
+    generated_path = tmp_path / "outputs" / Path(response.get_json()["output_url"]).name
+    with Image.open(generated_path).convert("RGBA") as output:
+        assert output.getpixel((6, 6)) != (200, 20, 20, 255)
+
+    # And picking a template by product type reads the catalog's category too.
+    auto = post_render(client, template_id="", product_type="wall-art")
+    assert auto.status_code == 200, auto.get_json()
