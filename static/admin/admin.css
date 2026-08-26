@@ -1031,26 +1031,55 @@ body.queue-compact .queue-item.selected {
   flex-direction: column;
 }
 
+/* As shallow as the queue's head is when the queue is minimal: the title and
+   its line of explanation share one row, and the buttons are the height of the
+   bar minus its padding. */
 .editor-head {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  min-height: 68px;
-  padding: 16px 19px;
+  /* 54px: what the queue's head measures when the queue is minimal. */
+  min-height: 54px;
+  padding: 12px 19px;
 }
 
 .editor-title-copy {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
   min-width: 0;
+}
+
+.editor-title-copy h1 {
+  flex-shrink: 0;
+  font-size: 18px;
+  margin: 0;
+}
+
+/* Beside the title, not under it -- and cut short rather than pushing the
+   buttons off the bar. */
+.editor-title-copy .sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-tools {
   align-items: center;
   display: flex;
-  gap: 24px;
+  gap: 10px;
   justify-content: flex-end;
   min-width: 0;
+}
+
+.editor-tools .btn {
+  font-size: 9px;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
 }
 
 .detection-mode-switch {

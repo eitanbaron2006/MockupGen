@@ -655,3 +655,30 @@ def test_confidence_is_hidden_but_still_computed():
     assert '$("confidence").textContent = confidenceLabel(' in js
     hidden = css.split(".editor-foot .confidence {", 1)[1].split("}", 1)[0]
     assert "display: none" in hidden
+
+
+def test_editor_head_is_as_shallow_as_the_minimal_queue_head():
+    """One slim row over the canvas.
+
+    The title and its line of explanation share a row instead of stacking, the
+    buttons are smaller than the page's standard ones, and the bar lands on the
+    height the queue's head has when the queue is minimal -- 54px, measured in
+    the browser for both.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    head = css.split(chr(10) + ".editor-head {", 1)[1].split("}", 1)[0]
+    assert "min-height: 54px" in head
+    assert "padding: 12px 19px" in head
+
+    copy = css.split(chr(10) + ".editor-title-copy {", 1)[1].split("}", 1)[0]
+    assert "display: flex" in copy
+    assert "align-items: baseline" in copy
+
+    sub = css.split(".editor-title-copy .sub {", 1)[1].split("}", 1)[0]
+    assert "text-overflow: ellipsis" in sub
+    assert "white-space: nowrap" in sub
+
+    # Smaller than the 40px buttons everywhere else on the page.
+    buttons = css.split(".editor-tools .btn {", 1)[1].split("}", 1)[0]
+    assert "height: 28px" in buttons
