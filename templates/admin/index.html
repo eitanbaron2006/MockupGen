@@ -210,7 +210,7 @@
             </div>
             <div class="canvas-rail selection-style-toolbar hidden" id="selectionStyleToolbar" aria-label="Selection overlay style">
               <div class="hud-grip" data-drag-handle role="button" tabindex="0"
-                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
+                aria-label="Move this toolbar" title="Drag to move &#183; double-click to turn"><span></span><span></span></div>
               <button class="style-tool" type="button" data-style-panel="overlayModePanel" aria-label="Overlay mode"
                 title="Overlay mode">
                 <span class="style-image-icon"></span>
@@ -298,7 +298,7 @@
             <!-- Floating Premium Zoom Controls HUD -->
             <div class="canvas-rail zoom-hud hidden" id="zoomHud">
               <div class="hud-grip" data-drag-handle role="button" tabindex="0"
-                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
+                aria-label="Move this toolbar" title="Drag to move &#183; double-click to turn"><span></span><span></span></div>
               <button class="zoom-btn" id="zoomOutBtn" type="button" title="Zoom Out (Scroll Down)">−</button>
               <span class="zoom-text" id="zoomText">100%</span>
               <button class="zoom-btn" id="zoomInBtn" type="button" title="Zoom In (Scroll Up)">+</button>
@@ -333,17 +333,24 @@
                 </svg>
               </button>
             </div>
-            <div class="coordinates">
-              <span>X <strong id="coordX">-</strong></span>
-              <span>Y <strong id="coordY">-</strong></span>
-              <span>W <strong id="coordW">-</strong></span>
-              <span>H <strong id="coordH">-</strong></span>
+            <!-- The artwork area's numbers, as a rail of their own: it starts
+                 lying flat, which is how a row of figures reads. -->
+            <div class="canvas-rail coords-rail is-horizontal" id="coordsRail"
+              aria-label="Artwork area coordinates">
+              <div class="hud-grip" data-drag-handle role="button" tabindex="0"
+                aria-label="Move this toolbar" title="Drag to move &#183; double-click to turn"><span></span><span></span></div>
+              <div class="coordinates">
+                <span>X <strong id="coordX">-</strong></span>
+                <span>Y <strong id="coordY">-</strong></span>
+                <span>W <strong id="coordW">-</strong></span>
+                <span>H <strong id="coordH">-</strong></span>
+              </div>
             </div>
             <!-- The mockup actions the editor head offers, as icons on the canvas
                  itself: preview, back to editing, download. -->
             <div class="canvas-rail action-rail hidden" id="actionRail" aria-label="Mockup actions">
               <div class="hud-grip" data-drag-handle role="button" tabindex="0"
-                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
+                aria-label="Move this toolbar" title="Drag to move &#183; double-click to turn"><span></span><span></span></div>
               <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton"
                 aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
                 <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

@@ -7331,7 +7331,16 @@
   function toolbarDockSide(toolbar) {
     if (toolbar.classList.contains("canvas-toolbar-docked-left")) return "left";
     if (toolbar.classList.contains("canvas-toolbar-docked-right")) return "right";
+    if (toolbar.classList.contains("canvas-toolbar-docked-top")) return "top";
+    if (toolbar.classList.contains("canvas-toolbar-docked-bottom")) return "bottom";
     return null;
+  }
+
+  /** A rail standing on end docks to a side wall; one lying flat docks to the
+   * top or bottom. Either way it is the long edge that meets the wall.
+   */
+  function toolbarIsHorizontal(toolbar) {
+    return toolbar.classList.contains("is-horizontal");
   }
 
   /** Toolbars docked to the same edge read as one bar, split by a single rule.
@@ -7347,7 +7356,9 @@
       ["left", "right"].forEach((side) => {
         const members = canvasToolbars
           .map((entry) => entry.element)
-          .filter((element) => !element.classList.contains("hidden") && toolbarDockSide(element) === side);
+          .filter((element) => !element.classList.contains("hidden")
+            && !toolbarIsHorizontal(element)
+            && toolbarDockSide(element) === side);
         members.forEach((element) => {
           element.classList.remove("canvas-toolbar-merged", "canvas-toolbar-merged-first", "canvas-toolbar-merged-last");
           element.style.width = "";
@@ -7382,35 +7393,27 @@
     } finally {
       aligningToolbars = false;
     }
-    placeCoordinateReadout();
   }
 
-  /** The coordinate readout shares the top-left corner with the rails.
-   *
-   * Whichever rail is standing in that corner -- docked there or merely left
-   * there -- the readout starts where the rail ends, so the two sit side by
-   * side instead of one on top of the other.
-   */
-  function placeCoordinateReadout() {
-    const readout = document.querySelector(".coordinates");
-    const workspace = document.querySelector(".canvas-workspace");
-    if (!readout || !workspace) return;
-    const bounds = workspace.getBoundingClientRect();
-    const height = readout.offsetHeight;
-    const width = readout.offsetWidth;
-    const rails = canvasToolbars
-      .map((entry) => entry.element)
-      .filter((element) => !element.classList.contains("hidden"))
-      .map((element) => element.getBoundingClientRect())
-      // Only what reaches the top row can be in the way.
-      .filter((rail) => rail.top - bounds.top < height)
-      .sort((a, b) => a.left - b.left);
-    let left = 0;
-    rails.forEach((rail) => {
-      const railLeft = rail.left - bounds.left;
-      if (railLeft < left + width) left = Math.max(left, rail.right - bounds.left);
+  function rememberToolbarPositions(parent) {
+    if (!parent) return;
+    const bounds = parent.getBoundingClientRect();
+    const positions = readToolbarPositions();
+    canvasToolbars.forEach((entry) => {
+      if (entry.element.classList.contains("hidden")) return;
+      const box = entry.element.getBoundingClientRect();
+      positions[entry.key] = {
+        x: box.left - bounds.left,
+        y: box.top - bounds.top,
+        dock: toolbarDockSide(entry.element),
+        horizontal: toolbarIsHorizontal(entry.element),
+      };
     });
-    readout.style.left = `${Math.round(left)}px`;
+    try {
+      localStorage.setItem(TOOLBAR_POSITION_KEY, JSON.stringify(positions));
+    } catch (_error) {
+      // Remembering where a toolbar sits is a convenience, not a requirement.
+    }
   }
 
   function makeToolbarDraggable(toolbar, key) {
@@ -7423,6 +7426,8 @@
     const setDock = (side) => {
       toolbar.classList.toggle("canvas-toolbar-docked-left", side === "left");
       toolbar.classList.toggle("canvas-toolbar-docked-right", side === "right");
+      toolbar.classList.toggle("canvas-toolbar-docked-top", side === "top");
+      toolbar.classList.toggle("canvas-toolbar-docked-bottom", side === "bottom");
     };
 
     const place = (left, top, { snap = true } = {}) => {
@@ -7432,9 +7437,17 @@
       const maxLeft = Math.max(0, bounds.width - toolbar.offsetWidth);
       const maxTop = Math.max(0, bounds.height - toolbar.offsetHeight);
       let x = Math.min(Math.max(0, left), maxLeft);
-      const y = Math.min(Math.max(0, top), maxTop);
+      let y = Math.min(Math.max(0, top), maxTop);
       let dock = null;
-      if (snap && x <= TOOLBAR_DOCK_DISTANCE) {
+      if (snap && toolbarIsHorizontal(toolbar)) {
+        if (y <= TOOLBAR_DOCK_DISTANCE) {
+          dock = "top";
+          y = Math.min(TOOLBAR_DOCK_MARGIN, maxTop);
+        } else if (y >= maxTop - TOOLBAR_DOCK_DISTANCE) {
+          dock = "bottom";
+          y = Math.max(0, maxTop - TOOLBAR_DOCK_MARGIN);
+        }
+      } else if (snap && x <= TOOLBAR_DOCK_DISTANCE) {
         dock = "left";
         x = Math.min(TOOLBAR_DOCK_MARGIN, maxLeft);
       } else if (snap && x >= maxLeft - TOOLBAR_DOCK_DISTANCE) {
@@ -7446,7 +7459,6 @@
       toolbar.style.top = `${Math.round(y)}px`;
       toolbar.style.right = "auto";
       toolbar.style.bottom = "auto";
-      placeCoordinateReadout();
       return { x, y, dock };
     };
 
@@ -7456,13 +7468,18 @@
       if (drag || aligningToolbars) return;
       const saved = readToolbarPositions()[key];
       if (!saved || toolbar.classList.contains("hidden")) return;
+      // The way it was left lying is part of where it was left.
+      toolbar.classList.toggle("is-horizontal", Boolean(saved.horizontal));
       // A docked toolbar is measured from the edge it is docked to, so it stays
       // on that edge whatever the workspace is resized to.
-      if (saved.dock === "right") {
+      if (saved.dock === "right" || saved.dock === "bottom") {
         const parent = toolbar.offsetParent || toolbar.parentElement;
         if (parent) {
           const bounds = parent.getBoundingClientRect();
-          place(bounds.width - toolbar.offsetWidth - TOOLBAR_DOCK_MARGIN, saved.y);
+          place(
+            saved.dock === "right" ? bounds.width - toolbar.offsetWidth - TOOLBAR_DOCK_MARGIN : saved.x,
+            saved.dock === "bottom" ? bounds.height - toolbar.offsetHeight - TOOLBAR_DOCK_MARGIN : saved.y
+          );
           alignDockedToolbars();
           return;
         }
@@ -7505,6 +7522,76 @@
       toolbar.classList.add("canvas-toolbar-dragging");
     });
 
+    /** Stand the rail on end, or lay it flat.
+     *
+     * On the head that already moves it -- double-click, or Enter on the
+     * keyboard -- so a rail carries its own controls and the bar grows no
+     * buttons that are not tools. Turning re-places it: a rail that was flush
+     * against the left wall standing up belongs against the top wall lying
+     * down, and it must be re-snapped rather than left hanging off the edge.
+     */
+    const turnToolbar = () => {
+      if (drag) return;
+      const wasDocked = toolbarDockSide(toolbar);
+      toolbar.classList.toggle("is-horizontal");
+      toolbar.classList.remove("canvas-toolbar-merged", "canvas-toolbar-merged-first", "canvas-toolbar-merged-last");
+      toolbar.style.width = "";
+      const parent = toolbar.offsetParent || toolbar.parentElement;
+      if (!parent) return;
+      const bounds = parent.getBoundingClientRect();
+      const box = toolbar.getBoundingClientRect();
+      // The corner it was in is the corner it stays in.
+      let left = box.left - bounds.left;
+      let top = box.top - bounds.top;
+      if (toolbarIsHorizontal(toolbar) && (wasDocked === "left" || wasDocked === "right")) {
+        top = top <= bounds.height / 2 ? 0 : bounds.height;
+      } else if (!toolbarIsHorizontal(toolbar) && (wasDocked === "top" || wasDocked === "bottom")) {
+        left = left <= bounds.width / 2 ? 0 : bounds.width;
+      }
+      place(left, top);
+      clearOfOtherRails();
+      alignDockedToolbars();
+      rememberToolbarPositions(parent);
+    };
+
+    /** A rail that has just been turned is a different shape in the same
+     * corner, and the corner may already be taken -- a flat style rail is as
+     * wide as the coordinates beside it. Push it along its own length until it
+     * is standing clear, or leave it be if there is nowhere to go.
+     */
+    const clearOfOtherRails = () => {
+      const parent = toolbar.offsetParent || toolbar.parentElement;
+      if (!parent) return;
+      const bounds = parent.getBoundingClientRect();
+      const horizontal = toolbarIsHorizontal(toolbar);
+      const others = canvasToolbars
+        .map((entry) => entry.element)
+        .filter((element) => element !== toolbar && !element.classList.contains("hidden"))
+        .map((element) => element.getBoundingClientRect());
+      let box = toolbar.getBoundingClientRect();
+      for (let guard = 0; guard < 8; guard += 1) {
+        const hit = others.find((other) => box.left < other.right && other.left < box.right
+          && box.top < other.bottom && other.top < box.bottom);
+        if (!hit) return;
+        if (horizontal) place(hit.right - bounds.left, box.top - bounds.top);
+        else place(box.left - bounds.left, hit.bottom - bounds.top);
+        const moved = toolbar.getBoundingClientRect();
+        if (moved.left === box.left && moved.top === box.top) return;
+        box = moved;
+      }
+    };
+
+    handle.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      turnToolbar();
+    });
+
+    handle.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      turnToolbar();
+    });
+
     const leaveTheBar = () => {
       toolbar.classList.remove("canvas-toolbar-merged", "canvas-toolbar-merged-first", "canvas-toolbar-merged-last");
       toolbar.style.width = "";
@@ -7542,24 +7629,7 @@
       const parent = toolbar.offsetParent || toolbar.parentElement;
       if (!parent) return;
       alignDockedToolbars();
-      // Everything that moved is remembered, not only the rail under the hand:
-      // a companion dragged along would otherwise come back to where it was.
-      const bounds = parent.getBoundingClientRect();
-      const positions = readToolbarPositions();
-      canvasToolbars.forEach((entry) => {
-        if (entry.element.classList.contains("hidden")) return;
-        const box = entry.element.getBoundingClientRect();
-        positions[entry.key] = {
-          x: box.left - bounds.left,
-          y: box.top - bounds.top,
-          dock: toolbarDockSide(entry.element),
-        };
-      });
-      try {
-        localStorage.setItem(TOOLBAR_POSITION_KEY, JSON.stringify(positions));
-      } catch (_error) {
-        // Remembering where a toolbar sits is a convenience, not a requirement.
-      }
+      rememberToolbarPositions(parent);
     };
     handle.addEventListener("pointerup", endDragging);
     handle.addEventListener("pointercancel", endDragging);
@@ -7575,12 +7645,8 @@
       wasHidden = hidden;
       if (!hidden) restore();
       else alignDockedToolbars();
-      placeCoordinateReadout();
     }).observe(toolbar, { attributes: true, attributeFilter: ["class"] });
-    window.addEventListener("resize", () => {
-      restore();
-      placeCoordinateReadout();
-    });
+    window.addEventListener("resize", restore);
     // The workspace also changes width on its own, with the window standing
     // still: the queue shrinking to thumbnails, the sidebar taking its column
     // back. A rail docked to an edge has to follow that edge, or the canvas
@@ -7593,15 +7659,11 @@
         pendingResize = requestAnimationFrame(() => {
           pendingResize = null;
           restore();
-          placeCoordinateReadout();
         });
       }).observe(dockParent);
     }
     canvasToolbars.push({ element: toolbar, key });
     restore();
-    // A rail with nothing stored sits where the stylesheet puts it, and restore
-    // leaves early -- the readout still has to know the corner is taken.
-    placeCoordinateReadout();
   }
 
   // The sidebar sits at the left edge as a rail and slides open under the
@@ -7897,6 +7959,7 @@
   makeToolbarDraggable($("zoomHud"), "zoomHud");
   makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar");
   makeToolbarDraggable($("actionRail"), "actionRail");
+  makeToolbarDraggable($("coordsRail"), "coordsRail");
 
   if ($("previewMockupButton")) $("previewMockupButton").onclick = togglePreviewMode;
   if ($("toolbarPreviewButton")) $("toolbarPreviewButton").onclick = togglePreviewMode;

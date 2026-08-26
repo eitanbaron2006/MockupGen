@@ -1701,6 +1701,59 @@ body.queue-compact .queue-item.selected {
   top: 0;
 }
 
+/* Beside the style rail rather than under it: the two share the top wall. */
+.coords-rail {
+  left: 38px;
+  top: 0;
+}
+
+/* A rail can lie flat as well as stand. Everything that ran down the bar now
+   runs across it -- the grip's bars, the seam under its head, the single rule
+   in the zoom rail -- and the bar takes its height from the buttons instead of
+   its width. */
+.canvas-rail.is-horizontal {
+  flex-direction: row;
+  height: 38px;
+  padding: 0 3px 0 0;
+  width: auto;
+}
+
+.canvas-rail.is-horizontal .hud-grip {
+  border-bottom: 0;
+  border-right: 1px solid rgba(21, 20, 15, .1);
+  flex-direction: row;
+  margin: 0 3px 0 0;
+  padding: 0 7px;
+}
+
+.canvas-rail.is-horizontal .hud-grip span {
+  height: 14px;
+  width: 2px;
+}
+
+.canvas-rail.is-horizontal #zoomResetBtn {
+  margin-left: 9px;
+  margin-top: 0;
+}
+
+.canvas-rail.is-horizontal #zoomResetBtn::before {
+  border-left: 1px solid rgba(21, 20, 15, .12);
+  border-top: 0;
+  bottom: 3px;
+  left: -5px;
+  right: auto;
+  top: 3px;
+}
+
+/* Flush against the wall it is docked to, the border on that side goes. */
+.canvas-rail.canvas-toolbar-docked-top {
+  border-top: 0;
+}
+
+.canvas-rail.canvas-toolbar-docked-bottom {
+  border-bottom: 0;
+}
+
 /* In this rail a tool that is not available now stays where it is, greyed out.
    Buttons appearing and vanishing under the hand is what makes a toolbar feel
    unsteady, and the JS already marks unavailable tools with .hidden. */
@@ -1979,9 +2032,8 @@ body.queue-compact .queue-item.selected {
   padding: 0 18px;
 }
 
-/* The readout reads the canvas, so it sits on it: a chip in the top-left
-   corner of the workspace, in the rails' own chrome. It is text and nothing
-   else -- the pointer goes straight through it to the canvas underneath. */
+/* The readout reads the canvas, so it rides on the canvas: the contents of a
+   rail of its own, which can be moved and turned like the others. */
 .coordinates {
   align-items: center;
   color: var(--faint);
@@ -1989,19 +2041,11 @@ body.queue-compact .queue-item.selected {
   font-family: var(--mono);
   font-size: 10px;
   gap: 13px;
-  left: 0;
-  padding: 9px 12px;
+  /* Read, not pressed: the pointer goes through to the canvas behind. */
   pointer-events: none;
-  position: absolute;
-  /* No box: the readout floats on the picture so that zooming in on the corner
-     under it still shows the picture. A soft halo is what keeps it legible
-     over a dark photograph -- it costs nothing behind the glyphs. */
-  text-shadow:
-    0 0 3px rgba(247, 241, 222, .95),
-    0 0 6px rgba(247, 241, 222, .8);
+  padding: 0 11px 0 8px;
   text-transform: uppercase;
-  top: 0;
-  z-index: 4;
+  white-space: nowrap;
 }
 
 

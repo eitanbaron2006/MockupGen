@@ -327,12 +327,12 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
 
     # A grip on each rail, and nothing else claims to be one.
     assert html.count("data-drag-handle") == html.count('class="canvas-rail')
-    assert html.count("data-drag-handle") == 3
+    assert html.count("data-drag-handle") == 4
     assert 'makeToolbarDraggable($("zoomHud"), "zoomHud")' in js
     assert 'makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar")' in js
 
-    # All three are the same object: one slim, square rail, not three cards.
-    assert html.count('class="canvas-rail ') == 3
+    # All four are the same object: one slim, square rail, not four cards.
+    assert html.count('class="canvas-rail ') == 4
     rail = css.split(".canvas-rail {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in rail
     assert "border-radius: 0" in rail
@@ -352,7 +352,10 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
     # pointermove, and every rail that moved is remembered.
     assert "companions" in drag
     assert "drag.companions.forEach" in drag
-    assert "canvasToolbars.forEach((entry) => {" in drag
+    # Every rail that moved is remembered, not only the one under the hand.
+    assert "rememberToolbarPositions(parent);" in drag
+    remember = js.split("function rememberToolbarPositions(parent) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert "canvasToolbars.forEach((entry) => {" in remember
 
     # They travel together along the wall only. Pulling one off the wall is how
     # it comes out of the bar, or nothing could ever be separated again.
@@ -547,40 +550,33 @@ def test_canvas_rails_follow_the_workspace_when_it_changes_width_on_its_own():
     assert "requestAnimationFrame" in draggable and "cancelAnimationFrame" in draggable
 
 
-def test_coordinate_readout_lives_in_the_canvas_corner():
-    """The readout reads the canvas, so it sits on the canvas.
+def test_coordinate_readout_is_a_rail_of_its_own():
+    """The readout reads the canvas, so it rides on the canvas.
 
-    It shares the top-left corner with the rails, which are draggable, so where
-    it starts is measured against whatever rail is standing in that corner --
-    and it never takes the pointer, since it is only text over a picture that
-    is dragged.
+    As a rail like the others: it has a grip, it is dragged and docked through
+    the same code, and it starts lying flat -- which is how a row of figures
+    reads. The numbers themselves never take the pointer; the canvas under them
+    is dragged and zoomed straight through the text.
     """
     js = ADMIN_JS.read_text(encoding="utf-8")
     css = ADMIN_CSS.read_text(encoding="utf-8")
     html = ADMIN_HTML.read_text(encoding="utf-8")
 
+    rail = html.split('id="coordsRail"', 1)[1].split("</div>", 1)[0]
+    assert "data-drag-handle" in html.split('id="coordsRail"', 1)[1][:400]
+    assert 'class="canvas-rail coords-rail is-horizontal"' in html
+    for field in ('id="coordX"', 'id="coordY"', 'id="coordW"', 'id="coordH"'):
+        assert field in html.split('id="coordsRail"', 1)[1].split("<!-- ", 1)[0]
+
     # In the workspace, not in the bar under it.
-    assert html.index('class="coordinates"') < html.index('class="editor-foot"')
-    assert html.index('id="zoomHud"') < html.index('class="coordinates"')
+    assert html.index('id="coordsRail"') < html.index('class="editor-foot"')
+
+    assert 'makeToolbarDraggable($("coordsRail"), "coordsRail")' in js
+    # The chip's own placement logic went with the chip.
+    assert "placeCoordinateReadout" not in js
 
     readout = css.split(chr(10) + ".coordinates {", 1)[1].split("}", 1)[0]
-    assert "position: absolute" in readout
-    assert "top: 0" in readout
     assert "pointer-events: none" in readout
-    # No box of its own: zoomed in, the picture has to be visible under it.
-    assert "background" not in readout
-    assert "border" not in readout
-    assert "backdrop-filter" not in readout
-    assert "text-shadow" in readout
-
-    # The corner is contested, so the offset is measured, not assumed.
-    place = js.split("function placeCoordinateReadout() {", 1)[1].split(
-        chr(10) + "  }", 1
-    )[0]
-    assert "canvasToolbars" in place
-    assert "rail.right - bounds.left" in place
-    # Measured again whenever a rail moves, docks, or is put back.
-    assert js.count("placeCoordinateReadout();") >= 4
 
 
 def test_editor_foot_reads_from_the_left():
@@ -856,3 +852,45 @@ def test_every_slider_has_a_reset_and_answers_the_wheel():
     assert ".slider-reset {" in css
     # A slider that came without a row of its own gets one.
     assert ".slider-with-reset {" in css
+
+
+def test_canvas_rails_can_be_turned_on_their_side():
+    """A rail stands on end or lies flat, and docks to the wall it can reach.
+
+    Turning happens on the head that already moves the rail -- double-click, or
+    Enter -- so the bar grows no button that is not a tool. Upright it snaps to
+    the side walls as before; flat it snaps to the top or bottom instead, since
+    that is the wall its long edge can meet.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    drag = js.split("function makeToolbarDraggable(", 1)[1]
+    assert 'handle.addEventListener("dblclick"' in drag
+    assert 'if (event.key !== "Enter" && event.key !== " ") return;' in drag
+    assert 'toolbar.classList.toggle("is-horizontal");' in drag
+
+    # Which walls a rail can reach depends on how it is lying.
+    assert "if (snap && toolbarIsHorizontal(toolbar)) {" in drag
+    assert 'dock = "top";' in drag and 'dock = "bottom";' in drag
+
+    # Merging two rails into one bar stays a side-wall affair between rails
+    # that stand on end -- a flat one has no width to share.
+    align = js.split("function alignDockedToolbars() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert "!toolbarIsHorizontal(element)" in align
+
+    # A turned rail is a different shape in the same corner: it steps clear of
+    # whatever is already standing there.
+    assert "const clearOfOtherRails = () => {" in js
+    # How it was left lying is remembered along with where.
+    assert "horizontal: toolbarIsHorizontal(entry.element)" in js
+    assert 'toolbar.classList.toggle("is-horizontal", Boolean(saved.horizontal))' in js
+
+    flat = css.split(".canvas-rail.is-horizontal {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: row" in flat
+    assert "height: 38px" in flat
+    # The grip's bars turn with the rail, and so does the single rule in the
+    # zoom rail.
+    assert ".canvas-rail.is-horizontal .hud-grip span {" in css
+    assert ".canvas-rail.is-horizontal #zoomResetBtn::before {" in css
+    assert ".canvas-rail.canvas-toolbar-docked-top {" in css
