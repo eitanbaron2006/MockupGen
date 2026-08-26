@@ -544,3 +544,39 @@ def test_canvas_rails_follow_the_workspace_when_it_changes_width_on_its_own():
     assert "restore();" in draggable.split("new ResizeObserver(", 1)[1]
     # A width animation fires the observer every frame; one re-anchor per frame.
     assert "requestAnimationFrame" in draggable and "cancelAnimationFrame" in draggable
+
+
+def test_coordinate_readout_lives_in_the_canvas_corner():
+    """The readout reads the canvas, so it sits on the canvas.
+
+    It shares the top-left corner with the rails, which are draggable, so where
+    it starts is measured against whatever rail is standing in that corner --
+    and it never takes the pointer, since it is only text over a picture that
+    is dragged.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    # In the workspace, not in the bar under it.
+    assert html.index('class="coordinates"') < html.index('class="editor-foot"')
+    assert html.index('id="zoomHud"') < html.index('class="coordinates"')
+
+    readout = css.split(chr(10) + ".coordinates {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in readout
+    assert "top: 0" in readout
+    assert "pointer-events: none" in readout
+    # No box of its own: zoomed in, the picture has to be visible under it.
+    assert "background" not in readout
+    assert "border" not in readout
+    assert "backdrop-filter" not in readout
+    assert "text-shadow" in readout
+
+    # The corner is contested, so the offset is measured, not assumed.
+    place = js.split("function placeCoordinateReadout() {", 1)[1].split(
+        chr(10) + "  }", 1
+    )[0]
+    assert "canvasToolbars" in place
+    assert "rail.right - bounds.left" in place
+    # Measured again whenever a rail moves, docks, or is put back.
+    assert js.count("placeCoordinateReadout();") >= 4

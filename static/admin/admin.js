@@ -7341,6 +7341,35 @@
     } finally {
       aligningToolbars = false;
     }
+    placeCoordinateReadout();
+  }
+
+  /** The coordinate readout shares the top-left corner with the rails.
+   *
+   * Whichever rail is standing in that corner -- docked there or merely left
+   * there -- the readout starts where the rail ends, so the two sit side by
+   * side instead of one on top of the other.
+   */
+  function placeCoordinateReadout() {
+    const readout = document.querySelector(".coordinates");
+    const workspace = document.querySelector(".canvas-workspace");
+    if (!readout || !workspace) return;
+    const bounds = workspace.getBoundingClientRect();
+    const height = readout.offsetHeight;
+    const width = readout.offsetWidth;
+    const rails = canvasToolbars
+      .map((entry) => entry.element)
+      .filter((element) => !element.classList.contains("hidden"))
+      .map((element) => element.getBoundingClientRect())
+      // Only what reaches the top row can be in the way.
+      .filter((rail) => rail.top - bounds.top < height)
+      .sort((a, b) => a.left - b.left);
+    let left = 0;
+    rails.forEach((rail) => {
+      const railLeft = rail.left - bounds.left;
+      if (railLeft < left + width) left = Math.max(left, rail.right - bounds.left);
+    });
+    readout.style.left = `${Math.round(left)}px`;
   }
 
   function makeToolbarDraggable(toolbar, key) {
@@ -7376,6 +7405,7 @@
       toolbar.style.top = `${Math.round(y)}px`;
       toolbar.style.right = "auto";
       toolbar.style.bottom = "auto";
+      placeCoordinateReadout();
       return { x, y, dock };
     };
 
@@ -7504,8 +7534,12 @@
       wasHidden = hidden;
       if (!hidden) restore();
       else alignDockedToolbars();
+      placeCoordinateReadout();
     }).observe(toolbar, { attributes: true, attributeFilter: ["class"] });
-    window.addEventListener("resize", restore);
+    window.addEventListener("resize", () => {
+      restore();
+      placeCoordinateReadout();
+    });
     // The workspace also changes width on its own, with the window standing
     // still: the queue shrinking to thumbnails, the sidebar taking its column
     // back. A rail docked to an edge has to follow that edge, or the canvas
@@ -7518,11 +7552,15 @@
         pendingResize = requestAnimationFrame(() => {
           pendingResize = null;
           restore();
+          placeCoordinateReadout();
         });
       }).observe(dockParent);
     }
     canvasToolbars.push({ element: toolbar, key });
     restore();
+    // A rail with nothing stored sits where the stylesheet puts it, and restore
+    // leaves early -- the readout still has to know the corner is taken.
+    placeCoordinateReadout();
   }
 
   // The sidebar sits at the left edge as a rail and slides open under the

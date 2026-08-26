@@ -1869,14 +1869,31 @@ body.queue-compact .queue-item.selected {
   padding: 0 18px;
 }
 
+/* The readout reads the canvas, so it sits on it: a chip in the top-left
+   corner of the workspace, in the rails' own chrome. It is text and nothing
+   else -- the pointer goes straight through it to the canvas underneath. */
 .coordinates {
+  align-items: center;
   color: var(--faint);
   display: flex;
   font-family: var(--mono);
   font-size: 10px;
   gap: 13px;
+  left: 0;
+  padding: 9px 12px;
+  pointer-events: none;
+  position: absolute;
+  /* No box: the readout floats on the picture so that zooming in on the corner
+     under it still shows the picture. A soft halo is what keeps it legible
+     over a dark photograph -- it costs nothing behind the glyphs. */
+  text-shadow:
+    0 0 3px rgba(247, 241, 222, .95),
+    0 0 6px rgba(247, 241, 222, .8);
   text-transform: uppercase;
+  top: 0;
+  z-index: 4;
 }
+
 
 .coordinates strong {
   color: var(--ink);
