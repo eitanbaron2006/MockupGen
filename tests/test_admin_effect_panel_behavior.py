@@ -784,3 +784,30 @@ def test_studio_name_shares_the_row_with_the_sidebar_controls():
     brand = css.split(chr(10) + ".brand {", 1)[1].split("}", 1)[0]
     assert "margin: 0;" in brand
     assert "text-overflow: ellipsis" in brand
+
+
+def test_green_frame_controls_follow_the_render_not_the_frame_count():
+    """A set of green frames gets the panel too.
+
+    The renderer takes a set through the same pipeline as a single green frame
+    and reads the same effects.green_frame_mockups block, so a set was left
+    with those settings in force and no way to reach them. The panel now asks
+    whether the settings reach the render; the editor's own green-only
+    behaviour still asks the narrower question and still excludes a set.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    apply_fn = js.split("function greenFrameControlsApply(", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert "usesGreenFramePipeline(template) || isGreenFrameTemplate(template)" in apply_fn
+
+    # The panel, and the refresh that makes its sliders mean something.
+    assert 'panel.classList.toggle("hidden", !greenFrameControlsApply(template))' in js
+    assert 'panel.classList.toggle("hidden", !isGreenFrameTemplate(template))' not in js
+    assert "if (greenFrameControlsApply() && state.selectionStyle.overlayImage) {" in js
+
+    # Everything else that is green-only is untouched: a set is still not one.
+    green_only = js.split("function isGreenFrameTemplate(", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert "if (isMultiRegionTemplate(template)) return false;" in green_only
+    # ...and it still drives everything else it drove before: the live green
+    # render, positioning with the mouse, the caches.
+    assert js.count("isGreenFrameTemplate(") >= 10

@@ -434,6 +434,23 @@
     return hasRawRegions || hasArtRegions;
   }
 
+  /** Whether the green frame settings reach this template's render.
+   *
+   * Not the same question as isGreenFrameTemplate, which drives the editor's
+   * green-only behaviour -- the live overlay, positioning with the mouse -- and
+   * excludes a template with more than one frame. The renderer draws no such
+   * line: a set of green frames goes through the same pipeline as a single one
+   * (see the branch at simple_mockup_service.render_simple_mockup, which takes
+   * it on "green raw and a mask, or more than one region"), and reads the same
+   * effects.green_frame_mockups block. So the panel that edits that block
+   * follows the render, and a set is no longer left with settings in force and
+   * no way to reach them.
+   */
+  function greenFrameControlsApply(template = state.selected) {
+    if (!template) return false;
+    return usesGreenFramePipeline(template) || isGreenFrameTemplate(template);
+  }
+
   function isGreenFrameTemplate(template = state.selected) {
     if (!template) return false;
     if (isMultiRegionTemplate(template)) return false;
@@ -487,7 +504,7 @@
   function populateGreenFrameControls(template, effects) {
     const panel = $("greenFramePanel");
     if (!panel) return;
-    panel.classList.toggle("hidden", !isGreenFrameTemplate(template));
+    panel.classList.toggle("hidden", !greenFrameControlsApply(template));
     const settings = greenFrameSettings(effects);
     $("greenUsePerspective").checked = settings.use_perspective;
     $("greenUseVectorClip").checked = settings.use_vector_clip;
@@ -4947,10 +4964,12 @@
     if (greenFrameSettingsSaveTimeout) clearTimeout(greenFrameSettingsSaveTimeout);
     greenFrameSettingsSaveTimeout = setTimeout(async () => {
       await persistTemplateState(state.selected, { force: state.isPreviewingMockup });
-      if (isGreenFrameTemplate() && state.selectionStyle.overlayImage) {
+      if (greenFrameControlsApply() && state.selectionStyle.overlayImage) {
         if (state.isPreviewingMockup) {
           refreshPreviewMockup();
         } else {
+          // The live in-editor render is a single-frame affair; a set redraws
+          // through the lightweight overlay above, and through PREVIEW.
           refreshGreenFrameMockupPreview();
         }
       }

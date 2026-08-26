@@ -108,6 +108,21 @@
       "enabled": false,
       "saturation": 0,
       "target": "all"
+    },
+    "green_frame_mockups": {
+      "use_perspective": true,
+      "use_vector_clip": true,
+      "fit_mode": "stretch",
+      "artwork_scale": 1,
+      "offset_x": 0,
+      "offset_y": 0,
+      "edge_expand": 0,
+      "mask_build_quality": 2,
+      "feather_radius": 2,
+      "edge_aa_radius": 0,
+      "aa_scale": 1,
+      "enable_inner_shadow": false,
+      "contain_bg_color": "#ffffff"
     }
   },
   "raw_artwork_area": {
@@ -154,7 +169,6 @@
           }
         ],
         "height": 385,
-        "index": 1,
         "inner_corners": [
           {
             "x": 236,
@@ -216,7 +230,6 @@
           }
         ],
         "height": 385,
-        "index": 2,
         "inner_corners": [
           {
             "x": 529,
@@ -278,7 +291,6 @@
           }
         ],
         "height": 385,
-        "index": 3,
         "inner_corners": [
           {
             "x": 825,
@@ -318,6 +330,128 @@
         "width": 245,
         "x": 824,
         "y": 239
+      },
+      {
+        "area": 3008,
+        "corners": [
+          {
+            "x": -10,
+            "y": 475
+          },
+          {
+            "x": 56,
+            "y": 502
+          },
+          {
+            "x": 84,
+            "y": 571
+          },
+          {
+            "x": 4,
+            "y": 569
+          }
+        ],
+        "height": 86,
+        "inner_corners": [
+          {
+            "x": 0,
+            "y": 485
+          },
+          {
+            "x": 77,
+            "y": 520
+          },
+          {
+            "x": 77,
+            "y": 560
+          },
+          {
+            "x": 1,
+            "y": 570
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 0,
+            "y": 485
+          },
+          {
+            "x": 77,
+            "y": 520
+          },
+          {
+            "x": 77,
+            "y": 560
+          },
+          {
+            "x": 1,
+            "y": 570
+          }
+        ],
+        "width": 79,
+        "x": 0,
+        "y": 485
+      },
+      {
+        "area": 3705,
+        "corners": [
+          {
+            "x": 6,
+            "y": 590
+          },
+          {
+            "x": 80,
+            "y": 584
+          },
+          {
+            "x": 88,
+            "y": 678
+          },
+          {
+            "x": 13,
+            "y": 684
+          }
+        ],
+        "height": 96,
+        "inner_corners": [
+          {
+            "x": 9,
+            "y": 598
+          },
+          {
+            "x": 87,
+            "y": 592
+          },
+          {
+            "x": 84,
+            "y": 675
+          },
+          {
+            "x": 9,
+            "y": 667
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 9,
+            "y": 598
+          },
+          {
+            "x": 87,
+            "y": 592
+          },
+          {
+            "x": 84,
+            "y": 675
+          },
+          {
+            "x": 9,
+            "y": 667
+          }
+        ],
+        "width": 79,
+        "x": 9,
+        "y": 586
       }
     ]
   },
