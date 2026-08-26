@@ -138,11 +138,23 @@ body.sidebar-resizing * {
    pointer, over the page rather than pushing it -- opening a drawer should not
    reflow the canvas. The lock pins it open, and then it takes its column back
    and stops sliding. */
+/* The name of the studio and the two controls share the sidebar's first row:
+   the name on the left, collapse and lock against the right edge. */
+.sidebar-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  /* Indented on the left to line up with the nav items below; flush right, so
+     the controls sit against the same edge as the sidebar's own padding. */
+  margin: 0 0 29px 8px;
+}
+
 .sidebar-controls {
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
   justify-content: flex-end;
-  margin-bottom: 4px;
 }
 
 .sidebar-ctrl {
@@ -152,16 +164,16 @@ body.sidebar-resizing * {
   border-radius: 8px;
   color: var(--faint);
   display: inline-flex;
-  height: 26px;
+  height: 24px;
   justify-content: center;
   padding: 0;
   transition: background .15s ease, color .15s ease, border-color .15s ease;
-  width: 26px;
+  width: 24px;
 }
 
 .sidebar-ctrl svg {
-  height: 15px;
-  width: 15px;
+  height: 14px;
+  width: 14px;
 }
 
 .sidebar-ctrl:hover,
@@ -211,6 +223,11 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
    rail is still somewhere to click rather than a blank strip. */
 .sidebar.is-narrow {
   padding: 20px 8px;
+}
+
+.sidebar.is-narrow .sidebar-head {
+  justify-content: center;
+  margin: 0 0 20px;
 }
 
 .sidebar.is-narrow .sidebar-controls {
@@ -264,9 +281,16 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
 .brand {
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 21px;
+  /* Sized to sit whole beside the two controls at the sidebar's default
+     width; it ellipsizes rather than pushing them off the row if the sidebar
+     is dragged narrower. */
+  font-size: 17px;
   font-weight: 500;
-  margin: 0 8px 29px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand em {

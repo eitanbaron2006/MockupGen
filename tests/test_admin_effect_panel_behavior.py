@@ -762,3 +762,25 @@ def test_top_bar_keeps_server_pulse_as_an_icon_and_hides_the_status_line():
     status = css.split(chr(10) + ".top-status {", 1)[1].split("}", 1)[0]
     assert "display: none" in status
     assert '$("status").textContent = message;' in js
+
+
+def test_studio_name_shares_the_row_with_the_sidebar_controls():
+    """The name sits beside collapse and lock, not under them."""
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    head = html.split('<div class="sidebar-head">', 1)[1].split('<p class="nav-label">', 1)[0]
+    assert 'class="brand"' in head
+    assert 'class="sidebar-controls"' in head
+    assert head.index('class="brand"') < head.index('class="sidebar-controls"')
+
+    row = css.split(chr(10) + ".sidebar-head {", 1)[1].split("}", 1)[0]
+    assert "display: flex" in row
+    assert "align-items: center" in row
+    assert "justify-content: space-between" in row
+
+    # The name no longer carries the block margin that stacked it above them,
+    # and it is cut short rather than pushing the controls off the row.
+    brand = css.split(chr(10) + ".brand {", 1)[1].split("}", 1)[0]
+    assert "margin: 0;" in brand
+    assert "text-overflow: ellipsis" in brand
