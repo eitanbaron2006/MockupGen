@@ -5,22 +5,22 @@
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 348,
+    "x": 349,
     "y": 167,
-    "width": 655,
+    "width": 653,
     "height": 459,
     "corners": [
       {
-        "x": 348,
+        "x": 349,
         "y": 167
       },
       {
-        "x": 1003,
-        "y": 168
+        "x": 1002,
+        "y": 167
       },
       {
         "x": 1002,
-        "y": 625
+        "y": 626
       },
       {
         "x": 349,
@@ -86,21 +86,19 @@
       "target": "artwork"
     },
     "green_frame_mockups": {
-      "aa_scale": 1,
-      "artwork_scale": 1.02,
-      "contain_bg_color": "#ffffff",
-      "edge_aa_radius": 0,
-      "edge_expand": 1,
-      "enable_inner_shadow": true,
-      "feather_radius": 4,
+      "use_perspective": true,
+      "use_vector_clip": true,
       "fit_mode": "stretch",
-      "inner_shadow_size": 12,
-      "inner_shadow_strength": 0.06,
-      "mask_build_quality": 3,
+      "artwork_scale": 1,
       "offset_x": 0,
       "offset_y": 0,
-      "use_perspective": true,
-      "use_vector_clip": true
+      "edge_expand": 0,
+      "mask_build_quality": 3,
+      "feather_radius": 4,
+      "edge_aa_radius": 0,
+      "aa_scale": 1,
+      "enable_inner_shadow": false,
+      "contain_bg_color": "#ffffff"
     },
     "inner_shadow": {
       "blur": 35,
@@ -128,79 +126,88 @@
     }
   },
   "raw_artwork_area": {
-    "layers": [
-      [
-        {
-          "x": 339,
-          "y": 157
-        },
-        {
-          "x": 1034,
-          "y": 165
-        },
-        {
-          "x": 1022,
-          "y": 634
-        },
-        {
-          "x": 339,
-          "y": 636
-        }
-      ],
-      [
-        {
-          "x": 351,
-          "y": 170
-        },
-        {
-          "x": 1000,
-          "y": 169
-        },
-        {
-          "x": 1002,
-          "y": 623
-        },
-        {
-          "x": 348,
-          "y": 634
-        }
-      ],
-      [
-        {
-          "x": 348,
-          "y": 167
-        },
-        {
-          "x": 1003,
-          "y": 168
-        },
-        {
-          "x": 1002,
-          "y": 625
-        },
-        {
-          "x": 349,
-          "y": 636
-        }
-      ]
-    ],
-    "mode": "geometry",
+    "edge_expand": 1,
+    "green_pixels": 298012,
+    "mode": "green_frames_mockups",
     "original_corners": [
       {
-        "x": 348,
+        "x": 349,
         "y": 167
       },
       {
-        "x": 1003,
-        "y": 168
+        "x": 1002,
+        "y": 167
       },
       {
         "x": 1002,
-        "y": 625
+        "y": 626
       },
       {
         "x": 349,
-        "y": 636
+        "y": 626
+      }
+    ],
+    "regions": [
+      {
+        "area": 300251,
+        "corners": [
+          {
+            "x": 349,
+            "y": 167
+          },
+          {
+            "x": 1002,
+            "y": 167
+          },
+          {
+            "x": 1002,
+            "y": 626
+          },
+          {
+            "x": 349,
+            "y": 626
+          }
+        ],
+        "height": 460,
+        "inner_corners": [
+          {
+            "x": 349,
+            "y": 168
+          },
+          {
+            "x": 1002,
+            "y": 168
+          },
+          {
+            "x": 1002,
+            "y": 625
+          },
+          {
+            "x": 349,
+            "y": 625
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 349,
+            "y": 168
+          },
+          {
+            "x": 1002,
+            "y": 168
+          },
+          {
+            "x": 1002,
+            "y": 625
+          },
+          {
+            "x": 349,
+            "y": 625
+          }
+        ],
+        "width": 654,
+        "x": 349,
+        "y": 167
       }
     ]
   },
