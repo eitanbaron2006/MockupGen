@@ -530,16 +530,20 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
   min-width: 0;
 }
 
-/* Narrow screens: the detection strip stays whole and on one line, so what
-   goes first is what the page says twice -- Server Pulse is a nav item in the
-   sidebar as well. */
-@media (max-width: 1450px) {
-  .top-actions a[href="/server-pulse"] {
-    display: none;
-  }
+/* Server Pulse is one icon in the bar; it is spelled out as a nav item in the
+   sidebar for anyone looking for it by name. */
+.top-icon-button {
+  font-size: 15px;
+  letter-spacing: 0;
+  padding: 0;
+  width: 40px;
 }
 
+/* Hidden for now, not removed: the running commentary ("Detection engine set
+   to ...") still lands on this element, so bringing it back is deleting one
+   line. */
 .top-status {
+  display: none;
   color: var(--success);
   font-size: 12px;
   margin-right: 8px;
@@ -1141,8 +1145,15 @@ body.queue-compact .queue-item.selected {
   transition: all .2s ease;
 }
 
-.classic-submodes-switch.hidden {
-  display: none !important;
+/* Another engine does not remove these -- a row of buttons blinking in and out
+   of the bar as the engine changes is what made the bar feel unstable. They
+   grey out and stop answering instead. */
+.classic-submodes-switch.is-disabled {
+  opacity: .4;
+}
+
+.classic-submodes-switch.is-disabled .submode-btn {
+  cursor: not-allowed;
 }
 
 .submode-btn {
@@ -1165,7 +1176,7 @@ body.queue-compact .queue-item.selected {
   white-space: nowrap;
 }
 
-.submode-btn:hover {
+.submode-btn:hover:not(:disabled) {
   background: rgba(236, 228, 207, .5);
   color: var(--ink);
 }
@@ -1659,6 +1670,32 @@ body.queue-compact .queue-item.selected {
 .selection-style-toolbar {
   left: 0;
   top: 0;
+}
+
+.action-rail {
+  right: 0;
+  top: 0;
+}
+
+/* In this rail a tool that is not available now stays where it is, greyed out.
+   Buttons appearing and vanishing under the hand is what makes a toolbar feel
+   unsteady, and the JS already marks unavailable tools with .hidden. */
+.action-rail .style-tool.hidden {
+  cursor: not-allowed;
+  /* Beats the global .hidden, which is display:none !important. */
+  display: inline-flex !important;
+  opacity: .32;
+  pointer-events: none;
+}
+
+.style-tool.style-edit-toggle {
+  color: var(--accent);
+}
+
+.style-tool.style-edit-toggle:hover {
+  background: var(--accent-soft);
+  border-color: rgba(237, 111, 92, .34);
+  color: var(--accent);
 }
 
 .style-tool {

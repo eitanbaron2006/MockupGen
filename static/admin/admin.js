@@ -1212,6 +1212,7 @@
       $("coordH").textContent = "-";
       $("zoomHud").classList.add("hidden");
       $("selectionStyleToolbar").classList.add("hidden");
+      if ($("actionRail")) $("actionRail").classList.add("hidden");
       closeSelectionStylePanel();
       return;
     }
@@ -1233,6 +1234,7 @@
     if ($("toolbarPreviewButton")) {
       $("toolbarPreviewButton").classList.remove("active");
     }
+    syncActionRail();
     if ($("toolbarDownloadButton")) {
       $("toolbarDownloadButton").classList.add("hidden");
     }
@@ -1252,6 +1254,7 @@
     }
     $("zoomHud").classList.remove("hidden");
     $("selectionStyleToolbar").classList.remove("hidden");
+    if ($("actionRail")) $("actionRail").classList.remove("hidden");
 
     $("currentTitle").textContent = template.name;
     $("editorSub").textContent = template.status === "active"
@@ -4271,7 +4274,13 @@
     const provider = state.settings.DETECTION_PROVIDER || "classic";
     const submodeBar = $("classicSubmodesBar");
     if (submodeBar) {
-      submodeBar.classList.toggle("hidden", provider !== "classic");
+      // Another engine greys these out; it does not take them off the bar.
+      const isClassic = provider === "classic";
+      submodeBar.classList.remove("hidden");
+      submodeBar.classList.toggle("is-disabled", !isClassic);
+      submodeBar.querySelectorAll(".submode-btn").forEach((button) => {
+        button.disabled = !isClassic;
+      });
     }
     const currentSubmode = state.settings.CLASSIC_SUBMODE || "auto";
     document.querySelectorAll(".submode-btn").forEach((btn) => {
@@ -7135,6 +7144,17 @@
   window.addEventListener("resize", drawSelection);
 
   // Toggle Realistic Mockup Preview & Download Feature
+  /** The pencil in the actions rail is the way back out of a preview.
+   *
+   * It marks itself unavailable the same way the other tools in that rail do
+   * -- with .hidden, which the rail's stylesheet reads as "greyed out" rather
+   * than "gone", so the row of icons never shifts under the hand.
+   */
+  function syncActionRail() {
+    const edit = $("toolbarEditButton");
+    if (edit) edit.classList.toggle("hidden", !state.isPreviewingMockup);
+  }
+
   async function togglePreviewMode() {
     if (!state.selected || state.busy) return;
 
@@ -7150,6 +7170,7 @@
 
       // Sync Toolbar buttons
       if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.remove("active");
+      syncActionRail();
       if ($("toolbarDownloadButton")) $("toolbarDownloadButton").classList.add("hidden");
 
       // Leaving preview drops the render, so drop what was downloadable with
@@ -7188,6 +7209,7 @@
       // 3. Sync button UI states instantly
       if ($("previewMockupButton")) $("previewMockupButton").textContent = "Edit Template";
       if ($("toolbarPreviewButton")) $("toolbarPreviewButton").classList.add("active");
+      syncActionRail();
       setStatus("High-fidelity mockup preview active");
 
       // 4. Show download buttons as "Generating..." (Disabled / Loading)
@@ -7737,9 +7759,16 @@
 
   makeToolbarDraggable($("zoomHud"), "zoomHud");
   makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar");
+  makeToolbarDraggable($("actionRail"), "actionRail");
 
   if ($("previewMockupButton")) $("previewMockupButton").onclick = togglePreviewMode;
   if ($("toolbarPreviewButton")) $("toolbarPreviewButton").onclick = togglePreviewMode;
+  if ($("toolbarEditButton")) {
+    $("toolbarEditButton").onclick = () => {
+      if (state.isPreviewingMockup) togglePreviewMode();
+    };
+  }
+  syncActionRail();
 
   (async () => {
     try {

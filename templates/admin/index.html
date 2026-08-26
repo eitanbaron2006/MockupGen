@@ -75,7 +75,8 @@
         </div>
         <div class="top-actions">
           <span class="top-status" id="status">Ready</span>
-          <a href="/server-pulse" target="_blank" class="btn compact" style="text-decoration:none;" title="Server Pulse Operations Dashboard">&#9889; Server Pulse &#8599;</a>
+          <a href="/server-pulse" target="_blank" class="btn compact top-icon-button" style="text-decoration:none;"
+            aria-label="Server Pulse" title="Server Pulse Operations Dashboard">&#9889;</a>
           <button class="btn primary" id="chooseFiles">Import mockups</button>
           <button class="btn success" id="publishButton">Publish approved</button>
           <button class="btn compact" id="logoutButton">Log out</button>
@@ -236,27 +237,6 @@
                 aria-label="Crosshair line width" title="Crosshair line width">
                 <span class="style-cross-width-icon"></span>
               </button>
-              <hr class="style-divider"
-                style="width: 100%; border: 0; border-top: 1px solid var(--line-soft); margin: 4px 0;">
-              <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton"
-                aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
-                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round"
-                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
-                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
-              <a class="style-tool style-download-btn hidden" id="toolbarDownloadButton" download="mockup.png" href=""
-                aria-label="Download mockup" title="Download realistic mockup">
-                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                  stroke-linecap="round" stroke-linejoin="round"
-                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-              </a>
               <div class="style-popover hidden" id="selectionStylePopover">
                 <div class="style-panel" id="overlayModePanel">
                   <label>Overlay mode</label>
@@ -356,6 +336,40 @@
               <span>Y <strong id="coordY">-</strong></span>
               <span>W <strong id="coordW">-</strong></span>
               <span>H <strong id="coordH">-</strong></span>
+            </div>
+            <!-- The mockup actions the editor head offers, as icons on the canvas
+                 itself: preview, back to editing, download. -->
+            <div class="canvas-rail action-rail hidden" id="actionRail" aria-label="Mockup actions">
+              <div class="hud-grip" data-drag-handle role="button" tabindex="0"
+                aria-label="Move this toolbar" title="Drag to move"><span></span><span></span></div>
+              <button class="style-tool style-preview-toggle hidden" type="button" id="toolbarPreviewButton"
+                aria-label="Preview mockup" title="Preview mockup (Hide indicators)">
+                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <button class="style-tool style-edit-toggle hidden" type="button" id="toolbarEditButton"
+                aria-label="Edit template" title="Back to editing">
+                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                </svg>
+              </button>
+              <a class="style-tool style-download-btn hidden" id="toolbarDownloadButton" download="mockup.png" href=""
+                aria-label="Download mockup" title="Download realistic mockup">
+                <svg class="style-tool-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  style="width: 16px; height: 16px; display: block; pointer-events: none;">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              </a>
             </div>
           </div>
           <div class="editor-foot">

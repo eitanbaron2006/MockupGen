@@ -325,13 +325,14 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
     align = js.split("function alignDockedToolbars(", 1)[1].split(end_of_function, 1)[0]
     drag = js.split("function makeToolbarDraggable(", 1)[1].split(end_of_function, 1)[0]
 
-    # A grip on each toolbar, and nothing else claims to be one.
-    assert html.count("data-drag-handle") == 2
+    # A grip on each rail, and nothing else claims to be one.
+    assert html.count("data-drag-handle") == html.count('class="canvas-rail')
+    assert html.count("data-drag-handle") == 3
     assert 'makeToolbarDraggable($("zoomHud"), "zoomHud")' in js
     assert 'makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar")' in js
 
-    # Both are the same object: one slim, square rail, not two different cards.
-    assert html.count('class="canvas-rail ') == 2
+    # All three are the same object: one slim, square rail, not three cards.
+    assert html.count('class="canvas-rail ') == 3
     rail = css.split(".canvas-rail {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in rail
     assert "border-radius: 0" in rail
@@ -682,3 +683,82 @@ def test_editor_head_is_as_shallow_as_the_minimal_queue_head():
     # Smaller than the 40px buttons everywhere else on the page.
     buttons = css.split(".editor-tools .btn {", 1)[1].split("}", 1)[0]
     assert "height: 28px" in buttons
+
+
+def test_canvas_has_a_rail_for_the_mockup_actions():
+    """Preview, back-to-editing and download, as icons on the canvas.
+
+    They are a rail of their own -- draggable and dockable like the other two --
+    rather than tools tacked onto the end of the overlay-style rail, and a tool
+    that is not available now greys out in place instead of leaving the rail.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    rail = html.split('id="actionRail"', 1)[1].split("</div>", 1)[0]
+    assert "canvas-rail" in html.split('id="actionRail"', 1)[0].rsplit("<div", 1)[1]
+    assert "data-drag-handle" in rail
+    for tool in ('id="toolbarPreviewButton"', 'id="toolbarEditButton"', 'id="toolbarDownloadButton"'):
+        assert tool in html.split('id="actionRail"', 1)[1].split("<!-- ", 1)[0]
+
+    # They are no longer part of the overlay-style rail.
+    style_rail = html.split('id="selectionStyleToolbar"', 1)[1].split('id="actionRail"', 1)[0]
+    assert "toolbarPreviewButton" not in style_rail
+    assert "toolbarDownloadButton" not in style_rail
+
+    # Unavailable reads as greyed out, not as gone -- the row never shifts.
+    greyed = css.split(".action-rail .style-tool.hidden {", 1)[1].split("}", 1)[0]
+    assert "display: inline-flex !important" in greyed
+    assert "pointer-events: none" in greyed
+
+    # Dragged and docked like the other rails, and the pencil follows the state.
+    assert 'makeToolbarDraggable($("actionRail"), "actionRail")' in js
+    assert "function syncActionRail()" in js
+    assert 'edit.classList.toggle("hidden", !state.isPreviewingMockup)' in js
+    assert js.count("syncActionRail();") >= 4
+    # It comes and goes with the rail it was split from.
+    assert js.count('$("actionRail").classList.add("hidden")') == 1
+    assert js.count('$("actionRail").classList.remove("hidden")') == 1
+
+
+def test_classic_submodes_grey_out_instead_of_disappearing():
+    """Another engine leaves the row of modes on the bar.
+
+    Buttons blinking in and out as the engine changes is what made the top bar
+    feel unsteady; they are disabled instead, so the bar keeps its shape.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    update = js.split("function updateClassicSubmodes() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert 'submodeBar.classList.toggle("hidden"' not in update
+    assert 'submodeBar.classList.remove("hidden")' in update
+    assert 'submodeBar.classList.toggle("is-disabled", !isClassic)' in update
+    assert "button.disabled = !isClassic" in update
+
+    assert ".classic-submodes-switch.is-disabled {" in css
+    # A disabled button does not light up under the pointer.
+    assert ".submode-btn:hover:not(:disabled) {" in css
+
+
+def test_top_bar_keeps_server_pulse_as_an_icon_and_hides_the_status_line():
+    """Two pieces of the top bar step back.
+
+    Server Pulse is an icon -- it is still spelled out as a nav item in the
+    sidebar -- and the running green commentary is hidden in the stylesheet
+    only, so it is still written and can be brought back in one line.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    pulse = html.split('<div class="top-actions">', 1)[1].split("</a>", 1)[0]
+    assert "top-icon-button" in pulse
+    assert "Server Pulse" not in pulse.split(">")[-1]
+    assert 'aria-label="Server Pulse"' in pulse
+    assert "top-icon-button" in css
+
+    status = css.split(chr(10) + ".top-status {", 1)[1].split("}", 1)[0]
+    assert "display: none" in status
+    assert '$("status").textContent = message;' in js
