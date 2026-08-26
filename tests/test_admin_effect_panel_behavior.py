@@ -578,6 +578,13 @@ def test_coordinate_readout_is_a_rail_of_its_own():
     readout = css.split(chr(10) + ".coordinates {", 1)[1].split("}", 1)[0]
     assert "pointer-events: none" in readout
 
+    # Stood on end it stacks: a row of figures in a 38px-wide rail would simply
+    # run off the end of it, so the figures go one per line and the rail takes
+    # the width they need.
+    upright = css.split(".canvas-rail:not(.is-horizontal) .coordinates {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: column" in upright
+    assert "width: auto" in css.split(".canvas-rail.coords-rail:not(.is-horizontal) {", 1)[1].split("}", 1)[0]
+
 
 def test_editor_foot_reads_from_the_left():
     """Everything in the bar under the canvas starts at the left edge.
