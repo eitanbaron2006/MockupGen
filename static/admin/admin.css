@@ -658,6 +658,102 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
   scrollbar-gutter: stable;
 }
 
+/* The queue has two densities. Full, it lists a mockup per row with its name,
+   orientation and state. Compact, it is a strip of thumbnails and nothing
+   else: the picture is what you pick a mockup by, so the column narrows to one
+   thumbnail wide, scrolls, and the rest of the furniture goes away. */
+.queue-density-toggle {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--faint);
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  margin-top: 1px;
+  padding: 0;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  width: 26px;
+}
+
+.queue-density-toggle svg {
+  height: 14px;
+  width: 14px;
+}
+
+.queue-density-toggle:hover,
+.queue-density-toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(237, 111, 92, .34);
+  color: var(--accent);
+}
+
+body.queue-compact .content {
+  grid-template-columns: 96px minmax(430px, 1fr) 328px;
+}
+
+body.queue-compact .queue-title-copy,
+body.queue-compact .select-all-label,
+body.queue-compact .queue-batch-actions,
+body.queue-compact .queue-filters,
+body.queue-compact .queue-item .queue-checkbox,
+body.queue-compact .queue-item .queue-delete,
+body.queue-compact .queue-item .file-title,
+body.queue-compact .queue-item .meta {
+  display: none;
+}
+
+body.queue-compact .panel-head.queue-head {
+  /* The list below reserves a gutter for its scrollbar on the right. The head
+     matches it, so the toggle lands on the same centre line as the
+     thumbnails. */
+  padding: 14px calc(8px + var(--scrollbar-width, 0px)) 12px 8px;
+}
+
+body.queue-compact .queue-title-row {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+body.queue-compact .queue {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  /* Off the divider: the first thumbnail should not be touching the head. */
+  padding: 10px 8px 14px;
+  /* The panel is taller than the thumbnails need. Without this the auto rows
+     stretch to fill it and the strip grows a band of dead space under every
+     tile. The list scrolls instead. */
+  align-content: start;
+}
+
+body.queue-compact .queue-item {
+  gap: 0;
+  grid-template-columns: auto;
+  justify-content: center;
+  margin: 0;
+  padding: 3px;
+  width: auto;
+}
+
+body.queue-compact .queue-select {
+  gap: 0;
+  grid-template-columns: auto;
+}
+
+/* The row's text lives in a span beside the thumbnail. Hiding the words inside
+   it leaves the span holding an empty grid row, and every tile grows a band of
+   dead space under it. */
+body.queue-compact .queue-select > span {
+  display: none;
+}
+
+body.queue-compact .queue-item.selected {
+  box-shadow: 0 0 0 1px rgba(237, 111, 92, .38);
+}
+
 .queue-item {
   align-items: center;
   background: transparent;
@@ -787,9 +883,11 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
 
 .queue-title-row {
   align-items: start;
-  column-gap: 16px;
+  /* Tight: the toggle leads the row, and the title needs every pixel left over
+     to stay on one line. */
+  column-gap: 10px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   width: 100%;
 }
 

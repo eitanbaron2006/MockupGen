@@ -988,7 +988,7 @@
     $("queue").innerHTML = visible.map((template) => `
       <div class="queue-item ${state.selected && state.selected.template_id === template.template_id ? "selected" : ""}">
         <input type="checkbox" class="queue-checkbox" data-template="${template.template_id}" ${state.selectedForBatch.has(template.template_id) ? "checked" : ""} ${state.busy ? "disabled" : ""}>
-        <button class="queue-select" type="button" data-template="${template.template_id}" ${state.busy ? "disabled" : ""}>
+        <button class="queue-select" type="button" data-template="${template.template_id}" title="${escapeAttr(template.name)}" ${state.busy ? "disabled" : ""}>
           <img class="thumb" src="/api/admin/templates/${template.template_id}/asset/preview.png" alt="">
           <span>
             <span class="file-title">${escapeHtml(template.name)}</span>
@@ -7506,6 +7506,21 @@
       else alignDockedToolbars();
     }).observe(toolbar, { attributes: true, attributeFilter: ["class"] });
     window.addEventListener("resize", restore);
+    // The workspace also changes width on its own, with the window standing
+    // still: the queue shrinking to thumbnails, the sidebar taking its column
+    // back. A rail docked to an edge has to follow that edge, or the canvas
+    // grows out from under it and leaves it standing in the middle.
+    const dockParent = toolbar.offsetParent || toolbar.parentElement;
+    if (dockParent && typeof ResizeObserver === "function") {
+      let pendingResize = null;
+      new ResizeObserver(() => {
+        if (pendingResize) cancelAnimationFrame(pendingResize);
+        pendingResize = requestAnimationFrame(() => {
+          pendingResize = null;
+          restore();
+        });
+      }).observe(dockParent);
+    }
     canvasToolbars.push({ element: toolbar, key });
     restore();
   }
@@ -7628,6 +7643,59 @@
     }
     applySidebarLock({ persist: false });
   })();
+
+  // The queue has two densities: the full list, and a wall of thumbnails for
+  // picking a mockup by its picture alone. The choice is remembered.
+  const QUEUE_COMPACT_KEY = "mockupStudio.queueCompact";
+
+  // The list reserves a gutter for its scrollbar, and how wide that gutter is
+  // belongs to the browser -- ten pixels here, none at all where scrollbars
+  // overlay the content. It is taken from one side only, so the head above the
+  // list has to know it to put its toggle on the same centre line as the
+  // thumbnails. Measuring the list itself is the only honest way to ask.
+  function syncQueueGutter() {
+    const queue = $("queue");
+    if (!queue) return;
+    const gutter = Math.max(0, queue.offsetWidth - queue.clientWidth);
+    document.documentElement.style.setProperty("--scrollbar-width", `${gutter}px`);
+  }
+
+  function applyQueueDensity(compact, { persist = true } = {}) {
+    const toggle = $("queueDensityToggle");
+    document.body.classList.toggle("queue-compact", compact);
+    if (toggle) {
+      toggle.setAttribute("aria-pressed", String(compact));
+      toggle.title = compact ? "Show the full list" : "Show the mockups only";
+      toggle.setAttribute("aria-label", toggle.title);
+    }
+    if (persist) {
+      try {
+        localStorage.setItem(QUEUE_COMPACT_KEY, String(compact));
+      } catch (_error) {
+        // Remembering the density is a convenience, not a requirement.
+      }
+    }
+    // The editor is measured against the space the queue leaves it.
+    requestAnimationFrame(() => {
+      syncQueueGutter();
+      if (state.selected) drawSelection();
+    });
+  }
+
+  if ($("queueDensityToggle")) {
+    $("queueDensityToggle").addEventListener("click", () => {
+      applyQueueDensity(!document.body.classList.contains("queue-compact"));
+    });
+    let startCompact = false;
+    try {
+      startCompact = localStorage.getItem(QUEUE_COMPACT_KEY) === "true";
+    } catch (_error) {
+      // Full list by default.
+    }
+    applyQueueDensity(startCompact, { persist: false });
+    window.addEventListener("resize", syncQueueGutter);
+    syncQueueGutter();
+  }
 
   makeToolbarDraggable($("zoomHud"), "zoomHud");
   makeToolbarDraggable($("selectionStyleToolbar"), "selectionStyleToolbar");

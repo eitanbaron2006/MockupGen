@@ -460,3 +460,87 @@ def test_corner_lists_with_no_coordinates_are_never_drawn():
     assert "area.corners || areaCorners(area)" not in js
     assert "region.corners || region.inner_corners || areaCorners(region)" not in js
     assert js.count("usableCorners(") >= 4
+
+
+def test_queue_has_a_compact_thumbnail_mode():
+    """The queue can shrink to a wall of thumbnails.
+
+    A mockup is recognised by its picture long before its name, so the compact
+    mode keeps the pictures, drops every other part of the row, and narrows the
+    column to give the editor the space back. The name survives as the row's
+    tooltip -- it is the only way left to read it.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    assert 'id="queueDensityToggle"' in html
+    assert "QUEUE_COMPACT_KEY" in js and "applyQueueDensity" in js
+
+    # The choice outlives the page.
+    assert 'localStorage.getItem(QUEUE_COMPACT_KEY)' in js
+    assert 'localStorage.setItem(QUEUE_COMPACT_KEY' in js
+
+    # Picking by picture only works if the name is still readable somehow.
+    assert 'title="${escapeAttr(template.name)}"' in js
+
+    # Compact: one thumbnail per row, and the column itself gives up its width.
+    queue_grid = css.split("body.queue-compact .queue {", 1)[1].split("}", 1)[0]
+    assert "grid-template-columns: 1fr" in queue_grid
+    # ...packed at the top. Auto rows in a tall panel stretch by default, which
+    # puts a band of dead space under every thumbnail. The strip scrolls.
+    assert "align-content: start" in queue_grid
+    assert "overflow-y: auto" in css.split(chr(10) + ".queue {", 1)[1].split("}", 1)[0]
+    compact_content = css.split("body.queue-compact .content {", 1)[1].split("}", 1)[0]
+    assert "96px" in compact_content
+
+    # The thumbnails keep the size they have in the full list -- the strip is
+    # the same pictures, not bigger ones.
+    assert "body.queue-compact .queue-select .thumb" not in css
+    assert "justify-items: center" in queue_grid
+    # ...and they are not left touching the head above them.
+    assert "padding: 10px 8px 14px" in queue_grid
+
+    # The head reserves the same scrollbar gutter the list does, so the toggle
+    # is centred on the thumbnails rather than on the panel.
+    compact_head = css.split("body.queue-compact .panel-head.queue-head {", 1)[1].split("}", 1)[0]
+    assert "var(--scrollbar-width" in compact_head
+    assert "syncQueueGutter" in js
+    assert "queue.offsetWidth - queue.clientWidth" in js
+
+    # The toggle leads the panel head, ahead of the title.
+    title_row = html.split('<div class="queue-title-row">', 1)[1].split("</div>", 1)[0]
+    assert 'id="queueDensityToggle"' in title_row
+    assert html.index('id="queueDensityToggle"') < html.index('class="queue-title-copy"')
+
+    # Everything that is not a thumbnail goes, the empty text holder included.
+    hidden = css.split("body.queue-compact .queue-title-copy,", 1)[1].split("}", 1)[0]
+    for part in (".queue-filters", ".queue-checkbox", ".queue-delete", ".file-title", ".meta"):
+        assert part in hidden
+    assert "display: none" in hidden
+    text_holder = css.split("body.queue-compact .queue-select > span {", 1)[1].split("}", 1)[0]
+    assert "display: none" in text_holder
+
+    # The wiring sits with the rest of the DOM wiring at the end of the file.
+    assert js.index("QUEUE_COMPACT_KEY") > js.index("function drawSelection()")
+
+
+def test_canvas_rails_follow_the_workspace_when_it_changes_width_on_its_own():
+    """The queue going compact widens the canvas without touching the window.
+
+    Toolbar positions are pixels measured from the workspace, so a rail docked
+    to the right wall is left standing in the middle of the canvas when the
+    wall moves away from it -- and the window resize event, which is what used
+    to put it back, never fires.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    draggable = js.split("function makeToolbarDraggable(", 1)[1].split(
+        chr(10) + "  // The sidebar sits at the left edge", 1
+    )[0]
+
+    assert "new ResizeObserver(" in draggable
+    assert ".observe(dockParent)" in draggable
+    # Re-anchoring is the same path a window resize takes.
+    assert "restore();" in draggable.split("new ResizeObserver(", 1)[1]
+    # A width animation fires the observer every frame; one re-anchor per frame.
+    assert "requestAnimationFrame" in draggable and "cancelAnimationFrame" in draggable
