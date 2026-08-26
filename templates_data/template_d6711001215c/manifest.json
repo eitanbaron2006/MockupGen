@@ -1,6 +1,6 @@
 {
   "template_id": "template_d6711001215c",
-  "name": "ChatGPT Image May 28 2026 12 17 57 PM 1",
+  "name": "H1-12",
   "product_type": "horizontal-wall-art",
   "canvas_width": 1122,
   "canvas_height": 1402,
@@ -55,19 +55,6 @@
     }
   },
   "raw_artwork_area": {
-    "corners": [
-      {},
-      {
-        "x": null
-      },
-      {
-        "x": null,
-        "y": null
-      },
-      {
-        "y": null
-      }
-    ],
     "layers": [
       [
         {
@@ -145,5 +132,5 @@
     ]
   },
   "detection_provider": "classic",
-  "detection_confidence": 0.7
+  "detection_confidence": 0.85
 }

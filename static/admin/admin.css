@@ -501,7 +501,13 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
 
 .crumb {
   color: var(--faint);
-  flex-shrink: 0;
+  /* The detection strip in the middle of the bar keeps its buttons on one line
+     at any width, so the breadcrumb is what gives way on a narrow screen. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
@@ -517,8 +523,20 @@ body.sidebar-auto .sidebar:not(.is-narrow) {
 .top-actions {
   align-items: center;
   display: flex;
+  /* Buttons do not ellipsize: squeezing this box only makes its contents spill
+     out of the bar, so the breadcrumb is what gives way instead. */
+  flex-shrink: 0;
   gap: 8px;
   min-width: 0;
+}
+
+/* Narrow screens: the detection strip stays whole and on one line, so what
+   goes first is what the page says twice -- Server Pulse is a nav item in the
+   sidebar as well. */
+@media (max-width: 1450px) {
+  .top-actions a[href="/server-pulse"] {
+    display: none;
+  }
 }
 
 .top-status {
@@ -1074,11 +1092,13 @@ body.queue-compact .queue-item.selected {
   color: var(--accent);
 }
 
+/* Both switches read as one strip in the top bar: the engine, then the modes
+   that engine offers, on a single line. */
 .detection-mode-container {
-  align-items: flex-end;
+  align-items: center;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-shrink: 0;
+  gap: 10px;
 }
 
 .classic-submodes-switch {
@@ -1904,7 +1924,10 @@ body.queue-compact .queue-item.selected {
    auto margins pushing a piece of it against the far wall. When the bar runs
    short these two are what give way -- the shrink factors say so, in the order
    the eye would drop them -- so the detection step keeps its words. */
+/* Hidden for now, not removed: the number is still computed and still set on
+   this element, so showing it again is one line. */
 .editor-foot .confidence {
+  display: none;
   flex-shrink: 20;
   max-width: none;
 }

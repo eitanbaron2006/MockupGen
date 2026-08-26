@@ -60,6 +60,19 @@
     <section class="shell">
       <header class="topbar">
         <div class="crumb">Templates / <strong id="breadcrumb">Select category</strong></div>
+        <div class="detection-mode-container">
+          <div class="detection-mode-switch" aria-label="Detection engine">
+            <button class="detection-mode-button" type="button" data-provider="vertex">Vertex AI</button>
+            <button class="detection-mode-button" type="button" data-provider="classic">Classic / No AI</button>
+            <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
+          </div>
+          <div class="classic-submodes-switch" id="classicSubmodesBar" aria-label="Classic detection submodes">
+            <button class="submode-btn active" type="button" data-submode="auto">Auto Detect</button>
+            <button class="submode-btn" type="button" data-submode="frame_points">Frame Points</button>
+            <button class="submode-btn" type="button" data-submode="green_frames">Green Frames</button>
+            <button class="submode-btn" type="button" data-submode="color_pick">Color Pick</button>
+          </div>
+        </div>
         <div class="top-actions">
           <span class="top-status" id="status">Ready</span>
           <a href="/server-pulse" target="_blank" class="btn compact" style="text-decoration:none;" title="Server Pulse Operations Dashboard">&#9889; Server Pulse &#8599;</a>
@@ -111,19 +124,6 @@
               <div class="sub" id="editorSub">Choose a template from the queue to review its artwork area.</div>
             </div>
             <div class="editor-tools">
-              <div class="detection-mode-container">
-                <div class="detection-mode-switch" aria-label="Detection engine">
-                  <button class="detection-mode-button" type="button" data-provider="vertex">Vertex AI</button>
-                  <button class="detection-mode-button" type="button" data-provider="classic">Classic / No AI</button>
-                  <button class="detection-mode-button" type="button" data-provider="local">Local AI</button>
-                </div>
-                <div class="classic-submodes-switch" id="classicSubmodesBar" aria-label="Classic detection submodes">
-                  <button class="submode-btn active" type="button" data-submode="auto">Auto Detect</button>
-                  <button class="submode-btn" type="button" data-submode="frame_points">Frame Points</button>
-                  <button class="submode-btn" type="button" data-submode="green_frames">Green Frames</button>
-                  <button class="submode-btn" type="button" data-submode="color_pick">Color Pick</button>
-                </div>
-              </div>
               <button class="btn success" id="detectButton">Detect frame</button>
               <button class="btn hidden" id="previewMockupButton" type="button">Preview Mockup</button>
               <a class="btn primary hidden" id="downloadMockupButton" download="mockup.png" href="">Download</a>

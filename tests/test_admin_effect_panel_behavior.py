@@ -609,3 +609,49 @@ def test_editor_foot_reads_from_the_left():
     assert "margin-right: auto" not in instruction
     assert "flex-grow" not in instruction
     assert "text-overflow: ellipsis" in instruction
+
+
+def test_detection_switches_live_in_the_top_bar_on_one_line():
+    """Engine and mode are chosen from the page's top bar.
+
+    Both switches sit between the breadcrumb and the top actions, on a single
+    line -- the container no longer stacks them -- and the pieces around them
+    are the ones that give way when the bar runs short, since a button cannot
+    be ellipsized.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    topbar = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+    assert 'class="detection-mode-container"' in topbar
+    assert topbar.index("detection-mode-container") < topbar.index('class="top-actions"')
+
+    tools = html.split('<div class="editor-tools">', 1)[1].split("</div>", 1)[0]
+    assert "detection-mode" not in tools
+    assert 'id="detectButton"' in tools
+
+    container = css.split(".detection-mode-container {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: column" not in container
+    assert "flex-shrink: 0" in container
+
+    crumb = css.split(chr(10) + ".crumb {", 1)[1].split("}", 1)[0]
+    assert "text-overflow: ellipsis" in crumb
+    actions = css.split(chr(10) + ".top-actions {", 1)[1].split("}", 1)[0]
+    assert "flex-shrink: 0" in actions
+
+
+def test_confidence_is_hidden_but_still_computed():
+    """The number is out of sight, not out of the code.
+
+    It is hidden in the stylesheet alone, so the element is still there and
+    still written to -- putting it back is one line, and nothing else has to be
+    rebuilt to do it.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    assert 'id="confidence"' in html
+    assert '$("confidence").textContent = confidenceLabel(' in js
+    hidden = css.split(".editor-foot .confidence {", 1)[1].split("}", 1)[0]
+    assert "display: none" in hidden
