@@ -580,3 +580,32 @@ def test_coordinate_readout_lives_in_the_canvas_corner():
     assert "rail.right - bounds.left" in place
     # Measured again whenever a rail moves, docks, or is put back.
     assert js.count("placeCoordinateReadout();") >= 4
+
+
+def test_editor_foot_reads_from_the_left():
+    """Everything in the bar under the canvas starts at the left edge.
+
+    Nothing is pushed against the far wall by an auto margin, and nothing
+    stretches to fill the bar; when the bar runs short, the pieces give way in
+    the order the eye would drop them -- the status line first, then the
+    confidence, and only then the words of the detection step.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    foot_confidence = css.split(".editor-foot .confidence {", 1)[1].split("}", 1)[0]
+    assert "margin-left: auto" not in foot_confidence
+    assert "flex-shrink: 20" in foot_confidence
+
+    state = css.split(".editor-foot #proposalState {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in state
+    assert "flex-shrink: 100" in state
+    assert "overflow: hidden" in state
+
+    wizard = css.split(chr(10) + ".detection-wizard-foot {", 1)[1].split("}", 1)[0]
+    assert "flex: 0 1 auto" in wizard
+    assert "margin: 0;" in wizard
+
+    instruction = css.split(".detection-wizard-foot .wizard-instruction {", 1)[1].split("}", 1)[0]
+    assert "margin-right: auto" not in instruction
+    assert "flex-grow" not in instruction
+    assert "text-overflow: ellipsis" in instruction

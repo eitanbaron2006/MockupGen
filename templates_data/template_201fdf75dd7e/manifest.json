@@ -1,30 +1,30 @@
 {
   "template_id": "template_201fdf75dd7e",
-  "name": "ChatGPT Image May 28 2026 05 59 05 PM 3",
-  "product_type": "vertival-wall-art-frame",
+  "name": "S1-2",
+  "product_type": "square-wall-art",
   "canvas_width": 1122,
   "canvas_height": 1402,
   "artwork_area": {
-    "x": 553,
-    "y": 203,
-    "width": 484,
-    "height": 506,
+    "x": 551,
+    "y": 202,
+    "width": 488,
+    "height": 508,
     "corners": [
       {
-        "x": 554,
-        "y": 252
+        "x": 551,
+        "y": 250
       },
       {
-        "x": 1037,
-        "y": 203
+        "x": 1039,
+        "y": 202
       },
       {
-        "x": 1036,
-        "y": 709
+        "x": 1038,
+        "y": 710
       },
       {
-        "x": 553,
-        "y": 690
+        "x": 551,
+        "y": 692
       }
     ]
   },
@@ -54,7 +54,83 @@
       "top": 10
     }
   },
-  "raw_artwork_area": null,
+  "raw_artwork_area": {
+    "layers": [
+      [
+        {
+          "x": 548,
+          "y": 247
+        },
+        {
+          "x": 1067,
+          "y": 198
+        },
+        {
+          "x": 1049,
+          "y": 716
+        },
+        {
+          "x": 547,
+          "y": 694
+        }
+      ],
+      [
+        {
+          "x": 553,
+          "y": 254
+        },
+        {
+          "x": 1036,
+          "y": 202
+        },
+        {
+          "x": 1037,
+          "y": 708
+        },
+        {
+          "x": 554,
+          "y": 690
+        }
+      ],
+      [
+        {
+          "x": 551,
+          "y": 250
+        },
+        {
+          "x": 1039,
+          "y": 202
+        },
+        {
+          "x": 1038,
+          "y": 710
+        },
+        {
+          "x": 551,
+          "y": 692
+        }
+      ]
+    ],
+    "mode": "geometry",
+    "original_corners": [
+      {
+        "x": 551,
+        "y": 250
+      },
+      {
+        "x": 1039,
+        "y": 202
+      },
+      {
+        "x": 1038,
+        "y": 710
+      },
+      {
+        "x": 551,
+        "y": 692
+      }
+    ]
+  },
   "detection_provider": "classic",
   "detection_confidence": 0.7
 }
