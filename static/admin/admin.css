@@ -4098,6 +4098,57 @@ input[type="checkbox"]:disabled {
   min-width: 0;
 }
 
+/* Every slider carries its own way back to its default. Quiet until the row is
+   under the pointer, so a panel of ten sliders does not read as a panel of ten
+   buttons -- but it keeps its place in the row either way, so nothing shifts
+   when it lights up. */
+.slider-reset {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--faint);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 18px;
+  justify-content: center;
+  opacity: .4;
+  padding: 0;
+  transition: opacity .15s ease, color .15s ease, background .15s ease;
+  width: 18px;
+}
+
+.slider-reset svg {
+  height: 13px;
+  width: 13px;
+}
+
+.slider-container-row:hover .slider-reset,
+.slider-with-reset:hover .slider-reset,
+.mask-detect-tolerance:hover .slider-reset,
+.slider-reset:focus-visible {
+  opacity: 1;
+}
+
+.slider-reset:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The row a slider gets when it did not come with one. */
+.slider-with-reset {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.slider-with-reset input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
 .slider-container-row input[type="range"] {
   flex: 1;
   height: 4px;

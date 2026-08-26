@@ -811,3 +811,48 @@ def test_green_frame_controls_follow_the_render_not_the_frame_count():
     # ...and it still drives everything else it drove before: the live green
     # render, positioning with the mouse, the caches.
     assert js.count("isGreenFrameTemplate(") >= 10
+
+
+def test_every_slider_has_a_reset_and_answers_the_wheel():
+    """One pass over the page gives every range input the same two affordances.
+
+    Nothing is added to the markup slider by slider -- there are forty of them
+    and more are cloned at runtime -- so the pass is generic and repeats over
+    whatever the page grows later.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    enhance = js.split("function enhanceSlider(input) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert 'reset.className = "slider-reset"' in enhance
+    assert "setSliderValue(input, fallback)" in enhance
+    # The wheel adjusts by the slider's own step, and holds the panel still.
+    assert '"wheel"' in enhance and "{ passive: false }" in enhance
+    assert "event.preventDefault();" in enhance
+    assert "sliderStep(input) * (event.shiftKey ? 10 : 1)" in enhance
+
+    # Whatever moves the value tells the page it moved, so the number beside the
+    # slider, the redraw and the save all run as if it had been dragged.
+    commit = js.split("function setSliderValue(input, value) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert 'new Event("input", { bubbles: true })' in commit
+    assert 'new Event("change", { bubbles: true })' in commit
+    # Snapped to the step, or a step of 0.05 drifts to 0.5000000000000001.
+    assert "Math.round((value - base) / step) * step" in commit
+    assert "sliderDecimals(step)" in commit
+
+    # The default is the value the markup ships with.
+    default_fn = js.split("function sliderDefault(input) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert 'input.getAttribute("value")' in default_fn
+
+    # Cloned panels bring a copy of the button with no handler behind it; the
+    # link back to the slider is a property, which a clone does not carry.
+    sweep = js.split("function enhanceSliders() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert "if (!button.__sliderInput) button.remove();" in sweep
+    assert "document.querySelectorAll('input[type=\"range\"]').forEach(enhanceSlider)" in sweep
+    # ...and the pass repeats over whatever the page grows later.
+    assert "sliderSweep" in js
+    assert "observe(document.body, { childList: true, subtree: true })" in js
+
+    assert ".slider-reset {" in css
+    # A slider that came without a row of its own gets one.
+    assert ".slider-with-reset {" in css
