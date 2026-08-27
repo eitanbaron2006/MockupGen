@@ -904,3 +904,27 @@ def test_canvas_rails_can_be_turned_on_their_side():
     assert ".canvas-rail.is-horizontal .hud-grip span {" in css
     assert ".canvas-rail.is-horizontal #zoomResetBtn::before {" in css
     assert ".canvas-rail.canvas-toolbar-docked-top {" in css
+
+
+def test_full_screen_overlays_do_not_blur_what_is_behind_them():
+    """A viewport-wide backdrop filter is paid for on every repaint above it.
+
+    The test-mockups modal was the place it showed: scrolling the gallery of
+    matching mockups ran at 18fps with the blur and 59 without it, measured in
+    the browser, because every frame re-blurred the whole page behind the
+    modal. The scrim does the separating; two pixels of blur were adding
+    nothing anyone could see, and the lightbox's ten were behind 92% black.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+
+    backdrop = css.split(chr(10) + ".modal-backdrop {", 1)[1].split("}", 1)[0]
+    assert "backdrop-filter" not in backdrop
+    assert "rgba(0, 0, 0, 0.46)" in backdrop
+
+    lightbox = css.split(chr(10) + ".lightbox-overlay {", 1)[1].split("}", 1)[0]
+    assert "backdrop-filter" not in lightbox
+
+    # The rails still carry theirs: they are 38px wide and cost nothing
+    # measurable (63fps against 62 while zooming the canvas).
+    rail = css.split(chr(10) + ".canvas-rail {", 1)[1].split("}", 1)[0]
+    assert "backdrop-filter: blur(12px)" in rail

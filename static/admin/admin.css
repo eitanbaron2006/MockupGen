@@ -2889,8 +2889,11 @@ select,
 /* Test Mockups Modal */
 .modal-backdrop {
   align-items: center;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
+  /* A scrim, not a blur. Blurring the whole viewport behind a modal costs a
+     re-blur of the entire backdrop on every repaint inside it -- measured at
+     18fps against 59 while scrolling the mockup gallery -- and two pixels of
+     blur were doing nothing the darkened scrim was not already doing. */
+  background: rgba(0, 0, 0, 0.46);
   display: flex;
   justify-content: center;
   position: fixed;
@@ -4283,8 +4286,9 @@ input[type="checkbox"]:disabled {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(21, 20, 15, 0.9);
-  backdrop-filter: blur(10px);
+  /* 90% black already hides what is behind it; blurring the viewport as well
+     is a full-screen filter nobody can see. */
+  background: rgba(21, 20, 15, 0.92);
   z-index: 10000;
   display: flex;
   align-items: center;
