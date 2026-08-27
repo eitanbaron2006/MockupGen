@@ -578,12 +578,15 @@ def test_coordinate_readout_is_a_rail_of_its_own():
     readout = css.split(chr(10) + ".coordinates {", 1)[1].split("}", 1)[0]
     assert "pointer-events: none" in readout
 
-    # Stood on end it stacks: a row of figures in a 38px-wide rail would simply
-    # run off the end of it, so the figures go one per line and the rail takes
-    # the width they need.
+    # Stood on end it stacks, one figure per line, in the same 38px the other
+    # rails are wide -- which is what setting the letter solid against its
+    # number pays for: X1254 rather than X 1254.
     upright = css.split(".canvas-rail:not(.is-horizontal) .coordinates {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in upright
-    assert "width: auto" in css.split(".canvas-rail.coords-rail:not(.is-horizontal) {", 1)[1].split("}", 1)[0]
+    # No width of its own upright: it is as wide as any other rail.
+    assert ".canvas-rail.coords-rail:not(.is-horizontal)" not in css
+    solid = css.split(".canvas-rail:not(.is-horizontal) .coordinates strong {", 1)[1].split("}", 1)[0]
+    assert "margin-left: 0" in solid
 
 
 def test_editor_foot_reads_from_the_left():

@@ -1707,25 +1707,26 @@ body.queue-compact .queue-item.selected {
   top: 0;
 }
 
-/* Standing on end, the figures stack: one per line, label against value, and
-   the rail takes the width the widest line needs instead of the 38px a rail of
-   square buttons wants. Laid out in a row they would simply run off the end of
-   it. */
-.canvas-rail.coords-rail:not(.is-horizontal) {
-  width: auto;
-}
-
+/* Standing on end the figures stack, one per line, in the same 38px the other
+   rails are wide -- a rail is a rail. That width is what the space between the
+   letter and its number pays for, so upright the two are set solid: X703. */
 .canvas-rail:not(.is-horizontal) .coordinates {
-  align-items: stretch;
+  align-items: center;
   flex-direction: column;
-  gap: 5px;
-  padding: 7px 9px 9px;
+  font-size: 9px;
+  gap: 4px;
+  letter-spacing: 0;
+  padding: 6px 1px 8px;
 }
 
 .canvas-rail:not(.is-horizontal) .coordinates span {
   display: flex;
-  gap: 10px;
-  justify-content: space-between;
+  gap: 0;
+  justify-content: center;
+}
+
+.canvas-rail:not(.is-horizontal) .coordinates strong {
+  margin-left: 0;
 }
 
 /* A rail can lie flat as well as stand. Everything that ran down the bar now
