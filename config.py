@@ -24,8 +24,16 @@ OUTPUT_FOLDER = _folder("OUTPUT_FOLDER", "outputs")
 TEMPLATES_FOLDER = _folder("TEMPLATES_FOLDER", "templates_data")
 DRAFT_TEMPLATES_FOLDER = _folder("DRAFT_TEMPLATES_FOLDER", "draft_templates")
 DATABASE_PATH = _folder("DATABASE_PATH", "data/mockup_catalog.sqlite3")
+# A request with no ceiling on it is read into memory whatever its size, so an
+# upload of a few hundred megabytes is all it takes to put the server out. 32MB
+# clears any mockup or artwork the studio actually works with; set the variable
+# to raise it, or to 0 to lift the ceiling entirely.
+DEFAULT_MAX_CONTENT_LENGTH = 32 * 1024 * 1024
 _max_content = os.getenv("MAX_CONTENT_LENGTH", "").strip()
-MAX_CONTENT_LENGTH = int(_max_content) if _max_content else None
+if not _max_content:
+    MAX_CONTENT_LENGTH = DEFAULT_MAX_CONTENT_LENGTH
+else:
+    MAX_CONTENT_LENGTH = int(_max_content) or None
 ENABLE_SIMPLE_MODE = _enabled("ENABLE_SIMPLE_MODE", True)
 ENABLE_PSD_MODE = _enabled("ENABLE_PSD_MODE", False)
 ENABLE_AI_MODE = _enabled("ENABLE_AI_MODE", False)
@@ -42,7 +50,8 @@ class Config:
     ENABLE_PSD_MODE = ENABLE_PSD_MODE
     ENABLE_AI_MODE = ENABLE_AI_MODE
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").strip()
-    SECRET_KEY = os.getenv("SECRET_KEY", "development-only-change-me")
+    DEFAULT_SECRET_KEY = "development-only-change-me"
+    SECRET_KEY = os.getenv("SECRET_KEY", DEFAULT_SECRET_KEY)
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
     DETECTION_PROVIDER = os.getenv("DETECTION_PROVIDER", "classic").strip().lower()
     VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "").strip()

@@ -1012,7 +1012,7 @@
             <span class="meta">${escapeHtml(template.orientation)} <span class="pill ${statusClass(template)}">${template.status === "active" ? "Approved" : "Review"}</span></span>
           </span>
         </button>
-        <button class="queue-delete" type="button" data-template="${template.template_id}" aria-label="Delete ${escapeHtml(template.name)}" title="Delete mockup" ${state.busy ? "disabled" : ""}>
+        <button class="queue-delete" type="button" data-template="${template.template_id}" aria-label="Delete ${escapeAttr(template.name)}" title="Delete mockup" ${state.busy ? "disabled" : ""}>
           <svg class="trash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
       </div>
@@ -4389,12 +4389,12 @@
 
   function fillModels(select, models, selected, placeholder) {
     select.innerHTML = models.map((model) =>
-      `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label)}${model.stage ? ` / ${escapeHtml(model.stage)}` : ""}</option>`
+      `<option value="${escapeAttr(model.id)}">${escapeHtml(model.label)}${model.stage ? ` / ${escapeHtml(model.stage)}` : ""}</option>`
     ).join("");
     if (!models.length) {
       select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
     } else if (selected && !models.some((model) => model.id === selected)) {
-      select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(selected)}">${escapeHtml(selected)} / previously configured</option>`);
+      select.insertAdjacentHTML("beforeend", `<option value="${escapeAttr(selected)}">${escapeHtml(selected)} / previously configured</option>`);
     }
     if (selected) select.value = selected;
   }
@@ -6640,8 +6640,8 @@
       const previewUrl = t.preview_url || `/api/admin/templates/${t.template_id}/asset/preview.png`;
       const isSelected = testState.selectedTemplates.has(t.template_id);
       return `
-        <div class="test-mockup-card-wrapper ${isSelected ? 'selected' : ''}" data-id="${t.template_id}" title="${escapeHtml(t.name)}">
-          <img src="${previewUrl}" class="test-mockup-card-img" alt="${escapeHtml(t.name)}">
+        <div class="test-mockup-card-wrapper ${isSelected ? 'selected' : ''}" data-id="${t.template_id}" title="${escapeAttr(t.name)}">
+          <img src="${previewUrl}" class="test-mockup-card-img" alt="${escapeAttr(t.name)}">
           <div class="test-mockup-card-checkbox">
             ${isSelected ? '&#10004;' : ''}
           </div>
@@ -6904,12 +6904,12 @@
         return `
           <div class="batch-result-card" id="batch-card-${templateId}">
             <div class="batch-card-header">
-              <span class="batch-card-title" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+              <span class="batch-card-title" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
               <span class="batch-card-status" id="batch-status-${templateId}">Pending...</span>
             </div>
             <div class="batch-card-body">
               <div class="batch-card-spinner" id="batch-spinner-${templateId}"></div>
-              <img class="batch-card-img hidden" id="batch-img-${templateId}" alt="${escapeHtml(name)}">
+              <img class="batch-card-img hidden" id="batch-img-${templateId}" alt="${escapeAttr(name)}">
             </div>
             <div class="batch-card-actions hidden" id="batch-actions-${templateId}">
               <a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="#">Download</a>

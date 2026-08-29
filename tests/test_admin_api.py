@@ -745,3 +745,119 @@ def test_editing_a_published_template_leaves_its_manifest_alone(tmp_path: Path):
     assert detail["name"] == "V1-7"
     assert detail["fit_mode"] == "contain"
     assert detail["frames"][0]["width"] == 260
+
+
+def test_published_asset_path_stays_inside_the_template_folder(tmp_path: Path):
+    """The id and the asset name both arrive from the URL.
+
+    Either one climbing out of the template's folder would serve any file the
+    server can read -- .env with the secret key and the admin password among
+    them -- so both are held to a single path segment and the resolved file has
+    to sit inside the folder it was asked for.
+    """
+    from routes.admin_routes import published_asset_path
+
+    templates = tmp_path / "templates"
+    (templates / "template_ok").mkdir(parents=True)
+    (templates / "template_ok" / "preview.png").write_bytes(b"not really a png")
+    secret = tmp_path / ".env"
+    secret.write_text("SECRET_KEY=hunter2", encoding="utf-8")
+
+    served = published_asset_path(templates, "template_ok", "preview.png")
+    assert served is not None and served.name == "preview.png"
+
+    for asset_name in ("../.env", "..", "../../.env", "nested/preview.png", str(secret)):
+        assert published_asset_path(templates, "template_ok", asset_name) is None, asset_name
+    for template_id in ("..", "../..", "template_ok/.."):
+        assert published_asset_path(templates, template_id, ".env") is None, template_id
+
+    # A name that resolves inside the folder but is not there is not served.
+    assert published_asset_path(templates, "template_ok", "background.png") is None
+
+
+def test_template_asset_route_does_not_serve_files_outside_the_template(tmp_path: Path):
+    client = build_app(tmp_path).test_client()
+    login(client)
+
+    templates = Path(client.application.config["TEMPLATES_FOLDER"])
+    (templates / "template_ok").mkdir(parents=True, exist_ok=True)
+    (templates / "template_ok" / "preview.png").write_bytes(b"not really a png")
+    (templates.parent / "secret.txt").write_text("SECRET_KEY=hunter2", encoding="utf-8")
+
+    assert client.get("/api/admin/templates/template_ok/asset/preview.png").status_code == 200
+    for attempt in (
+        "/api/admin/templates/template_ok/asset/..%2F..%2Fsecret.txt",
+        "/api/admin/templates/template_ok/asset/..",
+        "/api/admin/templates/..%2F..%2Fsecret.txt/asset/preview.png",
+    ):
+        response = client.get(attempt)
+        assert response.status_code in (301, 308, 400, 404), attempt
+        assert b"hunter2" not in response.data, attempt
+
+
+def test_login_stops_answering_after_ten_wrong_passwords(tmp_path: Path):
+    """Guessing is the only attack a password login invites.
+
+    Ten tries from one address in five minutes is more than a person needs; the
+    eleventh is turned away without the password being checked at all, and a
+    login that succeeds clears the count behind it.
+    """
+    from routes import admin_routes
+
+    admin_routes._login_attempts.clear()
+    try:
+        client = build_app(tmp_path).test_client()
+
+        for attempt in range(admin_routes.LOGIN_MAX_ATTEMPTS):
+            response = client.post("/api/admin/login", json={"password": "wrong"})
+            assert response.status_code == 401, attempt
+
+        blocked = client.post("/api/admin/login", json={"password": "wrong"})
+        assert blocked.status_code == 429
+        # The right password is not a way past the limit either.
+        assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 429
+
+        # A successful login wipes the slate, so a fumbled password earlier in
+        # the day cannot lock the studio out later.
+        admin_routes._login_attempts.clear()
+        assert client.post("/api/admin/login", json={"password": "wrong"}).status_code == 401
+        assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 200
+        assert admin_routes._login_attempts == {}
+    finally:
+        admin_routes._login_attempts.clear()
+
+
+def test_server_refuses_to_start_on_the_published_default_secret_key(tmp_path: Path):
+    """The default key is printed in this repository.
+
+    A server signing session cookies with it is a server whose admin session
+    anyone can forge, so it does not start -- unless it is a local debug or test
+    run, where the convenience costs nothing.
+    """
+    import pytest
+
+    from config import Config
+
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        create_app(
+            {
+                "SECRET_KEY": Config.DEFAULT_SECRET_KEY,
+                "DATABASE_PATH": str(tmp_path / "data" / "catalog.sqlite3"),
+                "DRAFT_TEMPLATES_FOLDER": str(tmp_path / "draft_templates"),
+                "TEMPLATES_FOLDER": str(tmp_path / "templates"),
+                "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+                "OUTPUT_FOLDER": str(tmp_path / "outputs"),
+            }
+        )
+
+    # Testing runs are exempt, which is why every other test here still builds.
+    app = build_app(tmp_path)
+    assert app.config["SECRET_KEY"] == "test-secret"
+
+
+def test_requests_have_a_size_ceiling_by_default(tmp_path: Path):
+    """Unbounded uploads are read into memory whatever their size."""
+    import config
+
+    assert config.DEFAULT_MAX_CONTENT_LENGTH == 32 * 1024 * 1024
+    assert build_app(tmp_path).config["MAX_CONTENT_LENGTH"] == config.DEFAULT_MAX_CONTENT_LENGTH

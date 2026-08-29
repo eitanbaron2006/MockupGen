@@ -25,6 +25,21 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             app.config["DATABASE_PATH"] = str(test_root / "data" / "mockup_catalog.sqlite3")
             app.config["DRAFT_TEMPLATES_FOLDER"] = str(test_root / "draft_templates")
 
+    # The session cookie -- and with it the admin's logged-in state and the CSRF
+    # token -- is only as good as the key that signs it. The shipped default is
+    # published in this repository, so a server running on it is a server anyone
+    # can forge a session for: refuse to start rather than pretend to be safe.
+    # Debug and test runs are local and keep the convenience.
+    if (
+        app.config.get("SECRET_KEY") == Config.DEFAULT_SECRET_KEY
+        and not app.config.get("TESTING")
+        and not app.debug
+    ):
+        raise RuntimeError(
+            "SECRET_KEY is still the development default. Set SECRET_KEY in .env "
+            "to a long random value before running the server."
+        )
+
     for key in ("UPLOAD_FOLDER", "OUTPUT_FOLDER", "TEMPLATES_FOLDER", "DRAFT_TEMPLATES_FOLDER"):
         Path(app.config[key]).mkdir(parents=True, exist_ok=True)
 

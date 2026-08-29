@@ -1,6 +1,8 @@
 import hmac
 import json
 import secrets
+import threading
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
@@ -221,14 +223,54 @@ def admin_page():
     return render_template("admin/index.html", csrf_token=session["csrf_token"])
 
 
+# A password login invites exactly one attack: guessing. Ten tries from an
+# address in five minutes is far more than a person needs and far less than a
+# script wants. The count is kept in this process only -- it is a speed bump on
+# the door, not an audit trail -- and it is cleared the moment a login succeeds.
+LOGIN_WINDOW_SECONDS = 300
+LOGIN_MAX_ATTEMPTS = 10
+_login_attempts: dict[str, list[float]] = {}
+_login_attempts_lock = threading.Lock()
+
+
+def _login_client() -> str:
+    # Deliberately not X-Forwarded-For: a header the caller writes is a header
+    # the caller can rotate, and the limit would count to ten forever.
+    return request.remote_addr or "unknown"
+
+
+def _login_attempt_allowed(client: str) -> bool:
+    now = time.monotonic()
+    with _login_attempts_lock:
+        recent = [when for when in _login_attempts.get(client, []) if now - when < LOGIN_WINDOW_SECONDS]
+        allowed = len(recent) < LOGIN_MAX_ATTEMPTS
+        if allowed:
+            recent.append(now)
+        _login_attempts[client] = recent
+        if len(_login_attempts) > 1024:
+            for key, when in list(_login_attempts.items()):
+                if not when or now - when[-1] >= LOGIN_WINDOW_SECONDS:
+                    _login_attempts.pop(key, None)
+    return allowed
+
+
+def _login_succeeded(client: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.pop(client, None)
+
+
 @admin_routes.post("/api/admin/login")
 def admin_login():
     configured = str(current_app.config.get("ADMIN_PASSWORD", ""))
     if not configured:
         return json_error("ADMIN_PASSWORD is not configured in .env", 503)
+    client = _login_client()
+    if not _login_attempt_allowed(client):
+        return json_error("Too many login attempts. Try again in a few minutes.", 429)
     supplied = str((request.get_json(silent=True) or {}).get("password", ""))
     if not hmac.compare_digest(configured, supplied):
         return json_error("Incorrect password", 401)
+    _login_succeeded(client)
     session.clear()
     session["admin_authenticated"] = True
     session["csrf_token"] = secrets.token_urlsafe(32)
@@ -346,6 +388,31 @@ def import_admin_templates():
     return jsonify({"success": True, "templates": templates}), 201
 
 
+def published_asset_path(templates_folder: Path, template_id: str, asset_name: str) -> Path | None:
+    """One file from one published template's own folder, or nothing.
+
+    The id and the name both arrive from the URL, so both are held to a single
+    path segment and the resolved file is required to sit inside the template's
+    own folder -- otherwise a name that climbs out of it ("..", a symlink, an
+    absolute path on Windows) would serve any file the server can read, .env
+    among them. The draft branch beside this one is already guarded this way.
+    """
+    def one_segment(value: str) -> bool:
+        # Path("..").name is "", so the name check alone lets ".." through.
+        return bool(value) and value not in (".", "..") and Path(value).name == value
+
+    if not one_segment(template_id) or not one_segment(asset_name):
+        return None
+    root = templates_folder.resolve()
+    template_folder = (root / template_id).resolve()
+    asset_path = (template_folder / asset_name).resolve()
+    if root not in template_folder.parents:
+        return None
+    if template_folder not in asset_path.parents or not asset_path.is_file():
+        return None
+    return asset_path
+
+
 @admin_routes.get("/api/admin/templates/<template_id>/asset/<asset_name>")
 @require_admin_json
 def admin_template_asset(template_id: str, asset_name: str):
@@ -354,10 +421,11 @@ def admin_template_asset(template_id: str, asset_name: str):
             Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]), template_id, asset_name
         )
     except TemplateImportError:
-        active_asset = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / asset_name
-        if not active_asset.is_file():
+        asset_path = published_asset_path(
+            Path(current_app.config["TEMPLATES_FOLDER"]), template_id, asset_name
+        )
+        if asset_path is None:
             return json_error("Asset not found", 404)
-        asset_path = active_asset
     return send_file(asset_path)
 
 
@@ -814,10 +882,13 @@ def get_providers_status():
 
 @admin_routes.get("/server-pulse")
 def server_pulse_page():
-    return render_template("admin/server_pulse.html", csrf_token=session.get("csrf_token", ""))
+    if not is_admin():
+        return redirect(url_for("admin_routes.admin_login_page"))
+    return render_template("admin/server_pulse.html", csrf_token=session["csrf_token"])
 
 
 @admin_routes.get("/api/telemetry/summary")
+@require_admin_json
 def get_telemetry_summary():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:
@@ -826,6 +897,7 @@ def get_telemetry_summary():
 
 
 @admin_routes.get("/api/telemetry/requests")
+@require_admin_json
 def get_telemetry_requests():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:
@@ -836,6 +908,7 @@ def get_telemetry_requests():
 
 
 @admin_routes.get("/api/telemetry/errors")
+@require_admin_json
 def get_telemetry_errors():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:
@@ -845,6 +918,8 @@ def get_telemetry_errors():
 
 
 @admin_routes.post("/api/telemetry/purge-temp")
+@require_admin_json
+@require_csrf
 def purge_telemetry_temp():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:
@@ -855,6 +930,8 @@ def purge_telemetry_temp():
 
 
 @admin_routes.post("/api/telemetry/clear-logs")
+@require_admin_json
+@require_csrf
 def clear_telemetry_logs():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:

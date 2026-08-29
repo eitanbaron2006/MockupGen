@@ -928,3 +928,31 @@ def test_full_screen_overlays_do_not_blur_what_is_behind_them():
     # measurable (63fps against 62 while zooming the canvas).
     rail = css.split(chr(10) + ".canvas-rail {", 1)[1].split("}", 1)[0]
     assert "backdrop-filter: blur(12px)" in rail
+
+
+def test_names_injected_into_attributes_are_escaped_for_attributes():
+    """escapeHtml does not escape quotes; inside an attribute that is a hole.
+
+    A template named `" onerror=alert(1) x="` closes the attribute it is
+    written into and the rest becomes markup. Template and category names are
+    typed by hand in this studio, so every attribute they reach goes through
+    escapeAttr, which escapes the quotes as well.
+    """
+    import re
+
+    js = ADMIN_JS.read_text(encoding="utf-8")
+
+    # The helper is the one that closes the quotes.
+    helper = js.split("function escapeAttr(value) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    assert '/"/g' in helper and "&quot;" in helper
+
+    # Nothing writes an unescaped-for-attribute name into an attribute.
+    leftovers = re.findall(r'[a-zA-Z-]+="\$\{escapeHtml\(', js)
+    assert leftovers == [], leftovers
+    leftovers = re.findall(r"[a-zA-Z-]+='\$\{escapeHtml\(", js)
+    assert leftovers == [], leftovers
+
+    # And the places that carry a name do escape it.
+    assert 'title="${escapeAttr(template.name)}"' in js
+    assert 'aria-label="Delete ${escapeAttr(template.name)}"' in js
+    assert 'alt="${escapeAttr(t.name)}"' in js

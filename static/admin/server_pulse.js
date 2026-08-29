@@ -351,11 +351,16 @@
       });
     });
 
+    // The two destructive endpoints are CSRF-guarded, so the token the page was
+    // rendered with rides along with them.
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    const post = (url) => fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+
     // Purge Cache Buttons
     const purgeHandler = async () => {
       if (!confirm("Are you sure you want to delete temporary output files older than 24 hours?")) return;
       try {
-        const res = await fetch("/api/telemetry/purge-temp?max_age_hours=24", { method: "POST" });
+        const res = await post("/api/telemetry/purge-temp?max_age_hours=24");
         const json = await res.json();
         if (json.success) {
           alert(`Cleaned ${json.deleted_count} files (Freed ${json.freed_mb} MB)`);
@@ -377,7 +382,7 @@
       clearBtn.addEventListener("click", async () => {
         if (!confirm("Clear all recorded request and error logs?")) return;
         try {
-          await fetch("/api/telemetry/clear-logs", { method: "POST" });
+          await post("/api/telemetry/clear-logs");
           fetchSummary();
           fetchRequests();
           fetchErrors();
