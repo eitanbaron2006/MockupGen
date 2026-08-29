@@ -604,6 +604,10 @@ def _green_detection_cache_key(
         settings.tolerance,
         settings.min_area,
         settings.edge_expand,
+        settings.mask_expand_left,
+        settings.mask_expand_right,
+        settings.mask_expand_top,
+        settings.mask_expand_bottom,
         settings.feather_radius,
         settings.mask_build_quality,
     )
@@ -741,6 +745,31 @@ def _render_green_frame_mockup(
 
         if not detection.regions:
             raise InvalidTemplateError("Green frame mask has no usable regions")
+
+        # The opening the render cuts is the detected green, pushed out by the
+        # per-side amounts, and held inside the frames as they now stand. An
+        # untouched template is unchanged by either: the amounts default to
+        # zero and the saved quad contains the region it was measured from.
+        import numpy as np
+
+        from services.green_frame_mockup_service import reshape_opening
+
+        bounds = None
+        saved_regions = raw_artwork_area.get("regions") if isinstance(raw_artwork_area, dict) else None
+        # The frame as drawn is `corners`. Where a region carries no `corners`
+        # of its own, the widest thing it claims is the bound -- its outer
+        # corners -- never the inner ones, which sit inside the very mask this
+        # is meant to leave alone.
+        bound_regions = [
+            {"corners": region.get("corners") or region.get("outer_corners") or region.get("inner_corners")}
+            for region in saved_regions or []
+            if isinstance(region, dict)
+            and (region.get("corners") or region.get("outer_corners") or region.get("inner_corners"))
+        ]
+        if bound_regions:
+            bounds = np.asarray(mask_from_regions(bound_regions, canvas_size)) > 127
+        reshape_opening(detection, settings, bounds)
+
         with _GREEN_DETECTION_LOCK:
             _GREEN_DETECTION_CACHE[cache_key] = detection
             while len(_GREEN_DETECTION_CACHE) > _GREEN_DETECTION_CACHE_LIMIT:

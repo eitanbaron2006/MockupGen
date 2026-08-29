@@ -956,3 +956,33 @@ def test_names_injected_into_attributes_are_escaped_for_attributes():
     assert 'title="${escapeAttr(template.name)}"' in js
     assert 'aria-label="Delete ${escapeAttr(template.name)}"' in js
     assert 'alt="${escapeAttr(t.name)}"' in js
+
+
+def test_green_panel_controls_the_opening_per_side_and_the_green_tolerance():
+    """Two things the panel could not say before.
+
+    How far the opening reaches past the detected green on each side -- the way
+    to cover a sliver of green left along one edge -- and how strict the green
+    test itself is. The backend already understood tolerance; it had no way in
+    from the panel.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    panel = html.split('id="greenFramePanelBody"', 1)[1].split("</div>\n              </div>", 1)[0]
+    assert 'id="greenTolerance"' in panel
+    for side in ("Top", "Bottom", "Left", "Right"):
+        assert f'id="greenMaskExpand{side}"' in panel, side
+        assert f'id="greenMaskExpand{side}Val"' in panel, side
+
+    # Read from the panel, written to the template, and read back into it.
+    assert "tolerance: Number($(\"greenTolerance\").value)" in js
+    assert 'mask_expand_top: Number($("greenMaskExpandTop").value)' in js
+    assert '$("greenTolerance").value = settings.tolerance;' in js
+    assert 'settings[`mask_expand_${side.toLowerCase()}`]' in js
+
+    # ...and every one of them redraws and saves like the sliders beside them.
+    wired = js.split('    "greenEdgeExpand",', 1)[1].split("]", 1)[0]
+    for control in ("greenTolerance", "greenMaskExpandTop", "greenMaskExpandBottom",
+                    "greenMaskExpandLeft", "greenMaskExpandRight"):
+        assert f'"{control}"' in wired, control

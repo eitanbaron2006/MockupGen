@@ -28,6 +28,14 @@ class GreenFrameSettings:
     tolerance: int = 95
     min_area: int = 2500
     edge_expand: int = 0
+    # How far the opening reaches past the detected green on each side, in
+    # pixels. A green screen photographed at an angle leaves a sliver of green
+    # showing along one edge; these push the artwork over it. Negative pulls
+    # the opening back instead.
+    mask_expand_left: int = 0
+    mask_expand_right: int = 0
+    mask_expand_top: int = 0
+    mask_expand_bottom: int = 0
     feather_radius: int = 2
     mask_build_quality: int = 2
     aa_scale: int = 1
@@ -119,6 +127,18 @@ class GreenFrameDetection:
     def clip_mask(self) -> np.ndarray:
         return self._unpack(self._clip_bits)
 
+    @raw_mask.setter
+    def raw_mask(self, mask: np.ndarray) -> None:
+        self._raw_bits = np.packbits(mask)
+
+    @detect_mask.setter
+    def detect_mask(self, mask: np.ndarray) -> None:
+        self._detect_bits = np.packbits(mask)
+
+    @clip_mask.setter
+    def clip_mask(self, mask: np.ndarray) -> None:
+        self._clip_bits = np.packbits(mask)
+
 
 # How hard an edge has to be before a seed-point fill is stopped by it. Set
 # high on purpose: a frame's bezel clears it, the shading across a blank
@@ -157,9 +177,16 @@ def parse_green_frame_settings(effects: dict | None, fallback_fit_mode: str = "c
     return GreenFrameSettings(
         use_perspective=bool(options.get("use_perspective", True)),
         wide_coverage_envelope=bool(options.get("use_vector_clip", options.get("wide_coverage_envelope", True))),
-        tolerance=int(_clamp(number("tolerance", 95), 10, 220)),
+        # 442 is the whole of it: the longest distance between two colours in
+        # RGB is 255*sqrt(3) = 441.67, so a tolerance past that scores every
+        # pixel in the picture as green and nothing beyond it can change.
+        tolerance=int(_clamp(number("tolerance", 95), 10, 442)),
         min_area=int(_clamp(number("min_area", 2500), 80, 200000)),
         edge_expand=int(_clamp(number("edge_expand", 0), 0, 255)),
+        mask_expand_left=int(_clamp(number("mask_expand_left", 0), -50, 150)),
+        mask_expand_right=int(_clamp(number("mask_expand_right", 0), -50, 150)),
+        mask_expand_top=int(_clamp(number("mask_expand_top", 0), -50, 150)),
+        mask_expand_bottom=int(_clamp(number("mask_expand_bottom", 0), -50, 150)),
         feather_radius=int(_clamp(number("feather_radius", 2), 0, 12)),
         mask_build_quality=int(_clamp(number("mask_build_quality", 2), 1, 3)),
         aa_scale=int(_clamp(number("aa_scale", 1), 1, 8)),
@@ -380,6 +407,87 @@ def detect_green_frames(mockup: Image.Image, settings: GreenFrameSettings | None
         region.outer_corners = _find_corners(detect_mask, region)
         region.corners = region.inner_corners
     return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, int(raw_mask.sum()))
+
+
+def _expand_sides(mask: np.ndarray, left: int, right: int, top: int, bottom: int) -> np.ndarray:
+    """Grow (or shrink) a mask by a different amount on each side."""
+    if cv2 is None:
+        out = mask.copy()
+        for amount, axis, forward in (
+            (left, 1, False), (right, 1, True), (top, 0, False), (bottom, 0, True)
+        ):
+            for _ in range(max(0, amount)):
+                out |= np.roll(out, 1 if forward else -1, axis=axis)
+            for _ in range(max(0, -amount)):
+                out &= np.roll(out, -1 if forward else 1, axis=axis)
+        return out
+    out = mask.astype(np.uint8)
+    if left or right:
+        width = abs(left) + abs(right) + 1
+        kernel = np.ones((1, width), np.uint8)
+        # cv2 reads the kernel from the anchor outwards, so the anchor sits at
+        # the far side of the amount being added: anchor_x = right grows the
+        # mask left by `left` and right by `right`.
+        if left >= 0 and right >= 0:
+            out = cv2.dilate(out, kernel, anchor=(right, 0))
+        elif left <= 0 and right <= 0:
+            out = cv2.erode(out, kernel, anchor=(-right, 0))
+        else:
+            # One side out, the other in: do them one at a time.
+            out = _expand_sides(out.astype(bool), left, 0, 0, 0).astype(np.uint8)
+            out = _expand_sides(out.astype(bool), 0, right, 0, 0).astype(np.uint8)
+    if top or bottom:
+        height = abs(top) + abs(bottom) + 1
+        kernel = np.ones((height, 1), np.uint8)
+        if top >= 0 and bottom >= 0:
+            out = cv2.dilate(out, kernel, anchor=(0, bottom))
+        elif top <= 0 and bottom <= 0:
+            out = cv2.erode(out, kernel, anchor=(0, -bottom))
+        else:
+            out = _expand_sides(out.astype(bool), 0, 0, top, 0).astype(np.uint8)
+            out = _expand_sides(out.astype(bool), 0, 0, 0, bottom).astype(np.uint8)
+    return out.astype(bool)
+
+
+def reshape_opening(
+    state: GreenFrameDetection,
+    settings: GreenFrameSettings,
+    bounds: np.ndarray | None = None,
+) -> None:
+    """Push the opening out per side, and hold it inside the drawn frames.
+
+    Two things the detected green alone cannot say. A screen photographed at an
+    angle leaves a sliver of green along one edge that the artwork has to cover
+    -- that is what the per-side amounts are for. And a frame the user has
+    dragged in is a frame they want smaller: `bounds` is the union of the
+    frames as they now stand, and the opening is held inside it, so an edit
+    stops being something the render ignores.
+
+    An untouched template is unaffected: the saved quad contains the region it
+    was measured from, so the intersection takes nothing away.
+    """
+    sides = (
+        settings.mask_expand_left,
+        settings.mask_expand_right,
+        settings.mask_expand_top,
+        settings.mask_expand_bottom,
+    )
+    if not any(sides) and bounds is None:
+        return
+
+    clip = state.clip_mask
+    soft = state.soft_mask
+    if any(sides):
+        grown = _expand_sides(clip, *sides)
+        # Whatever the opening gained is fully open; what it had keeps its edge.
+        soft = np.maximum(soft, (grown & ~clip).astype(np.float32))
+        clip = grown
+        state.detect_mask = _expand_sides(state.detect_mask, *sides)
+    if bounds is not None:
+        clip = clip & bounds
+        soft = soft * bounds.astype(np.float32)
+    state.clip_mask = clip
+    state.soft_mask = soft
 
 
 def _soft_mask_for_regions(

@@ -526,6 +526,48 @@
                     </div>
                   </div>
                   <div class="slider-row">
+                    <label for="greenTolerance">Green tolerance</label>
+                    <div class="slider-container-row">
+                      <input type="range" id="greenTolerance" min="10" max="442" step="5" value="95">
+                      <span id="greenToleranceVal">95</span>
+                    </div>
+                  </div>
+                  <div class="label-row" style="margin: 6px 0 0;">
+                    <label style="margin: 0;">Mask expand</label>
+                    <span class="tip-icon" tabindex="0" aria-label="Mask expand"
+                      data-tooltip="Pushes the opening past the detected green on each side, in pixels. Use it to cover a sliver of green left along an edge; negative pulls the opening back.">i</span>
+                  </div>
+                  <div class="shadow-sides-grid">
+                    <div class="slider-row">
+                      <label for="greenMaskExpandTop">Top</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="greenMaskExpandTop" min="-50" max="150" step="1" value="0">
+                        <span id="greenMaskExpandTopVal">0px</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="greenMaskExpandBottom">Bottom</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="greenMaskExpandBottom" min="-50" max="150" step="1" value="0">
+                        <span id="greenMaskExpandBottomVal">0px</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="greenMaskExpandLeft">Left</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="greenMaskExpandLeft" min="-50" max="150" step="1" value="0">
+                        <span id="greenMaskExpandLeftVal">0px</span>
+                      </div>
+                    </div>
+                    <div class="slider-row">
+                      <label for="greenMaskExpandRight">Right</label>
+                      <div class="slider-container-row">
+                        <input type="range" id="greenMaskExpandRight" min="-50" max="150" step="1" value="0">
+                        <span id="greenMaskExpandRightVal">0px</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="slider-row">
                     <label for="greenEdgeAARadius">Edge AA</label>
                     <div class="slider-container-row">
                       <input type="range" id="greenEdgeAARadius" min="0" max="6" step="1" value="0">

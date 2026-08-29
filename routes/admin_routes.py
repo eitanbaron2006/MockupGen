@@ -454,10 +454,60 @@ def derived_mask_response(template_id: str, asset_name: str):
         return None
     from services.simple_mockup_service import mask_from_regions
 
+    mask = green_opening_mask(template_id, template, regions, canvas) or mask_from_regions(
+        regions, canvas
+    )
     buffer = io.BytesIO()
-    mask_from_regions(regions, canvas).save(buffer, format="PNG")
+    mask.save(buffer, format="PNG")
     buffer.seek(0)
     return send_file(buffer, mimetype="image/png")
+
+
+def green_opening_mask(template_id, template, regions, canvas):
+    """The opening the render will cut, for a template detected from green.
+
+    Drawing the saved frames would be an honest picture of the frames and a
+    misleading picture of the render: the render cuts the green it finds in the
+    mockup, held inside those frames and pushed out by whatever the per-side
+    amounts say. Building it the same way here is what keeps the editor's
+    overlay and the finished mockup showing the same opening.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from services.green_frame_mockup_service import (
+        detect_green_frames,
+        parse_green_frame_settings,
+        reshape_opening,
+    )
+    from services.simple_mockup_service import mask_from_regions
+
+    mode = raw_detection_mode(template)
+    if mode not in {"green_frames_mockups", "color_pick", "frame_points"}:
+        return None
+    background = published_asset_path(
+        Path(current_app.config["TEMPLATES_FOLDER"]), template_id, "background.png"
+    )
+    if background is None:
+        return None
+    settings = parse_green_frame_settings(template.get("effects"), template.get("fit_mode"))
+    try:
+        with Image.open(background) as image:
+            state = detect_green_frames(image.convert("RGBA"), settings)
+    except (OSError, ValueError):
+        return None
+    if not state.regions:
+        return None
+    bounds = np.asarray(mask_from_regions(regions, canvas)) > 127
+    reshape_opening(state, settings, bounds)
+    return Image.fromarray(np.where(state.clip_mask, 255, 0).astype(np.uint8), mode="L")
+
+
+def raw_detection_mode(template) -> str:
+    raw = template.get("raw_artwork_area")
+    if not isinstance(raw, dict):
+        return ""
+    return str(raw.get("mode") or raw.get("provider") or "")
 
 
 @admin_routes.get("/api/admin/templates/<template_id>/asset/<asset_name>")

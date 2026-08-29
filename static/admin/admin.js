@@ -415,6 +415,11 @@
     offset_x: 0,
     offset_y: 0,
     edge_expand: 0,
+    tolerance: 95,
+    mask_expand_left: 0,
+    mask_expand_right: 0,
+    mask_expand_top: 0,
+    mask_expand_bottom: 0,
     mask_build_quality: 2,
     feather_radius: 2,
     edge_aa_radius: 0,
@@ -495,6 +500,10 @@
     setGreenFrameLabel("greenOffsetXVal", $("greenOffsetX").value, "%");
     setGreenFrameLabel("greenOffsetYVal", $("greenOffsetY").value, "%");
     setGreenFrameLabel("greenEdgeExpandVal", $("greenEdgeExpand").value, "px");
+    setGreenFrameLabel("greenToleranceVal", $("greenTolerance").value, "");
+    ["Top", "Bottom", "Left", "Right"].forEach((side) => {
+      setGreenFrameLabel(`greenMaskExpand${side}Val`, $(`greenMaskExpand${side}`).value, "px");
+    });
     setGreenFrameLabel("greenMaskBuildQualityVal", $("greenMaskBuildQuality").value, "x");
     setGreenFrameLabel("greenFeatherRadiusVal", $("greenFeatherRadius").value, "px");
     setGreenFrameLabel("greenEdgeAARadiusVal", $("greenEdgeAARadius").value, "px");
@@ -513,6 +522,10 @@
     $("greenOffsetX").value = Math.round(Number(settings.offset_x || 0) * 100);
     $("greenOffsetY").value = Math.round(Number(settings.offset_y || 0) * 100);
     $("greenEdgeExpand").value = settings.edge_expand;
+    $("greenTolerance").value = settings.tolerance;
+    ["Top", "Bottom", "Left", "Right"].forEach((side) => {
+      $(`greenMaskExpand${side}`).value = settings[`mask_expand_${side.toLowerCase()}`] || 0;
+    });
     $("greenMaskBuildQuality").value = settings.mask_build_quality;
     $("greenFeatherRadius").value = settings.feather_radius;
     $("greenEdgeAARadius").value = settings.edge_aa_radius;
@@ -530,6 +543,11 @@
       offset_x: Number($("greenOffsetX").value) / 100,
       offset_y: Number($("greenOffsetY").value) / 100,
       edge_expand: Number($("greenEdgeExpand").value),
+      tolerance: Number($("greenTolerance").value),
+      mask_expand_top: Number($("greenMaskExpandTop").value),
+      mask_expand_bottom: Number($("greenMaskExpandBottom").value),
+      mask_expand_left: Number($("greenMaskExpandLeft").value),
+      mask_expand_right: Number($("greenMaskExpandRight").value),
       mask_build_quality: Number($("greenMaskBuildQuality").value),
       feather_radius: Number($("greenFeatherRadius").value),
       edge_aa_radius: Number($("greenEdgeAARadius").value),
@@ -4984,6 +5002,11 @@
     "greenOffsetX",
     "greenOffsetY",
     "greenEdgeExpand",
+    "greenTolerance",
+    "greenMaskExpandTop",
+    "greenMaskExpandBottom",
+    "greenMaskExpandLeft",
+    "greenMaskExpandRight",
     "greenMaskBuildQuality",
     "greenFeatherRadius",
     "greenEdgeAARadius",

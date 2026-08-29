@@ -844,3 +844,87 @@ def test_green_detection_state_keeps_its_masks_as_bits():
 
     # The channel that was never read is not carried at all.
     assert not hasattr(state, "green_alpha_mask")
+
+
+def test_reshape_opening_grows_per_side_and_stays_inside_the_drawn_frame():
+    """Two things the detected green cannot say on its own.
+
+    A screen photographed at an angle leaves a sliver of green along one edge
+    that the artwork has to cover -- that is what the per-side amounts are for.
+    And a frame the user has dragged in is a frame they want smaller, so the
+    opening is held inside the frames as they now stand: before this, editing a
+    frame on a green mockup moved the artwork and left the opening where the
+    green was, which read as the edit doing nothing.
+    """
+    import numpy as np
+
+    from services.green_frame_mockup_service import (
+        GreenFrameDetection,
+        GreenFrameSettings,
+        reshape_opening,
+    )
+
+    canvas = (40, 40)
+    green = np.zeros(canvas, dtype=bool)
+    green[10:20, 10:20] = True  # the detected opening
+    soft = green.astype(np.float32)
+    state = GreenFrameDetection(40, 40, [], green, green, green, soft, int(green.sum()))
+
+    settings = GreenFrameSettings(mask_expand_top=3, mask_expand_right=5)
+    reshape_opening(state, settings, None)
+
+    opening = state.clip_mask
+    ys, xs = np.where(opening)
+    assert ys.min() == 7 and xs.max() == 24  # three up, five to the right
+    assert ys.max() == 19 and xs.min() == 10  # the other two sides stay put
+    # What the opening gained is fully open, not half-feathered.
+    assert state.soft_mask[8, 15] == 1.0
+
+    # A frame pulled in cuts the opening down to it.
+    frame = np.zeros(canvas, dtype=bool)
+    frame[10:20, 10:15] = True
+    state = GreenFrameDetection(40, 40, [], green, green, green, soft, int(green.sum()))
+    reshape_opening(state, GreenFrameSettings(), frame)
+    assert state.clip_mask.sum() == frame.sum()
+    assert not state.clip_mask[15, 17]
+    assert state.soft_mask[15, 17] == 0.0
+
+    # Nothing asked for, nothing changed.
+    state = GreenFrameDetection(40, 40, [], green, green, green, soft, int(green.sum()))
+    reshape_opening(state, GreenFrameSettings(), None)
+    assert np.array_equal(state.clip_mask, green)
+
+
+def test_green_settings_carry_the_new_controls_into_the_render():
+    """The panel's numbers have to reach the render, and the cache has to know."""
+    from pathlib import Path
+
+    from services.green_frame_mockup_service import parse_green_frame_settings
+
+    settings = parse_green_frame_settings(
+        {
+            "green_frame_mockups": {
+                "tolerance": 140,
+                "mask_expand_left": 4,
+                "mask_expand_right": -3,
+                "mask_expand_top": 999,
+                "mask_expand_bottom": 7,
+            }
+        }
+    )
+    assert settings.tolerance == 140
+    # The panel reaches as far as the colour space does: 255*sqrt(3) = 441.67,
+    # the longest distance between two colours in RGB. Past that every pixel in
+    # the picture already scores as green, so there is nothing further to allow.
+    assert parse_green_frame_settings({"green_frame_mockups": {"tolerance": 442}}).tolerance == 442
+    assert parse_green_frame_settings({"green_frame_mockups": {"tolerance": 900}}).tolerance == 442
+    assert settings.mask_expand_left == 4
+    assert settings.mask_expand_right == -3
+    assert settings.mask_expand_top == 150  # clamped
+    assert settings.mask_expand_bottom == 7
+
+    # A detection cached under one set of amounts must not answer for another.
+    source = Path("services/simple_mockup_service.py").read_text(encoding="utf-8")
+    key = source.split("def _green_detection_cache_key(", 1)[1].split(chr(10) + "def ", 1)[0]
+    for field in ("mask_expand_left", "mask_expand_right", "mask_expand_top", "mask_expand_bottom"):
+        assert f"settings.{field}" in key, field
