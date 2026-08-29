@@ -182,6 +182,22 @@ def catalog() -> CatalogService:
     return current_app.extensions["catalog_service"]
 
 
+def detection_pool() -> ThreadPoolExecutor:
+    """The one pool detections run in, created with the app.
+
+    An app built by something other than create_app gets one on first use
+    rather than an error -- still one for the process, never one per request.
+    """
+    pool = current_app.extensions.get("detection_pool")
+    if pool is None:
+        pool = ThreadPoolExecutor(
+            max_workers=max(1, int(current_app.config.get("DETECTION_MAX_WORKERS", 5) or 5)),
+            thread_name_prefix="detect",
+        )
+        current_app.extensions["detection_pool"] = pool
+    return pool
+
+
 def json_error(message: str, status: int):
     return jsonify({"success": False, "error": message}), status
 
@@ -737,11 +753,9 @@ def batch_detect_admin_templates():
         except Exception as e:
             return {"template_id": template_id, "success": False, "error": str(e)}
 
-    results = []
-    # Max workers limits concurrent requests, 5 is a good default for API rate limits and memory
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        for result in executor.map(process_template, template_ids):
-            results.append(result)
+    # The process-wide pool, so a second batch queues behind the first instead
+    # of doubling the threads and the provider calls in flight.
+    results = list(detection_pool().map(process_template, template_ids))
 
     return jsonify({"success": True, "results": results})
 

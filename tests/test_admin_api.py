@@ -933,3 +933,58 @@ def test_missing_mask_file_is_drawn_from_the_template_own_frames(tmp_path: Path)
     catalog.update_template(template_id, {"raw_artwork_area": None})
     assert client.get(f"/api/admin/templates/{template_id}/asset/mask.png").status_code == 404
     assert client.get(f"/api/admin/templates/{template_id}/asset/nothing.png").status_code == 404
+
+
+def test_batch_detect_runs_in_one_pool_for_the_whole_process(tmp_path: Path):
+    """A pool per request has no ceiling worth the name.
+
+    Two batches arriving together used to put ten threads and ten provider
+    calls in flight where the limit was meant to be five; the AI provider's
+    quota is counted per project, not per request. Every batch now queues
+    against the pool the app was built with.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    app = build_app(tmp_path)
+    pool = app.extensions["detection_pool"]
+    assert isinstance(pool, ThreadPoolExecutor)
+    assert pool._max_workers == app.config["DETECTION_MAX_WORKERS"]
+
+    calls: list[int] = []
+
+    class RecordingPool:
+        def map(self, function, items):
+            items = list(items)
+            calls.append(len(items))
+            return [function(item) for item in items]
+
+    app.extensions["detection_pool"] = RecordingPool()
+
+    client = app.test_client()
+    csrf = login(client)
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers={"X-CSRF-Token": csrf}
+    ).get_json()["category"]
+    upload = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "wall.png")]},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf},
+    )
+    template_id = upload.get_json()["templates"][0]["template_id"]
+
+    response = client.post(
+        "/api/admin/templates/batch-detect",
+        json={"template_ids": [template_id, template_id]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+    assert len(response.get_json()["results"]) == 2
+    # The route reached for the shared pool rather than building its own.
+    assert calls == [2]
+
+    # Source-level: nothing in the route constructs a pool of its own any more.
+    route_source = Path("routes/admin_routes.py").read_text(encoding="utf-8")
+    batch = route_source.split("def batch_detect_admin_templates():", 1)[1].split("@admin_routes", 1)[0]
+    assert "ThreadPoolExecutor(" not in batch
+    assert "detection_pool()" in batch

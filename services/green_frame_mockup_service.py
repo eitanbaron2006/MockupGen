@@ -54,17 +54,70 @@ class GreenRegion:
     outer_corners: Optional[dict[str, dict[str, float]]] = None
 
 
-@dataclass
 class GreenFrameDetection:
-    width: int
-    height: int
-    regions: list[GreenRegion]
-    raw_mask: np.ndarray
-    detect_mask: np.ndarray
-    clip_mask: np.ndarray
-    soft_mask: np.ndarray
-    green_alpha_mask: np.ndarray
-    green_count: int
+    """What one detection found, held in the smallest form that still answers.
+
+    These are cached per template, and every mask in here is the size of the
+    canvas: at 1254x1254 the five arrays this used to hold came to 17MB an
+    entry and 208MB for a full cache, and a 6000x6000 mockup put the same cache
+    close to five gigabytes. Two changes bring that down without changing a
+    pixel of the result:
+
+    * the green alpha channel was stored and never read again -- it is gone;
+    * the three yes/no masks are kept as bits rather than as a byte per pixel
+      (numpy spends a whole byte on a bool), and unpacked on the way out.
+
+    The unpacking costs about a millisecond per canvas against a render that
+    takes far longer, and the callers see the same arrays they always did.
+    """
+
+    __slots__ = (
+        "width",
+        "height",
+        "regions",
+        "soft_mask",
+        "green_count",
+        "_raw_bits",
+        "_detect_bits",
+        "_clip_bits",
+    )
+
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        regions: list[GreenRegion],
+        raw_mask: np.ndarray,
+        detect_mask: np.ndarray,
+        clip_mask: np.ndarray,
+        soft_mask: np.ndarray,
+        green_count: int,
+    ) -> None:
+        self.width = width
+        self.height = height
+        self.regions = regions
+        self.soft_mask = soft_mask
+        self.green_count = green_count
+        self._raw_bits = np.packbits(raw_mask)
+        self._detect_bits = np.packbits(detect_mask)
+        self._clip_bits = np.packbits(clip_mask)
+
+    def _unpack(self, bits: np.ndarray) -> np.ndarray:
+        return np.unpackbits(bits, count=self.height * self.width).astype(bool).reshape(
+            (self.height, self.width)
+        )
+
+    @property
+    def raw_mask(self) -> np.ndarray:
+        return self._unpack(self._raw_bits)
+
+    @property
+    def detect_mask(self) -> np.ndarray:
+        return self._unpack(self._detect_bits)
+
+    @property
+    def clip_mask(self) -> np.ndarray:
+        return self._unpack(self._clip_bits)
 
 
 # How hard an edge has to be before a seed-point fill is stopped by it. Set
@@ -326,7 +379,7 @@ def detect_green_frames(mockup: Image.Image, settings: GreenFrameSettings | None
         region.inner_corners = _find_corners(corner_mask, region)
         region.outer_corners = _find_corners(detect_mask, region)
         region.corners = region.inner_corners
-    return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, alpha, int(raw_mask.sum()))
+    return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, int(raw_mask.sum()))
 
 
 def _soft_mask_for_regions(
@@ -549,7 +602,7 @@ def detection_from_mask(
         soft_mask = alpha.astype(np.float32)
     else:
         soft_mask = _soft_mask_for_regions(union, alpha.astype(np.float32), regions, settings)
-    return GreenFrameDetection(mask.width, mask.height, regions, raw_mask, detect_mask, union, soft_mask, alpha.astype(np.float32), int(raw_mask.sum()))
+    return GreenFrameDetection(mask.width, mask.height, regions, raw_mask, detect_mask, union, soft_mask, int(raw_mask.sum()))
 
 
 
@@ -602,7 +655,7 @@ def detect_frames_by_color(
         region.inner_corners = _find_corners(corner_mask, region)
         region.outer_corners = _find_corners(detect_mask, region)
         region.corners = region.inner_corners
-    return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, alpha, int(raw_mask.sum()))
+    return GreenFrameDetection(w, h, regions, raw_mask, detect_mask, union, soft_mask, int(raw_mask.sum()))
 
 
 def _refine_region_boundaries(rgb: np.ndarray, region_mask: np.ndarray, max_snap: int = 6) -> np.ndarray:
@@ -854,7 +907,7 @@ def detect_frames_from_points(
         region.inner_corners = _find_corners(corner_mask, region)
         region.outer_corners = _find_corners(detect_mask, region)
         region.corners = region.inner_corners
-    return GreenFrameDetection(w, h, detected_regions, combined_mask, detect_mask, union, soft_mask, alpha, int(combined_mask.sum()))
+    return GreenFrameDetection(w, h, detected_regions, combined_mask, detect_mask, union, soft_mask, int(combined_mask.sum()))
 
 
 def _list_to_corners(points: Any) -> Optional[dict[str, dict[str, float]]]:

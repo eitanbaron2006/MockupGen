@@ -53,6 +53,9 @@ class Config:
     DEFAULT_SECRET_KEY = "development-only-change-me"
     SECRET_KEY = os.getenv("SECRET_KEY", DEFAULT_SECRET_KEY)
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+    # How many detections the server runs at once, across every request. The
+    # AI provider's quota is counted per project, not per request.
+    DETECTION_MAX_WORKERS = int(os.getenv("DETECTION_MAX_WORKERS", "5") or 5)
     DETECTION_PROVIDER = os.getenv("DETECTION_PROVIDER", "classic").strip().lower()
     VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "").strip()
     VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "global").strip()

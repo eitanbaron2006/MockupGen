@@ -62,6 +62,18 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         except OSError:
             return "0"
 
+    # One pool of detection workers for the whole process. Building a pool per
+    # request meant two batches running at once put twice the threads and twice
+    # the provider calls in flight, with nothing holding the ceiling; queued
+    # against a single pool they simply wait their turn. Threads are created on
+    # demand, so an app that never detects anything pays nothing for it.
+    from concurrent.futures import ThreadPoolExecutor
+
+    app.extensions["detection_pool"] = ThreadPoolExecutor(
+        max_workers=max(1, int(app.config.get("DETECTION_MAX_WORKERS", 5) or 5)),
+        thread_name_prefix="detect",
+    )
+
     from services.telemetry_service import TelemetryService
     telemetry_service = TelemetryService(
         upload_folder=Path(app.config["UPLOAD_FOLDER"]),

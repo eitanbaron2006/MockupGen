@@ -807,3 +807,40 @@ def test_frame_points_keeps_the_angle_of_a_frame_that_is_not_level(tmp_path: Pat
     bottom = math.degrees(math.atan2(frame[2]["y"] - frame[3]["y"], frame[2]["x"] - frame[3]["x"]))
     assert abs(top + tilt) <= 1.0, f"the top edge came back at {top:+.2f} degrees, not {-tilt:+.2f}"
     assert abs(bottom + tilt) <= 1.0, f"the bottom edge came back at {bottom:+.2f} degrees"
+
+
+def test_green_detection_state_keeps_its_masks_as_bits():
+    """A detection is cached per template, and every mask in it is canvas-sized.
+
+    Five full-canvas arrays came to 17MB an entry and 208MB for a full cache at
+    1254x1254 -- close to five gigabytes at 6000x6000. The alpha channel among
+    them was written and never read again, and numpy spends a whole byte on a
+    bool, so the three yes/no masks are kept as bits. Nothing about the result
+    changes: packbits round-trips exactly, and this test is what says so.
+    """
+    import numpy as np
+
+    from services.green_frame_mockup_service import GreenFrameDetection
+
+    width, height = 37, 23  # deliberately not a multiple of 8
+    rng = np.random.default_rng(7)
+    raw = rng.random((height, width)) > 0.5
+    detect = rng.random((height, width)) > 0.5
+    clip = rng.random((height, width)) > 0.5
+    soft = rng.random((height, width)).astype(np.float32)
+
+    state = GreenFrameDetection(width, height, [], raw, detect, clip, soft, int(raw.sum()))
+
+    # What the callers read is what was put in, bit for bit.
+    for got, expected in ((state.raw_mask, raw), (state.detect_mask, detect), (state.clip_mask, clip)):
+        assert got.dtype == np.dtype(bool)
+        assert got.shape == (height, width)
+        assert np.array_equal(got, expected)
+    assert np.array_equal(state.soft_mask, soft)
+
+    # A byte per eight pixels, not one per pixel.
+    packed = state._raw_bits.nbytes + state._detect_bits.nbytes + state._clip_bits.nbytes
+    assert packed <= (raw.nbytes + detect.nbytes + clip.nbytes) / 7
+
+    # The channel that was never read is not carried at all.
+    assert not hasattr(state, "green_alpha_mask")
