@@ -1,6 +1,6 @@
 {
   "template_id": "template_5372c6f535b4",
-  "name": "ChatGPT Image May 28 2026 12 16 51 PM 9",
+  "name": "H1-3",
   "product_type": "horizontal-wall-art",
   "canvas_width": 1254,
   "canvas_height": 1254,
@@ -32,52 +32,40 @@
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": "mask.png",
+  "mask": null,
   "preview": "preview.png",
   "supported_modes": [
     "simple"
   ],
   "output_format": "png",
   "effects": {
-    "color_tint": {
-      "enabled": false,
-      "intensity": 0.2,
-      "target": "artwork",
-      "temperature": 25
+    "inner_shadow": {
+      "enabled": true,
+      "top": 18,
+      "right": 8,
+      "bottom": 8,
+      "left": 18,
+      "opacity": 0.35,
+      "blur": 2,
+      "target": "artwork"
     },
     "glass_reflection": {
-      "enabled": true,
+      "enabled": false,
+      "type": "double_glare",
       "opacity": 0.25,
-      "target": "artwork",
-      "type": "double_glare"
+      "target": "artwork"
     },
-    "global_png_overlay": {
-      "anchor": "center",
-      "blend_mode": "normal",
-      "blur": 0,
+    "matte_finish": {
       "enabled": false,
-      "flip_x": false,
-      "flip_y": false,
-      "image": "",
-      "opacity": 0.5,
-      "position_x": 0,
-      "position_y": 0,
-      "repeat": false,
-      "rotation": 0,
-      "scale": 1,
-      "target": "all",
-      "tint_color": "#ffffff",
-      "tint_strength": 0
+      "shadow_lift": 0.08,
+      "contrast": -0.14,
+      "target": "artwork"
     },
-    "global_reflections": {
+    "color_tint": {
       "enabled": false,
-      "rays_angle": 0,
-      "rays_opacity": 0.2,
-      "rays_type": "none",
-      "target": "all",
-      "window_blur": 20,
-      "window_opacity": 0.2,
-      "window_type": "none"
+      "temperature": 25,
+      "intensity": 0.2,
+      "target": "artwork"
     },
     "gobo_shadow": {
       "enabled": false,
@@ -85,28 +73,40 @@
       "scale": 1,
       "target": "artwork"
     },
-    "inner_shadow": {
-      "blur": 2,
-      "bottom": 8,
-      "enabled": true,
-      "left": 18,
-      "opacity": 0.35,
-      "right": 8,
-      "target": "artwork",
-      "top": 18
-    },
-    "matte_finish": {
-      "contrast": -0.14,
-      "enabled": false,
-      "shadow_lift": 0.08,
-      "target": "artwork"
-    },
     "photoshop_adjustments": {
-      "brightness": 0,
-      "color_filter": "none",
-      "contrast": 0,
       "enabled": false,
+      "brightness": 0,
+      "contrast": 0,
       "saturation": 0,
+      "color_filter": "none",
+      "target": "all"
+    },
+    "global_png_overlay": {
+      "enabled": false,
+      "image": "",
+      "opacity": 0.5,
+      "scale": 1,
+      "position_x": 0,
+      "position_y": 0,
+      "rotation": 0,
+      "anchor": "center",
+      "blend_mode": "normal",
+      "tint_color": "#ffffff",
+      "tint_strength": 0,
+      "blur": 0,
+      "flip_x": false,
+      "flip_y": false,
+      "repeat": false,
+      "target": "all"
+    },
+    "global_reflections": {
+      "enabled": false,
+      "window_type": "none",
+      "window_opacity": 0.2,
+      "window_blur": 20,
+      "rays_type": "none",
+      "rays_opacity": 0.2,
+      "rays_angle": 0,
       "target": "all"
     }
   },

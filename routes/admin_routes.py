@@ -1,4 +1,5 @@
 import hmac
+import io
 import json
 import secrets
 import threading
@@ -413,6 +414,36 @@ def published_asset_path(templates_folder: Path, template_id: str, asset_name: s
     return asset_path
 
 
+def derived_mask_response(template_id: str, asset_name: str):
+    """The opening a template's own frames describe, drawn on request.
+
+    Fifteen published templates name a mask.png that was never written beside
+    them. What they do carry is the frames themselves, and the renderer already
+    falls back to drawing the mask from those (mask_from_regions), so the
+    editor asking for the file was the only thing left with nothing to show --
+    an unclipped overlay and a 404 in the console. Drawing the same mask here
+    keeps what the editor shows and what the render produces the same thing.
+    """
+    if asset_name != "mask.png":
+        return None
+    template = catalog().get_template(template_id)
+    if not template:
+        return None
+    raw = template.get("raw_artwork_area")
+    regions = raw.get("regions") if isinstance(raw, dict) else None
+    if not regions:
+        return None
+    canvas = (int(template["canvas_width"]), int(template["canvas_height"]))
+    if canvas[0] < 1 or canvas[1] < 1:
+        return None
+    from services.simple_mockup_service import mask_from_regions
+
+    buffer = io.BytesIO()
+    mask_from_regions(regions, canvas).save(buffer, format="PNG")
+    buffer.seek(0)
+    return send_file(buffer, mimetype="image/png")
+
+
 @admin_routes.get("/api/admin/templates/<template_id>/asset/<asset_name>")
 @require_admin_json
 def admin_template_asset(template_id: str, asset_name: str):
@@ -425,6 +456,9 @@ def admin_template_asset(template_id: str, asset_name: str):
             Path(current_app.config["TEMPLATES_FOLDER"]), template_id, asset_name
         )
         if asset_path is None:
+            derived = derived_mask_response(template_id, asset_name)
+            if derived is not None:
+                return derived
             return json_error("Asset not found", 404)
     return send_file(asset_path)
 

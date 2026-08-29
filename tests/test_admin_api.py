@@ -861,3 +861,75 @@ def test_requests_have_a_size_ceiling_by_default(tmp_path: Path):
 
     assert config.DEFAULT_MAX_CONTENT_LENGTH == 32 * 1024 * 1024
     assert build_app(tmp_path).config["MAX_CONTENT_LENGTH"] == config.DEFAULT_MAX_CONTENT_LENGTH
+
+
+def test_missing_mask_file_is_drawn_from_the_template_own_frames(tmp_path: Path):
+    """A template can name a mask.png that was never written beside it.
+
+    The renderer already draws that mask from the frames the template carries;
+    the editor asking the server for the file was the only thing left with
+    nothing to show -- an unclipped overlay and a 404 in the console. The same
+    drawing is served here, so both see the same opening.
+    """
+    from PIL import Image
+
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+
+    response = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers={"X-CSRF-Token": csrf}
+    )
+    category_id = response.get_json()["category"]["id"]
+    upload = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category_id), "mockups": [(image_bytes((900, 900)), "green.png")]},
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert upload.status_code in (200, 201)
+    template_id = upload.get_json()["templates"][0]["template_id"]
+    published = client.post(
+        f"/api/admin/templates/{template_id}/activate",
+        json={},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert published.status_code == 200
+
+    # A published template that names a mask file which is not on disk.
+    catalog = client.application.extensions["catalog_service"]
+    catalog.update_template(
+        template_id,
+        {
+            "mask_name": "mask.png",
+            "raw_artwork_area": {
+                "mode": "green_frames_mockups",
+                "regions": [
+                    {
+                        "corners": [
+                            {"x": 100, "y": 150},
+                            {"x": 500, "y": 150},
+                            {"x": 500, "y": 600},
+                            {"x": 100, "y": 600},
+                        ]
+                    }
+                ],
+            },
+        },
+    )
+    templates_folder = Path(client.application.config["TEMPLATES_FOLDER"])
+    assert not (templates_folder / template_id / "mask.png").exists()
+
+    served = client.get(f"/api/admin/templates/{template_id}/asset/mask.png")
+    assert served.status_code == 200
+    assert served.mimetype == "image/png"
+
+    mask = Image.open(io.BytesIO(served.data)).convert("L")
+    assert mask.size == (900, 900)
+    # getbbox is exclusive on the right and bottom edge.
+    box = mask.point(lambda value: 255 if value > 127 else 0).getbbox()
+    assert box == (100, 150, 501, 601)
+
+    # A template with no frames to draw from still says the asset is missing.
+    catalog.update_template(template_id, {"raw_artwork_area": None})
+    assert client.get(f"/api/admin/templates/{template_id}/asset/mask.png").status_code == 404
+    assert client.get(f"/api/admin/templates/{template_id}/asset/nothing.png").status_code == 404

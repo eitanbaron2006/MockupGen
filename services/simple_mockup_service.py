@@ -609,7 +609,7 @@ def _green_detection_cache_key(
     )
 
 
-def _mask_from_regions(regions: list[dict], canvas_size: tuple[int, int]) -> Image.Image:
+def mask_from_regions(regions: list[dict], canvas_size: tuple[int, int]) -> Image.Image:
     """The opening each saved frame describes, drawn as a mask.
 
     Used where no mask file stands behind the template: the frames carry exact
@@ -673,7 +673,7 @@ def _render_green_frame_mockup(
                 # save the derived mask over the detected one, which quietly
                 # destroyed the real outline the moment a frame was rendered.
                 detection = detection_from_mask(
-                    _mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
+                    mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
                 )
             else:
                 detection = detect_green_frames(background, settings)
@@ -696,7 +696,7 @@ def _render_green_frame_mockup(
                     # admin that surfaced as a Download button with nothing
                     # behind it.
                     detection = detection_from_mask(
-                        _mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
+                        mask_from_regions(raw_regions, canvas_size), raw_artwork_area, settings
                     )
 
             if raw_regions and isinstance(raw_regions, list):
