@@ -1028,3 +1028,34 @@ def test_admin_javascript_is_a_module_with_its_helpers_split_out():
     for reference in ("state.", "document.getElementById", "document.querySelector",
                       "fetch(", "localStorage", "addEventListener"):
         assert reference not in helpers, reference
+
+
+def test_the_admin_javascript_parses_as_the_modules_it_claims_to_be():
+    """A half-moved function leaves a file that loads and never runs.
+
+    It happened twice while this file was being split up: a brace left behind
+    in one file and one missing from another. The browser fetched both,
+    executed neither, and said nothing that reached the log. node is what says
+    so honestly -- and the .mjs suffix is the point: checking a .js file parses
+    an ES module as a script and finds nothing wrong with it.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if not node:
+        import pytest
+
+        pytest.skip("node is not installed; CI runs this check")
+
+    files = [ADMIN_JS, ADMIN_HELPERS, ADMIN_RAILS, ADMIN_SLIDERS,
+             SERVER_ROOT / "static" / "admin" / "modules" / "api.js"]
+    with tempfile.TemporaryDirectory() as folder:
+        for path in files:
+            copy = Path(folder) / f"{path.stem}.mjs"
+            copy.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            result = subprocess.run(
+                [node, "--check", str(copy)], capture_output=True, text=True, timeout=60
+            )
+            assert result.returncode == 0, f"{path.name}: {result.stderr.strip()[:400]}"
