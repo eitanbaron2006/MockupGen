@@ -56,6 +56,14 @@ class Config:
     # How many detections the server runs at once, across every request. The
     # AI provider's quota is counted per project, not per request.
     DETECTION_MAX_WORKERS = int(os.getenv("DETECTION_MAX_WORKERS", "5") or 5)
+    # How far from pure green a pixel may sit and still count as the screen,
+    # when DETECT FRAME looks for green frames. Higher finds more of a screen
+    # that photographed dull or unevenly lit; too high and the detection stops
+    # telling the screen from the room. Editable in the admin's engine settings.
+    CLASSIC_GREEN_TOLERANCE = int(os.getenv("CLASSIC_GREEN_TOLERANCE", "130") or 130)
+    # What detection runs by itself when a mockup is added: "auto", the green
+    # screen finder, or "none" to import it and leave the frames to you.
+    CLASSIC_IMPORT_MODE = os.getenv("CLASSIC_IMPORT_MODE", "auto").strip().lower() or "auto"
     DETECTION_PROVIDER = os.getenv("DETECTION_PROVIDER", "classic").strip().lower()
     VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "").strip()
     VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "global").strip()

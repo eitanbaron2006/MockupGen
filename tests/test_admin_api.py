@@ -73,7 +73,7 @@ def test_admin_page_and_authenticated_category_crud(tmp_path: Path):
     assert b"Local model" in admin_page.data
     assert b"dashed" in admin_page.data
     assert b"Classic / No AI" in admin_page.data
-    assert b"Green frames mockups" in admin_page.data
+    assert b"Green Frames" in admin_page.data
     assert b"Green edge cleanup expansion" in admin_page.data
     categories = client.get("/api/admin/categories").get_json()["categories"]
     assert categories[0]["name"] == "Wall Art"
@@ -988,3 +988,170 @@ def test_batch_detect_runs_in_one_pool_for_the_whole_process(tmp_path: Path):
     batch = route_source.split("def batch_detect_admin_templates():", 1)[1].split("@admin_routes", 1)[0]
     assert "ThreadPoolExecutor(" not in batch
     assert "detection_pool()" in batch
+
+
+def test_green_detection_tolerance_is_a_setting_anyone_can_change(tmp_path: Path):
+    """How strict DETECT FRAME is about green belongs to whoever runs the studio.
+
+    It was a number in the source before, which meant a mockup whose screen
+    photographed dull could only be fixed by editing frames by hand. It is now
+    saved with the other engine settings, reaches the detector, and is refused
+    outside the range the colour space allows.
+    """
+    import config
+    from services.detection_service import build_provider
+
+    assert config.Config.CLASSIC_GREEN_TOLERANCE == 130
+
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+
+    saved = client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_GREEN_TOLERANCE": "160"},
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    settings = client.get("/api/admin/settings/detection").get_json()["settings"]
+    assert settings["CLASSIC_GREEN_TOLERANCE"] == "160"
+
+    # It reaches the detector rather than sitting in the table.
+    provider = build_provider(settings, client.application.config)
+    assert provider.green_tolerance == 160
+    assert provider._green_settings().tolerance == 160
+
+    # ...and the default is what a provider gets with nothing saved.
+    assert build_provider({}, client.application.config).green_tolerance == 130
+
+    for bad in ("9", "500", "not a number"):
+        rejected = client.put(
+            "/api/admin/settings/detection",
+            json={"DETECTION_PROVIDER": "classic", "CLASSIC_GREEN_TOLERANCE": bad},
+            headers=headers,
+        )
+        assert rejected.status_code == 400, bad
+
+
+def test_a_blank_control_cannot_sink_the_whole_settings_save(tmp_path: Path):
+    """One control that could not show its value used to fail the entire panel.
+
+    The classic-mode select had no option for the green-frames submode, so with
+    that mode active it rendered blank and sent "" -- and an empty submode was
+    rejected as an unsupported one, taking the tolerance and everything else on
+    the panel down with it. A blank is now nothing to save rather than a bad
+    value, and the option it was missing is there.
+    """
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "green_frames"},
+        headers=headers,
+    )
+
+    response = client.put(
+        "/api/admin/settings/detection",
+        json={
+            "DETECTION_PROVIDER": "classic",
+            "CLASSIC_SUBMODE": "",
+            "CLASSIC_INTERNAL_MODE": "",
+            "CLASSIC_GREEN_TOLERANCE": "160",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    settings = client.get("/api/admin/settings/detection").get_json()["settings"]
+    assert settings["CLASSIC_GREEN_TOLERANCE"] == "160"
+    # The blank was not stored over the mode that was already there.
+    assert settings["CLASSIC_SUBMODE"] == "green_frames"
+
+    # A real value that is not a mode is still refused.
+    assert client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "sideways"},
+        headers=headers,
+    ).status_code == 400
+
+    # None is a choice that saves, not an empty value that is dropped.
+    assert client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "none"},
+        headers=headers,
+    ).status_code == 200
+    assert client.get("/api/admin/settings/detection").get_json()["settings"]["CLASSIC_SUBMODE"] == "none"
+
+
+def test_detection_on_new_mockups_is_its_own_setting(tmp_path: Path):
+    """Adding mockups and working on one are different moments.
+
+    The panel used to set the mode the studio was working in, which meant
+    choosing a default for imports changed what the top bar was doing right
+    then. It now says only what runs by itself when a mockup is added -- and
+    "none" means the mockup comes in and the frames are left to you, which is
+    the whole point of having the choice.
+    """
+    import config
+
+    assert config.Config.CLASSIC_IMPORT_MODE == "auto"
+
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+
+    def upload(name: str):
+        return client.post(
+            "/api/admin/templates/import",
+            data={"category_id": str(category["id"]), "mockups": [(image_bytes(), name)]},
+            content_type="multipart/form-data",
+            headers=headers,
+        ).get_json()["templates"][0]
+
+    # By default a new mockup is detected on the way in.
+    detected = upload("detected.png")
+    assert detected["artwork_area"] is not None
+    assert detected["detection_provider"]
+
+    # Told not to, the import stops at importing.
+    assert client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_IMPORT_MODE": "none"},
+        headers=headers,
+    ).status_code == 200
+    untouched = upload("untouched.png")
+    assert untouched["artwork_area"] is None
+    assert untouched["status"] == "draft"
+
+    # Choosing it leaves the mode the studio is working in exactly where it was.
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "green_frames"},
+        headers=headers,
+    )
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_IMPORT_MODE": "auto"},
+        headers=headers,
+    )
+    settings = client.get("/api/admin/settings/detection").get_json()["settings"]
+    assert settings["CLASSIC_SUBMODE"] == "green_frames"
+    assert settings["CLASSIC_IMPORT_MODE"] == "auto"
+
+    # Only what can run unattended is offered.
+    assert client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_IMPORT_MODE": "color_pick"},
+        headers=headers,
+    ).status_code == 400
+
+    html = (SERVER_ROOT / "templates" / "admin" / "index.html").read_text(encoding="utf-8")
+    select = html.split('<select id="classicImportMode"', 1)[1].split("</select>", 1)[0]
+    for mode in ("none", "auto", "green_frames"):
+        assert f'value="{mode}"' in select, mode
+    assert 'value="color_pick"' not in select

@@ -528,8 +528,8 @@
                   <div class="slider-row">
                     <label for="greenTolerance">Green tolerance</label>
                     <div class="slider-container-row">
-                      <input type="range" id="greenTolerance" min="10" max="442" step="5" value="95">
-                      <span id="greenToleranceVal">95</span>
+                      <input type="range" id="greenTolerance" min="10" max="442" step="5" value="442">
+                      <span id="greenToleranceVal">442</span>
                     </div>
                   </div>
                   <div class="label-row" style="margin: 6px 0 0;">
@@ -1253,17 +1253,23 @@
           absolute precision, applies a 3px boundary inset, and requires no custom configuration parameters.
         </div>
         <div class="config-field" style="margin-top: 15px;">
-          <label for="classicSubmodeSelect">Default Classic Detection Mode</label>
-          <select id="classicSubmodeSelect">
+          <label for="classicImportMode">Detection on new mockups</label>
+          <select id="classicImportMode"
+            title="What runs by itself when a mockup is added. It does not change the mode you are working in now -- the buttons in the top bar do that.">
+            <option value="none">None (import only, detect later)</option>
             <option value="auto">Auto Detect (Geometry &amp; Multi-stage SAM 2.1)</option>
-            <option value="frame_points">Frame Points (Multi-frame Center Points)</option>
-            <option value="color_pick">Color Pick (Sample Color &amp; Tolerance / Green frames mockups)</option>
+            <option value="green_frames">Green Frames (Chroma-key screens)</option>
           </select>
         </div>
         <div class="config-row classic-green-options" id="classicGreenOptions">
           <div>
             <label for="classicGreenEdgeExpand">Green edge cleanup expansion</label>
             <input class="text-input" id="classicGreenEdgeExpand" type="number" min="0" max="255" step="1" value="0">
+          </div>
+          <div>
+            <label for="classicGreenTolerance">Green detection tolerance</label>
+            <input class="text-input" id="classicGreenTolerance" type="number" min="10" max="442" step="5"
+              value="130" title="How far from pure green a pixel may sit and still count as the screen when Detect frame runs. Higher finds more of a screen that photographed dull or unevenly lit; too high and detection stops telling the screen from the room.">
           </div>
         </div>
       </section>

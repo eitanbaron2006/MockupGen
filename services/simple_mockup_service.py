@@ -689,7 +689,15 @@ def _render_green_frame_mockup(
                 isinstance(region, dict) and (region.get("corners") or region.get("inner_corners"))
                 for region in (raw_regions or [])
             )
-            if not detection.regions or (raw_regions and not raw_has_perspective):
+            # A tolerance wide enough to count every pixel as green has stopped
+            # discriminating: what comes back is one region the size of the
+            # canvas, which says nothing about where the opening is. The
+            # recorded shape does -- the mask beside the template, or failing
+            # that the frames themselves. This is what lets the tolerance sit
+            # wide open by default without losing an opening whose shape the
+            # frames cannot describe.
+            undiscriminating = detection.green_count >= 0.9 * canvas_size[0] * canvas_size[1]
+            if not detection.regions or undiscriminating or (raw_regions and not raw_has_perspective):
                 if mask_name and (template_folder / mask_name).is_file():
                     full_mask = _full_canvas_mask(template_folder, mask_name, canvas_size, area)
                     detection = detection_from_mask(full_mask, raw_artwork_area, settings)

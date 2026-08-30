@@ -61,6 +61,8 @@ SETTINGS_KEYS = {
     "CLASSIC_INTERNAL_MODE",
     "CLASSIC_SUBMODE",
     "CLASSIC_GREEN_EDGE_EXPAND",
+    "CLASSIC_GREEN_TOLERANCE",
+    "CLASSIC_IMPORT_MODE",
 }
 
 
@@ -196,6 +198,12 @@ def detection_pool() -> ThreadPoolExecutor:
         )
         current_app.extensions["detection_pool"] = pool
     return pool
+
+
+def _setting_int(settings, config, key: str, fallback: int) -> int:
+    from services.detection_service import _setting_int as read_int
+
+    return read_int(settings, config, key, fallback)
 
 
 def json_error(message: str, status: int):
@@ -370,7 +378,21 @@ def import_admin_templates():
             drafts_folder=Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
             catalog=catalog(),
         )
-        detector = ClassicDetectionProvider()
+        # What runs on a newly added mockup is a setting of its own, separate
+        # from the mode the studio is in: adding mockups and working on one are
+        # different moments. "none" imports them and leaves the frames to you.
+        engine = catalog().get_settings()
+        import_mode = str(
+            engine.get("CLASSIC_IMPORT_MODE")
+            or current_app.config.get("CLASSIC_IMPORT_MODE", "auto")
+        ).strip().lower() or "auto"
+        if import_mode == "none":
+            return jsonify({"success": True, "templates": templates}), 201
+        detector = ClassicDetectionProvider(
+            green_edge_expand=_setting_int(engine, current_app.config, "CLASSIC_GREEN_EDGE_EXPAND", 1),
+            green_tolerance=_setting_int(engine, current_app.config, "CLASSIC_GREEN_TOLERANCE", 130),
+            default_mode="green_frames_mockups" if import_mode == "green_frames" else "auto",
+        )
         detected_templates = []
         for template in templates:
             if template["status"] == "active":
@@ -497,6 +519,11 @@ def green_opening_mask(template_id, template, regions, canvas):
     except (OSError, ValueError):
         return None
     if not state.regions:
+        return None
+    # Wide open, the green test counts the whole canvas and says nothing about
+    # where the opening is; the render falls back to the frames there, so this
+    # does too rather than showing an opening the render will not cut.
+    if state.green_count >= 0.9 * canvas[0] * canvas[1]:
         return None
     bounds = np.asarray(mask_from_regions(regions, canvas)) > 127
     reshape_opening(state, settings, bounds)
@@ -877,7 +904,13 @@ def get_detection_models():
 @require_csrf
 def update_detection_settings():
     payload = request.get_json(silent=True) or {}
-    settings = {key: str(payload[key]).strip() for key in SETTINGS_KEYS if key in payload}
+    # A blank field is nothing to save, not a value to reject: one control the
+    # panel could not fill used to sink every other setting sent with it.
+    settings = {
+        key: str(payload[key]).strip()
+        for key in SETTINGS_KEYS
+        if key in payload and str(payload[key]).strip() != ""
+    }
     if settings.get("DETECTION_PROVIDER") not in {None, "classic", "vertex", "local"}:
         return json_error("Unsupported detection provider", 400)
     if settings.get("VERTEX_MODEL") == "gemini-3-flash-preview":
@@ -890,8 +923,14 @@ def update_detection_settings():
         return json_error("Unsupported refinement mode", 400)
     if settings.get("CLASSIC_INTERNAL_MODE") not in {None, "auto", "green_frames_mockups"}:
         return json_error("Unsupported classic internal mode", 400)
-    if settings.get("CLASSIC_SUBMODE") not in {None, "auto", "frame_points", "green_frames", "color_pick"}:
+    # "none" is a choice, not a missing value: it leaves no mode preselected,
+    # and Detect frame runs the ordinary classic path.
+    if settings.get("CLASSIC_SUBMODE") not in {None, "none", "auto", "frame_points", "green_frames", "color_pick"}:
         return json_error("Unsupported classic submode", 400)
+    # Only what can run unattended belongs here: frame points and colour pick
+    # need someone to point at something.
+    if settings.get("CLASSIC_IMPORT_MODE") not in {None, "none", "auto", "green_frames"}:
+        return json_error("Unsupported detection mode for new mockups", 400)
     if "CLASSIC_GREEN_EDGE_EXPAND" in settings:
         try:
             edge_expand = int(settings["CLASSIC_GREEN_EDGE_EXPAND"])
@@ -899,6 +938,13 @@ def update_detection_settings():
             return json_error("Green frame edge expansion must be a number", 400)
         if edge_expand < 0 or edge_expand > 255:
             return json_error("Green frame edge expansion must be between 0 and 255", 400)
+    if "CLASSIC_GREEN_TOLERANCE" in settings:
+        try:
+            tolerance = int(settings["CLASSIC_GREEN_TOLERANCE"])
+        except ValueError:
+            return json_error("Green detection tolerance must be a number", 400)
+        if tolerance < 10 or tolerance > 442:
+            return json_error("Green detection tolerance must be between 10 and 442", 400)
     catalog().set_settings(settings)
     return jsonify({"success": True, "settings": settings})
 

@@ -415,7 +415,7 @@
     offset_x: 0,
     offset_y: 0,
     edge_expand: 0,
-    tolerance: 95,
+    tolerance: 442,
     mask_expand_left: 0,
     mask_expand_right: 0,
     mask_expand_top: 0,
@@ -4321,9 +4321,7 @@
     document.querySelectorAll(".submode-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.submode === currentSubmode);
     });
-    if ($("classicSubmodeSelect")) {
-      $("classicSubmodeSelect").value = currentSubmode;
-    }
+
   }
 
   function initClassicSubmodeButtons() {
@@ -4365,7 +4363,8 @@
       const sub = state.settings.CLASSIC_SUBMODE || "auto";
       const subTitle = sub === "frame_points" ? "Frame Points"
         : sub === "green_frames" ? "Green Frames"
-        : sub === "color_pick" ? "Color Pick" : "Auto Detect";
+        : sub === "color_pick" ? "Color Pick"
+        : sub === "none" ? "None" : "Auto Detect";
       $("engineModel").textContent = provider === "vertex"
         ? `${vModel} / ${vLoc}`
         : provider === "local" ? lModel
@@ -4477,8 +4476,9 @@
     if ($("refinementMode")) $("refinementMode").value = state.settings.DETECTION_REFINEMENT || "ai_only";
     if ($("classicBlurSize")) $("classicBlurSize").value = state.settings.CLASSIC_BLUR_SIZE || "3";
     if ($("classicSearchRadius")) $("classicSearchRadius").value = state.settings.CLASSIC_SEARCH_RADIUS || "20";
-    if ($("classicSubmodeSelect")) $("classicSubmodeSelect").value = state.settings.CLASSIC_SUBMODE || "auto";
+    if ($("classicImportMode")) $("classicImportMode").value = state.settings.CLASSIC_IMPORT_MODE || "auto";
     if ($("classicGreenEdgeExpand")) $("classicGreenEdgeExpand").value = state.settings.CLASSIC_GREEN_EDGE_EXPAND || "0";
+    if ($("classicGreenTolerance")) $("classicGreenTolerance").value = state.settings.CLASSIC_GREEN_TOLERANCE || "130";
     if ($("localUrl")) $("localUrl").value = state.settings.LOCAL_DETECTION_URL || "";
     
     showProvider(state.settings.DETECTION_PROVIDER || "classic");
@@ -4492,8 +4492,9 @@
   async function saveSettings(showFeedback = true) {
     try {
       if ($("vertexModel").value === "gemini-3-flash-preview") $("vertexLocation").value = "global";
-      const classicSubmode = $("classicSubmodeSelect") ? $("classicSubmodeSelect").value : (state.settings.CLASSIC_SUBMODE || "auto");
-      state.settings.CLASSIC_SUBMODE = classicSubmode;
+      // What runs when a mockup is added, which is not the mode the studio is
+      // working in: the top bar owns that, and this panel must not move it.
+      const importMode = ($("classicImportMode") && $("classicImportMode").value) || "auto";
       const payload = await api("/api/admin/settings/detection", {
         method: "PUT",
         body: JSON.stringify({
@@ -4506,8 +4507,9 @@
           DETECTION_REFINEMENT: $("refinementMode").value,
           CLASSIC_BLUR_SIZE: $("classicBlurSize") ? $("classicBlurSize").value : "3",
           CLASSIC_SEARCH_RADIUS: $("classicSearchRadius") ? $("classicSearchRadius").value : "20",
-          CLASSIC_SUBMODE: classicSubmode,
+          CLASSIC_IMPORT_MODE: importMode,
           CLASSIC_GREEN_EDGE_EXPAND: $("classicGreenEdgeExpand") ? $("classicGreenEdgeExpand").value : "0",
+          CLASSIC_GREEN_TOLERANCE: $("classicGreenTolerance") ? $("classicGreenTolerance").value : "130",
           LOCAL_DETECTION_URL: $("localUrl").value,
           LOCAL_DETECTION_MODEL: $("localModel").value
         })

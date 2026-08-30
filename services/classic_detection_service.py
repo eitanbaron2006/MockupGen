@@ -86,11 +86,16 @@ class ClassicDetectionProvider:
         search_radius: int = 20,
         default_mode: str = "auto",
         green_edge_expand: int = 1,
+        green_tolerance: int = 130,
     ):
         self.blur_size = blur_size
         self.search_radius = search_radius
         self.default_mode = default_mode or "auto"
         self.green_edge_expand = max(0, int(green_edge_expand))
+        # 442 is the whole colour space; at that setting every pixel is green
+        # and detection finds one region the size of the canvas, so the useful
+        # range stops well short of it.
+        self.green_tolerance = max(10, min(442, int(green_tolerance)))
 
     def _green_raw_mask(self, img: np.ndarray) -> np.ndarray:
         state = detect_green_frames(Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)), self._green_settings())
@@ -111,7 +116,9 @@ class ClassicDetectionProvider:
         return green_mask_image(state)
 
     def _green_settings(self) -> GreenFrameSettings:
-        return GreenFrameSettings(edge_expand=self.green_edge_expand, min_area=2500)
+        return GreenFrameSettings(
+            edge_expand=self.green_edge_expand, min_area=2500, tolerance=self.green_tolerance
+        )
 
     def _detect_green_frame(self, img: np.ndarray) -> tuple[np.ndarray | None, dict | None]:
         image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).convert("RGBA")

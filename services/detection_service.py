@@ -132,6 +132,28 @@ def validate_proposal(
     )
 
 
+def _setting_int(settings, config, key: str, fallback: int) -> int:
+    """A number from the saved settings, then from the config, then the default.
+
+    A field cleared in the admin is saved as an empty string, and a blank ran
+    straight into int() and took provider construction -- and with it every
+    detection -- down with a ValueError. A value that is not a number is the
+    same as no value at all.
+    """
+    for source in (settings, config):
+        try:
+            value = source.get(key)
+        except AttributeError:
+            continue
+        if value in (None, ""):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return fallback
+
+
 def build_provider(settings: dict[str, str], config: dict[str, Any]) -> DetectionProvider:
     selected = settings.get("DETECTION_PROVIDER", config.get("DETECTION_PROVIDER", "classic"))
     if selected == "vertex":
@@ -148,7 +170,7 @@ def build_provider(settings: dict[str, str], config: dict[str, Any]) -> Detectio
                 "DETECTION_REFINEMENT", config.get("DETECTION_REFINEMENT", "hybrid")
             )
             != "ai_only",
-            search_radius=int(settings.get("CLASSIC_SEARCH_RADIUS", config.get("CLASSIC_SEARCH_RADIUS", 20))),
+            search_radius=_setting_int(settings, config, "CLASSIC_SEARCH_RADIUS", 20),
         )
     if selected == "local":
         from services.local_detection_service import LocalDetectionProvider
@@ -163,8 +185,9 @@ def build_provider(settings: dict[str, str], config: dict[str, Any]) -> Detectio
     from services.classic_detection_service import ClassicDetectionProvider
 
     return ClassicDetectionProvider(
-        blur_size=int(settings.get("CLASSIC_BLUR_SIZE", config.get("CLASSIC_BLUR_SIZE", 3))),
-        search_radius=int(settings.get("CLASSIC_SEARCH_RADIUS", config.get("CLASSIC_SEARCH_RADIUS", 20))),
+        blur_size=_setting_int(settings, config, "CLASSIC_BLUR_SIZE", 3),
+        search_radius=_setting_int(settings, config, "CLASSIC_SEARCH_RADIUS", 20),
         default_mode=settings.get("CLASSIC_INTERNAL_MODE", config.get("CLASSIC_INTERNAL_MODE", "auto")),
-        green_edge_expand=int(settings.get("CLASSIC_GREEN_EDGE_EXPAND", config.get("CLASSIC_GREEN_EDGE_EXPAND", 1))),
+        green_edge_expand=_setting_int(settings, config, "CLASSIC_GREEN_EDGE_EXPAND", 1),
+        green_tolerance=_setting_int(settings, config, "CLASSIC_GREEN_TOLERANCE", 130),
     )

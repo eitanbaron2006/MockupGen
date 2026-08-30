@@ -928,3 +928,40 @@ def test_green_settings_carry_the_new_controls_into_the_render():
     key = source.split("def _green_detection_cache_key(", 1)[1].split(chr(10) + "def ", 1)[0]
     for field in ("mask_expand_left", "mask_expand_right", "mask_expand_top", "mask_expand_bottom"):
         assert f"settings.{field}" in key, field
+
+
+def test_a_tolerance_that_counts_everything_falls_back_to_the_recorded_shape():
+    """Wide open is the default, and wide open has to stay safe.
+
+    At 442 every pixel in any picture scores as green, which is exactly what
+    makes it a good default -- the opening is then decided by the frames as
+    drawn rather than by how well the green survived the photograph. But a
+    detection that covers the whole canvas says nothing about where the opening
+    is, so the render reads the recorded shape instead: the mask beside the
+    template, or failing that the frames. Without that, an opening whose shape
+    the frames cannot describe -- an ellipse, a frame behind a plant -- would
+    be squared off.
+    """
+    from pathlib import Path
+
+    from services.green_frame_mockup_service import parse_green_frame_settings
+
+    # The panel ships wide open.
+    assert parse_green_frame_settings({}).tolerance == 442
+    assert parse_green_frame_settings({"green_frame_mockups": {"tolerance": 120}}).tolerance == 120
+
+    source = Path("services/simple_mockup_service.py").read_text(encoding="utf-8")
+    render = source.split("def _render_green_frame_mockup(", 1)[1]
+    assert "undiscriminating = detection.green_count >= 0.9" in render
+    assert "if not detection.regions or undiscriminating" in render
+
+    # Detection itself is not run wide open: it is what has to tell green from
+    # everything else in the first place. It has its own tolerance, set apart
+    # from the render's and editable in the admin's engine settings.
+    import config
+
+    assert 10 <= config.Config.CLASSIC_GREEN_TOLERANCE < 442
+    classic = Path("services/classic_detection_service.py").read_text(encoding="utf-8")
+    assert "tolerance=self.green_tolerance" in classic
+    detection = Path("services/detection_service.py").read_text(encoding="utf-8")
+    assert '"CLASSIC_GREEN_TOLERANCE"' in detection

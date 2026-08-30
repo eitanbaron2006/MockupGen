@@ -177,10 +177,15 @@ def parse_green_frame_settings(effects: dict | None, fallback_fit_mode: str = "c
     return GreenFrameSettings(
         use_perspective=bool(options.get("use_perspective", True)),
         wide_coverage_envelope=bool(options.get("use_vector_clip", options.get("wide_coverage_envelope", True))),
-        # 442 is the whole of it: the longest distance between two colours in
-        # RGB is 255*sqrt(3) = 441.67, so a tolerance past that scores every
-        # pixel in the picture as green and nothing beyond it can change.
-        tolerance=int(_clamp(number("tolerance", 95), 10, 442)),
+        # Wide open by default. 442 is the whole colour space -- the longest
+        # distance between two colours in RGB is 255*sqrt(3) = 441.67 -- so at
+        # this setting every pixel counts as green and the opening is decided
+        # by the frames as drawn rather than by how well the green survived the
+        # photograph. That is what makes it a good default here: the artwork
+        # fills the frame exactly, with no sliver of green left along an edge
+        # that happened to be lit differently. Lower it on a template where the
+        # opening has to follow a shape the frames do not describe.
+        tolerance=int(_clamp(number("tolerance", 442), 10, 442)),
         min_area=int(_clamp(number("min_area", 2500), 80, 200000)),
         edge_expand=int(_clamp(number("edge_expand", 0), 0, 255)),
         mask_expand_left=int(_clamp(number("mask_expand_left", 0), -50, 150)),
