@@ -1,3 +1,19 @@
+import {
+  areaCorners,
+  clampStyleNumber,
+  cloneObject,
+  confidenceLabel,
+  dataURLtoFile,
+  escapeAttr,
+  escapeHtml,
+  getMatrix3d,
+  resolveFitMode,
+  sliderDecimals,
+  sliderStep,
+  statusClass,
+  usableCorners,
+} from "./modules/helpers.js";
+
 (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
   const SELECTION_STYLE_STORAGE_KEY = "mockupStudio.selectionStyle";
@@ -19,11 +35,6 @@
     overlayImageHeight: 0
   };
 
-  function clampStyleNumber(value, min, max, fallback) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return fallback;
-    return Math.min(max, Math.max(min, number));
-  }
 
   function setSidebarWidth(width, persist = true) {
     const nextWidth = clampStyleNumber(width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH);
@@ -44,17 +55,6 @@
 
   loadSidebarWidthPreference();
 
-  function dataURLtoFile(dataurl, filename) {
-    const arr = dataurl.split(",");
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, { type: mime });
-  }
 
   // A rendered mockup runs to several megabytes, and a data: URL that size
   // makes a poor download link: the browser saves what it can and the file will
@@ -113,87 +113,7 @@
     });
   }
 
-  function resolveFitMode(fitMode, artworkWidth, artworkHeight, frameWidth, frameHeight) {
-    if (fitMode !== "auto") return fitMode;
-    if (!artworkWidth || !artworkHeight || !frameWidth || !frameHeight) {
-      return "cover";
-    }
-    const artworkRatio = artworkWidth / artworkHeight;
-    const frameRatio = frameWidth / frameHeight;
-    
-    // Within 3% aspect ratio difference, use stretch
-    if (Math.abs(artworkRatio - frameRatio) < 0.03) {
-      return "stretch";
-    }
-    
-    const getOrientation = (ratio) => {
-      if (ratio > 1.15) return "landscape";
-      if (ratio < 0.85) return "portrait";
-      return "square";
-    };
-    
-    const artOrientation = getOrientation(artworkRatio);
-    const frameOrientation = getOrientation(frameRatio);
-    
-    if (artOrientation === frameOrientation) {
-      return "cover";
-    } else {
-      return "stretch";
-    }
-  }
 
-  function getMatrix3d(w, h, p0, p1, p2, p3) {
-    const x0 = p0.x, y0 = p0.y;
-    const x1 = p1.x, y1 = p1.y;
-    const x2 = p2.x, y2 = p2.y;
-    const x3 = p3.x, y3 = p3.y;
-
-    const dx1 = x1 - x2;
-    const dx2 = x3 - x2;
-    const dy1 = y1 - y2;
-    const dy2 = y3 - y2;
-    const dx3 = x0 - x1 + x2 - x3;
-    const dy3 = y0 - y1 + y2 - y3;
-
-    let a, b, c, d, e, f, g, h_coeff;
-
-    const det = dx1 * dy2 - dx2 * dy1;
-    if (Math.abs(det) < 1e-9) {
-      a = x1 - x0;
-      b = x3 - x0;
-      c = x0;
-      d = y1 - y0;
-      e = y3 - y0;
-      f = y0;
-      g = 0;
-      h_coeff = 0;
-    } else {
-      g = (dx3 * dy2 - dx2 * dy3) / det;
-      h_coeff = (dx1 * dy3 - dx3 * dy1) / det;
-      a = x1 - x0 + g * x1;
-      b = x3 - x0 + h_coeff * x3;
-      c = x0;
-      d = y1 - y0 + g * y1;
-      e = y3 - y0 + h_coeff * y3;
-      f = y0;
-    }
-
-    const a_prime = a / w;
-    const b_prime = b / h;
-    const c_prime = c;
-    const d_prime = d / w;
-    const e_prime = e / h;
-    const f_prime = f;
-    const g_prime = g / w;
-    const h_prime = h_coeff / h;
-
-    return [
-      a_prime, d_prime, 0, g_prime,
-      b_prime, e_prime, 0, h_prime,
-      0,       0,       1, 0,
-      c_prime, f_prime, 0, 1
-    ];
-  }
 
   function loadSelectionStylePreference() {
     try {
@@ -399,9 +319,6 @@
     }
   };
 
-  function cloneObject(value) {
-    return JSON.parse(JSON.stringify(value));
-  }
 
   function defaultEffects() {
     return cloneObject(DEFAULT_EFFECTS);
@@ -807,15 +724,7 @@
     }
   }
 
-  function escapeHtml(value) {
-    const element = document.createElement("span");
-    element.textContent = String(value || "");
-    return element.innerHTML;
-  }
 
-  function escapeAttr(value) {
-    return escapeHtml(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
 
   let toastTimer;
   function toast(message) {
@@ -894,9 +803,6 @@
     $("status").style.color = failure ? "var(--accent)" : "var(--success)";
   }
 
-  function statusClass(template) {
-    return template.status === "active" ? "approved" : "review";
-  }
 
   async function loadCategories(preferredId) {
     state.categories = (await api("/api/admin/categories")).categories;
@@ -1167,9 +1073,6 @@
     return value === "landscape" ? "Wide" : value.charAt(0).toUpperCase() + value.slice(1);
   }
 
-  function confidenceLabel(value) {
-    return value == null ? "" : `Confidence ${Math.round(value * 100)}%`;
-  }
 
   let editorBackgroundLoadToken = 0;
   const editorBackgroundPreloadCache = new Map();
@@ -1937,24 +1840,7 @@
    * to an SVG they become "NaN,NaN", which the browser rejects attribute by
    * attribute -- a console full of errors and no outline on the canvas.
    */
-  function usableCorners(corners) {
-    return Array.isArray(corners)
-      && corners.length >= 4
-      && corners.every((point) => point
-        && Number.isFinite(Number(point.x))
-        && Number.isFinite(Number(point.y)));
-  }
 
-  function areaCorners(area) {
-    if (area && Array.isArray(area.corners) && area.corners.length >= 4) return area.corners;
-    if (!area) return [];
-    return [
-      { x: area.x, y: area.y },
-      { x: area.x + area.width, y: area.y },
-      { x: area.x + area.width, y: area.y + area.height },
-      { x: area.x, y: area.y + area.height }
-    ];
-  }
 
   function greenFrameOverlayRegions(template) {
     if (isMultiRegionTemplate(template)) {
@@ -7878,16 +7764,7 @@
    */
   const enhancedSliders = new WeakSet();
 
-  function sliderStep(input) {
-    const step = Number(input.step);
-    return Number.isFinite(step) && step > 0 ? step : 1;
-  }
 
-  function sliderDecimals(step) {
-    const text = String(step);
-    const dot = text.indexOf(".");
-    return dot === -1 ? 0 : text.length - dot - 1;
-  }
 
   function setSliderValue(input, value) {
     if (!Number.isFinite(value)) return false;

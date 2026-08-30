@@ -2,6 +2,9 @@ from pathlib import Path
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 ADMIN_JS = SERVER_ROOT / "static" / "admin" / "admin.js"
+# The self-contained helpers were lifted out of admin.js into a module of their
+# own; a rule about how a name is escaped has to look wherever it now lives.
+ADMIN_HELPERS = SERVER_ROOT / "static" / "admin" / "modules" / "helpers.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -453,8 +456,8 @@ def test_corner_lists_with_no_coordinates_are_never_drawn():
     the area's own box.
     """
     js = ADMIN_JS.read_text(encoding="utf-8")
-    end_of_function = chr(10) + "  function "
-    guard = js.split("function usableCorners(", 1)[1].split(end_of_function, 1)[0]
+    helpers = ADMIN_HELPERS.read_text(encoding="utf-8")
+    guard = helpers.split("function usableCorners(", 1)[1].split(chr(10) + "}", 1)[0]
 
     assert "Number.isFinite(Number(point.x))" in guard
     assert "Number.isFinite(Number(point.y))" in guard
@@ -939,9 +942,10 @@ def test_names_injected_into_attributes_are_escaped_for_attributes():
     import re
 
     js = ADMIN_JS.read_text(encoding="utf-8")
+    helpers = ADMIN_HELPERS.read_text(encoding="utf-8")
 
     # The helper is the one that closes the quotes.
-    helper = js.split("function escapeAttr(value) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    helper = helpers.split("function escapeAttr(value) {", 1)[1].split(chr(10) + "}", 1)[0]
     assert '/"/g' in helper and "&quot;" in helper
 
     # Nothing writes an unescaped-for-attribute name into an attribute.
@@ -984,3 +988,32 @@ def test_green_panel_controls_the_opening_per_side_and_the_green_tolerance():
     for control in ("greenTolerance", "greenMaskExpandTop", "greenMaskExpandBottom",
                     "greenMaskExpandLeft", "greenMaskExpandRight"):
         assert f'"{control}"' in wired, control
+
+
+def test_admin_javascript_is_a_module_with_its_helpers_split_out():
+    """The 8,000-line file has started coming apart, from the leaves in.
+
+    The helpers taken out first are the ones that depend on nothing in the
+    studio: functions of their arguments alone, which can be read and reused
+    without knowing anything about the editor around them. (escapeHtml borrows
+    a detached element from the document to do the escaping; it still reads
+    nothing of the page.) The page loads admin.js as a module so it can import
+    them -- which also means the whole file now runs in strict mode and after
+    the document is parsed.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    helpers = ADMIN_HELPERS.read_text(encoding="utf-8")
+
+    assert '<script type="module"' in html
+    assert 'from "./modules/helpers.js"' in js
+
+    for name in ("escapeHtml", "escapeAttr", "usableCorners", "getMatrix3d", "resolveFitMode"):
+        assert f"export function {name}(" in helpers, name
+        # ...and nothing defines them twice.
+        assert f"function {name}(" not in js, name
+
+    # Helpers means helpers: nothing in here reads the studio's page or state.
+    for reference in ("state.", "document.getElementById", "document.querySelector",
+                      "fetch(", "localStorage", "addEventListener"):
+        assert reference not in helpers, reference
