@@ -20,6 +20,8 @@ ADMIN_STATE = SERVER_ROOT / "static" / "admin" / "modules" / "state.js"
 ADMIN_TEST_MODAL = SERVER_ROOT / "static" / "admin" / "modules" / "testModal.js"
 # What an effect is, and how its panel behaves.
 ADMIN_EFFECTS = SERVER_ROOT / "static" / "admin" / "modules" / "effects.js"
+# Which engine finds the frames, and how it is set up.
+ADMIN_ENGINE = SERVER_ROOT / "static" / "admin" / "modules" / "engineSettings.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -749,10 +751,10 @@ def test_classic_submodes_grey_out_instead_of_disappearing():
     Buttons blinking in and out as the engine changes is what made the top bar
     feel unsteady; they are disabled instead, so the bar keeps its shape.
     """
-    js = ADMIN_JS.read_text(encoding="utf-8")
+    js = ADMIN_ENGINE.read_text(encoding="utf-8")
     css = ADMIN_CSS.read_text(encoding="utf-8")
 
-    update = js.split("function updateClassicSubmodes() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    update = js.split("function updateClassicSubmodes() {", 1)[1].split(chr(10) + "}", 1)[0]
     assert 'submodeBar.classList.toggle("hidden"' not in update
     assert 'submodeBar.classList.remove("hidden")' in update
     assert 'submodeBar.classList.toggle("is-disabled", !isClassic)' in update
@@ -1182,3 +1184,29 @@ def test_the_effects_are_defined_and_wired_in_one_module():
 
     # And the studio imports what it needs rather than redefining it.
     assert 'from "./modules/effects.js"' in js
+
+
+def test_choosing_an_engine_is_its_own_module():
+    """Which engine finds the frames is a decision about the studio, not a template.
+
+    The three providers, their health, their settings panel and the modes the
+    classic scan offers came out together. The two things the panel needs from
+    the editor -- leaving a running detection mode, and redrawing when the
+    engine changes what the panel shows -- are handed to it once at startup
+    instead of being reached across for.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    engine = ADMIN_ENGINE.read_text(encoding="utf-8")
+
+    for name in ("providerTitle", "showProvider", "switchDetectionProvider", "loadSettings",
+                 "saveSettings", "testEngine", "updateClassicSubmodes", "loadLocalModels"):
+        assert f"function {name}(" in engine, name
+        assert f"function {name}(" not in js, name
+
+    # The hooks: declared with a do-nothing default, filled in once.
+    assert "let editor = { exitAllDetectionModes() {}, renderEditor() {} };" in engine
+    assert "export function configureEngineSettings(hooks)" in engine
+    assert "configureEngineSettings({ exitAllDetectionModes, renderEditor });" in js
+    # ...and nothing else in the module reaches for the editor directly.
+    assert "editor.exitAllDetectionModes();" in engine
+    assert "editor.renderEditor();" in engine
