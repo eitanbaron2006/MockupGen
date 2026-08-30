@@ -5,6 +5,11 @@ ADMIN_JS = SERVER_ROOT / "static" / "admin" / "admin.js"
 # The self-contained helpers were lifted out of admin.js into a module of their
 # own; a rule about how a name is escaped has to look wherever it now lives.
 ADMIN_HELPERS = SERVER_ROOT / "static" / "admin" / "modules" / "helpers.js"
+# The rails that float over the canvas are a module of their own: dragging,
+# docking, turning and remembering, and nothing about mockups.
+ADMIN_RAILS = SERVER_ROOT / "static" / "admin" / "modules" / "canvasRails.js"
+# ...and every slider on the page is given its reset and its wheel by another.
+ADMIN_SLIDERS = SERVER_ROOT / "static" / "admin" / "modules" / "sliders.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -320,10 +325,10 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
     workspace they sit flush against it, and two on the same wall read as a
     single rail split by one line.
     """
-    js = ADMIN_JS.read_text(encoding="utf-8")
+    js = ADMIN_JS.read_text(encoding="utf-8") + ADMIN_RAILS.read_text(encoding="utf-8")
     css = ADMIN_CSS.read_text(encoding="utf-8")
     html = ADMIN_HTML.read_text(encoding="utf-8")
-    end_of_function = chr(10) + "  function "
+    end_of_function = chr(10) + "function "
     align = js.split("function alignDockedToolbars(", 1)[1].split(end_of_function, 1)[0]
     drag = js.split("function makeToolbarDraggable(", 1)[1].split(end_of_function, 1)[0]
 
@@ -539,10 +544,9 @@ def test_canvas_rails_follow_the_workspace_when_it_changes_width_on_its_own():
     wall moves away from it -- and the window resize event, which is what used
     to put it back, never fires.
     """
-    js = ADMIN_JS.read_text(encoding="utf-8")
-    draggable = js.split("function makeToolbarDraggable(", 1)[1].split(
-        chr(10) + "  // The sidebar sits at the left edge", 1
-    )[0]
+    draggable = ADMIN_RAILS.read_text(encoding="utf-8").split(
+        "function makeToolbarDraggable(", 1
+    )[1]
 
     assert "new ResizeObserver(" in draggable
     assert ".observe(dockParent)" in draggable
@@ -827,20 +831,27 @@ def test_every_slider_has_a_reset_and_answers_the_wheel():
     and more are cloned at runtime -- so the pass is generic and repeats over
     whatever the page grows later.
     """
-    js = ADMIN_JS.read_text(encoding="utf-8")
+    js = ADMIN_SLIDERS.read_text(encoding="utf-8")
+    helpers = ADMIN_HELPERS.read_text(encoding="utf-8")
     css = ADMIN_CSS.read_text(encoding="utf-8")
 
-    enhance = js.split("function enhanceSlider(input) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    # The studio asks for the pass once; the module keeps it going.
+    assert 'from "./modules/sliders.js"' in ADMIN_JS.read_text(encoding="utf-8")
+    assert "watchSliders();" in ADMIN_JS.read_text(encoding="utf-8")
+
+    enhance = js.split("function enhanceSlider(input) {", 1)[1].split(chr(10) + "}", 1)[0]
     assert 'reset.className = "slider-reset"' in enhance
     assert "setSliderValue(input, fallback)" in enhance
     # The wheel adjusts by the slider's own step, and holds the panel still.
     assert '"wheel"' in enhance and "{ passive: false }" in enhance
     assert "event.preventDefault();" in enhance
     assert "sliderStep(input) * (event.shiftKey ? 10 : 1)" in enhance
+    # The step arithmetic lives with the other pure helpers.
+    assert "export function sliderStep(" in helpers
 
     # Whatever moves the value tells the page it moved, so the number beside the
     # slider, the redraw and the save all run as if it had been dragged.
-    commit = js.split("function setSliderValue(input, value) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    commit = js.split("function setSliderValue(input, value) {", 1)[1].split(chr(10) + "}", 1)[0]
     assert 'new Event("input", { bubbles: true })' in commit
     assert 'new Event("change", { bubbles: true })' in commit
     # Snapped to the step, or a step of 0.05 drifts to 0.5000000000000001.
@@ -848,12 +859,12 @@ def test_every_slider_has_a_reset_and_answers_the_wheel():
     assert "sliderDecimals(step)" in commit
 
     # The default is the value the markup ships with.
-    default_fn = js.split("function sliderDefault(input) {", 1)[1].split(chr(10) + "  }", 1)[0]
+    default_fn = js.split("function sliderDefault(input) {", 1)[1].split(chr(10) + "}", 1)[0]
     assert 'input.getAttribute("value")' in default_fn
 
     # Cloned panels bring a copy of the button with no handler behind it; the
     # link back to the slider is a property, which a clone does not carry.
-    sweep = js.split("function enhanceSliders() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    sweep = js.split("function enhanceSliders() {", 1)[1].split(chr(10) + "}", 1)[0]
     assert "if (!button.__sliderInput) button.remove();" in sweep
     assert "document.querySelectorAll('input[type=\"range\"]').forEach(enhanceSlider)" in sweep
     # ...and the pass repeats over whatever the page grows later.
@@ -873,7 +884,7 @@ def test_canvas_rails_can_be_turned_on_their_side():
     the side walls as before; flat it snaps to the top or bottom instead, since
     that is the wall its long edge can meet.
     """
-    js = ADMIN_JS.read_text(encoding="utf-8")
+    js = ADMIN_RAILS.read_text(encoding="utf-8")
     css = ADMIN_CSS.read_text(encoding="utf-8")
 
     drag = js.split("function makeToolbarDraggable(", 1)[1]
@@ -887,7 +898,7 @@ def test_canvas_rails_can_be_turned_on_their_side():
 
     # Merging two rails into one bar stays a side-wall affair between rails
     # that stand on end -- a flat one has no width to share.
-    align = js.split("function alignDockedToolbars() {", 1)[1].split(chr(10) + "  }", 1)[0]
+    align = js.split("function alignDockedToolbars() {", 1)[1].split(chr(10) + "}", 1)[0]
     assert "!toolbarIsHorizontal(element)" in align
 
     # A turned rail is a different shape in the same corner: it steps clear of
