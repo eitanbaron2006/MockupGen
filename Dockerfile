@@ -19,7 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # The user first, and the copy already owned by it: a chown -R afterwards
 # writes a second copy of everything into another layer.
-RUN useradd --create-home --uid 10001 studio \n    && mkdir -p data uploads outputs templates_data draft_templates logs models \n    && chown -R studio:studio /app
+RUN useradd --create-home --uid 10001 studio \
+    && mkdir -p data uploads outputs templates_data draft_templates logs models \
+    && chown -R studio:studio /app
 COPY --chown=studio:studio . .
 USER studio
 

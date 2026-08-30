@@ -1227,3 +1227,22 @@ def test_the_container_and_ci_describe_a_server_that_boots():
     assert "ruff check ." in workflow
     assert "pytest tests/ -q" in workflow
     assert "docker build" in workflow and "/api/health" in workflow
+
+
+def test_the_dockerfile_has_no_broken_line_continuations():
+    """A shell line written with a literal backslash-n is a build that fails.
+
+    It happened: an edit wrote those two characters where a line break belonged,
+    the RUN line became one long broken command, and the image stopped building
+    -- which CI caught and a local build with a truncated log did not.
+    """
+    dockerfile = (SERVER_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert chr(92) + "n" not in dockerfile
+
+    # Every continuation ends a line, and the line after it is a continuation
+    # of the same command rather than a new instruction.
+    lines = dockerfile.splitlines()
+    for index, line in enumerate(lines):
+        if line.rstrip().endswith("\\"):
+            assert index + 1 < len(lines), line
+            assert lines[index + 1].strip(), line
