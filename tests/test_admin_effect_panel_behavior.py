@@ -10,6 +10,8 @@ ADMIN_HELPERS = SERVER_ROOT / "static" / "admin" / "modules" / "helpers.js"
 ADMIN_RAILS = SERVER_ROOT / "static" / "admin" / "modules" / "canvasRails.js"
 # ...and every slider on the page is given its reset and its wheel by another.
 ADMIN_SLIDERS = SERVER_ROOT / "static" / "admin" / "modules" / "sliders.js"
+# What the studio remembers between visits goes through one door.
+ADMIN_PREFERENCES = SERVER_ROOT / "static" / "admin" / "modules" / "preferences.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -73,9 +75,9 @@ def test_admin_sidebar_can_be_resized_and_remembers_width():
     assert 'id="sidebarResizeHandle"' in html
     assert "--sidebar-width" in css
     assert "grid-template-columns: var(--sidebar-width" in css
-    assert "mockupStudio.sidebarWidth" in js
+    assert "mockupStudio.sidebarWidth" in ADMIN_PREFERENCES.read_text(encoding="utf-8")
     assert "setPointerCapture" in js
-    assert "localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY" in js
+    assert "writeNumber(KEYS.sidebarWidth" in js
 
 
 def test_regular_mockup_switch_preloads_background_before_atomic_artwork_sync():
@@ -352,7 +354,7 @@ def test_canvas_toolbars_are_vertical_draggable_and_dockable():
     # Dragging, docking, and remembering where a toolbar was left.
     assert "setPointerCapture" in drag
     assert "TOOLBAR_DOCK_DISTANCE" in drag and "canvas-toolbar-docked-left" in drag
-    assert "TOOLBAR_POSITION_KEY" in js
+    assert "KEYS.toolbarPositions" in js
 
     # Merged rails travel together while the drag is happening, not once it is
     # over: the companions are picked up on pointerdown and moved on every
@@ -416,7 +418,7 @@ def test_the_sidebar_slides_open_under_the_pointer_and_locks_open():
     html = ADMIN_HTML.read_text(encoding="utf-8")
 
     assert 'id="sidebarCollapseToggle"' in html and 'id="sidebarLockToggle"' in html
-    assert "SIDEBAR_LOCKED_KEY" in js
+    assert "KEYS.sidebarLocked" in js
 
     # Pointer in, pointer out -- with a moment's grace on the way out.
     assert 'sidebar.addEventListener("pointerenter"' in js
@@ -449,7 +451,7 @@ def test_the_sidebar_slides_open_under_the_pointer_and_locks_open():
 
     # The wiring sits with the rest of the DOM wiring at the end of the file:
     # attached where the document has been parsed, or the buttons do nothing.
-    assert js.index("SIDEBAR_LOCKED_KEY") > js.index("function drawSelection()")
+    assert js.index("KEYS.sidebarLocked") > js.index("function drawSelection()")
 
 
 def test_corner_lists_with_no_coordinates_are_never_drawn():
@@ -486,11 +488,11 @@ def test_queue_has_a_compact_thumbnail_mode():
     html = ADMIN_HTML.read_text(encoding="utf-8")
 
     assert 'id="queueDensityToggle"' in html
-    assert "QUEUE_COMPACT_KEY" in js and "applyQueueDensity" in js
+    assert "KEYS.queueCompact" in js and "applyQueueDensity" in js
 
     # The choice outlives the page.
-    assert 'localStorage.getItem(QUEUE_COMPACT_KEY)' in js
-    assert 'localStorage.setItem(QUEUE_COMPACT_KEY' in js
+    assert "readBoolean(KEYS.queueCompact)" in js
+    assert "writeBoolean(KEYS.queueCompact" in js
 
     # Picking by picture only works if the name is still readable somehow.
     assert 'title="${escapeAttr(template.name)}"' in js
@@ -533,7 +535,7 @@ def test_queue_has_a_compact_thumbnail_mode():
     assert "display: none" in text_holder
 
     # The wiring sits with the rest of the DOM wiring at the end of the file.
-    assert js.index("QUEUE_COMPACT_KEY") > js.index("function drawSelection()")
+    assert js.index("KEYS.queueCompact") > js.index("function drawSelection()")
 
 
 def test_canvas_rails_follow_the_workspace_when_it_changes_width_on_its_own():
@@ -1059,3 +1061,31 @@ def test_the_admin_javascript_parses_as_the_modules_it_claims_to_be():
                 [node, "--check", str(copy)], capture_output=True, text=True, timeout=60
             )
             assert result.returncode == 0, f"{path.name}: {result.stderr.strip()[:400]}"
+
+
+def test_what_the_studio_remembers_goes_through_one_door():
+    """Six preferences, six try/catch blocks, six spellings of the same key.
+
+    They are one module now: the key names in one place, and a read that
+    answers with the fallback rather than throwing where storage is refused --
+    a private window, a full quota, site data switched off. A studio that opens
+    on its defaults is fine; one that fails to open is not.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    rails = ADMIN_RAILS.read_text(encoding="utf-8")
+    preferences = ADMIN_PREFERENCES.read_text(encoding="utf-8")
+
+    # Nothing else touches storage directly any more.
+    assert "localStorage" not in js
+    assert "localStorage" not in rails
+    assert "localStorage" in preferences
+
+    for key in ("selectionStyle", "sidebarWidth", "sidebarLocked", "queueCompact",
+                "greenPanelCollapsed", "toolbarPositions"):
+        assert f"{key}: " in preferences.split("export const KEYS = {", 1)[1].split("};", 1)[0], key
+        assert f"KEYS.{key}" in js + rails, key
+
+    # Every read is guarded, so storage that refuses is a default, not a crash.
+    for reader in ("function read(key)", "function write(key, value)"):
+        body = preferences.split(reader, 1)[1].split(chr(10) + "}", 1)[0]
+        assert "catch" in body, reader

@@ -9,20 +9,15 @@
  * None of this knows anything about mockups: it is a small window manager over
  * a handful of elements, which is why it comes out of the editor whole.
  */
+import { KEYS, readJson, writeJson } from "./preferences.js";
+
 
 // Both canvas toolbars are dragged by the grip at their head and remember
 // where they were left. Positions are stored per toolbar and clamped to the
 // workspace, so a toolbar can never be parked out of reach -- including
 // after the window is resized.
-const TOOLBAR_POSITION_KEY = "mockupStudio.canvasToolbarPositions";
-
 function readToolbarPositions() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(TOOLBAR_POSITION_KEY) || "{}");
-    return stored && typeof stored === "object" ? stored : {};
-  } catch (_error) {
-    return {};
-  }
+  return readJson(KEYS.toolbarPositions);
 }
 
 // Dragged within this many pixels of the workspace edge, a toolbar docks to
@@ -115,11 +110,9 @@ function rememberToolbarPositions(parent) {
       horizontal: toolbarIsHorizontal(entry.element),
     };
   });
-  try {
-    localStorage.setItem(TOOLBAR_POSITION_KEY, JSON.stringify(positions));
-  } catch (_error) {
-    // Remembering where a toolbar sits is a convenience, not a requirement.
-  }
+  // Remembering where a rail sits is a convenience, not a requirement: if the
+  // browser will not store it, the rails simply open where they always do.
+  writeJson(KEYS.toolbarPositions, positions);
 }
 
 export function makeToolbarDraggable(toolbar, key) {

@@ -1,4 +1,13 @@
 import { api, csrfHeaders, maskVersion } from "./modules/api.js";
+import {
+  KEYS,
+  readBoolean,
+  readJson,
+  readNumber,
+  writeBoolean,
+  writeJson,
+  writeNumber,
+} from "./modules/preferences.js";
 import { makeToolbarDraggable } from "./modules/canvasRails.js";
 import { watchSliders } from "./modules/sliders.js";
 import {
@@ -16,8 +25,6 @@ import {
 } from "./modules/helpers.js";
 
 (() => {
-  const SELECTION_STYLE_STORAGE_KEY = "mockupStudio.selectionStyle";
-  const SIDEBAR_WIDTH_STORAGE_KEY = "mockupStudio.sidebarWidth";
   const DEFAULT_SIDEBAR_WIDTH = 252;
   const MIN_SIDEBAR_WIDTH = 232;
   const MAX_SIDEBAR_WIDTH = 520;
@@ -39,18 +46,12 @@ import {
   function setSidebarWidth(width, persist = true) {
     const nextWidth = clampStyleNumber(width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH);
     document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
-    if (persist) {
-      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(Math.round(nextWidth)));
-    }
+    if (persist) writeNumber(KEYS.sidebarWidth, nextWidth);
     return nextWidth;
   }
 
   function loadSidebarWidthPreference() {
-    try {
-      return setSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY), false);
-    } catch (_error) {
-      return setSidebarWidth(DEFAULT_SIDEBAR_WIDTH, false);
-    }
+    return setSidebarWidth(readNumber(KEYS.sidebarWidth, DEFAULT_SIDEBAR_WIDTH), false);
   }
 
   loadSidebarWidthPreference();
@@ -117,7 +118,7 @@ import {
 
   function loadSelectionStylePreference() {
     try {
-      const saved = JSON.parse(localStorage.getItem(SELECTION_STYLE_STORAGE_KEY) || "{}");
+      const saved = readJson(KEYS.selectionStyle);
       const loaded = {
         polygonColor: typeof saved.polygonColor === "string" ? saved.polygonColor : DEFAULT_SELECTION_STYLE.polygonColor,
         crossColor: typeof saved.crossColor === "string" ? saved.crossColor : DEFAULT_SELECTION_STYLE.crossColor,
@@ -1692,11 +1693,7 @@ import {
   }
 
   function saveSelectionStylePreference() {
-    try {
-      localStorage.setItem(SELECTION_STYLE_STORAGE_KEY, JSON.stringify(state.selectionStyle));
-    } catch (_error) {
-      // Style preferences are non-critical UI state.
-    }
+    writeJson(KEYS.selectionStyle, state.selectionStyle);
   }
 
   function setOverlayMode(mode) {
@@ -4868,14 +4865,8 @@ import {
 
   // Collapsible Green frames controls panel (same UX as the effect panels),
   // with the collapsed state remembered across sessions.
-  const GREEN_PANEL_COLLAPSED_KEY = "mockupStudio.greenPanelCollapsed";
   if ($("greenFramePanelToggle") && $("greenFramePanelBody")) {
-    let greenPanelCollapsed = false;
-    try {
-      greenPanelCollapsed = localStorage.getItem(GREEN_PANEL_COLLAPSED_KEY) === "true";
-    } catch (_error) {
-      // Persistence is non-critical UI state.
-    }
+    let greenPanelCollapsed = readBoolean(KEYS.greenPanelCollapsed);
     const applyGreenPanelCollapsed = () => {
       $("greenFramePanelBody").classList.toggle("hidden", greenPanelCollapsed);
     };
@@ -4883,11 +4874,7 @@ import {
     $("greenFramePanelToggle").onclick = () => {
       greenPanelCollapsed = !greenPanelCollapsed;
       applyGreenPanelCollapsed();
-      try {
-        localStorage.setItem(GREEN_PANEL_COLLAPSED_KEY, String(greenPanelCollapsed));
-      } catch (_error) {
-        // Persistence is non-critical UI state.
-      }
+      writeBoolean(KEYS.greenPanelCollapsed, greenPanelCollapsed);
     };
   }
 
@@ -7178,7 +7165,6 @@ import {
   // pointer, over the page rather than pushing it -- opening a drawer should
   // not reflow the canvas. Locking it pins it open: it takes its column back
   // and stops sliding.
-  const SIDEBAR_LOCKED_KEY = "mockupStudio.sidebarLocked";
   // Short: while the drawer is open it covers the left of the page, so the
   // grace period on the way out is only long enough to survive a wobble on the
   // boundary -- not long enough to swallow a click meant for what is behind it.
@@ -7244,7 +7230,7 @@ import {
     }
     if (persist) {
       try {
-        localStorage.setItem(SIDEBAR_LOCKED_KEY, String(sidebarLocked));
+        writeBoolean(KEYS.sidebarLocked, sidebarLocked);
       } catch (_error) {
         // Remembering the lock is a convenience, not a requirement.
       }
@@ -7286,7 +7272,7 @@ import {
     }
 
     try {
-      sidebarLocked = localStorage.getItem(SIDEBAR_LOCKED_KEY) === "true";
+      sidebarLocked = readBoolean(KEYS.sidebarLocked);
     } catch (_error) {
       // Unlocked by default.
     }
@@ -7295,7 +7281,6 @@ import {
 
   // The queue has two densities: the full list, and a wall of thumbnails for
   // picking a mockup by its picture alone. The choice is remembered.
-  const QUEUE_COMPACT_KEY = "mockupStudio.queueCompact";
 
   // The list reserves a gutter for its scrollbar, and how wide that gutter is
   // belongs to the browser -- ten pixels here, none at all where scrollbars
@@ -7319,7 +7304,7 @@ import {
     }
     if (persist) {
       try {
-        localStorage.setItem(QUEUE_COMPACT_KEY, String(compact));
+        writeBoolean(KEYS.queueCompact, compact);
       } catch (_error) {
         // Remembering the density is a convenience, not a requirement.
       }
@@ -7337,7 +7322,7 @@ import {
     });
     let startCompact = false;
     try {
-      startCompact = localStorage.getItem(QUEUE_COMPACT_KEY) === "true";
+      startCompact = readBoolean(KEYS.queueCompact);
     } catch (_error) {
       // Full list by default.
     }
