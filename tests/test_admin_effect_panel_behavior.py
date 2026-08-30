@@ -18,6 +18,8 @@ ADMIN_DOM = SERVER_ROOT / "static" / "admin" / "modules" / "dom.js"
 ADMIN_STATE = SERVER_ROOT / "static" / "admin" / "modules" / "state.js"
 # The Test mockups window, which writes names into markup of its own.
 ADMIN_TEST_MODAL = SERVER_ROOT / "static" / "admin" / "modules" / "testModal.js"
+# What an effect is, and how its panel behaves.
+ADMIN_EFFECTS = SERVER_ROOT / "static" / "admin" / "modules" / "effects.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -1150,3 +1152,33 @@ def test_the_test_mockups_window_is_a_module_of_its_own():
     # And what it does need, it imports rather than assumes.
     for line in ("import { escapeAttr, escapeHtml }", "import { $, toast }", "import { api, csrfHeaders }"):
         assert line in modal, line
+
+
+def test_the_effects_are_defined_and_wired_in_one_module():
+    """What an effect is, and how its panel behaves, in one place.
+
+    The definitions -- every effect's defaults and the ids of the controls that
+    edit it -- next to the plumbing that reads a panel into an effect and
+    writes an effect back into a panel, including the second copy of an effect
+    a panel can grow. What is *done* with an effect once it is read stays with
+    the studio: saving it, redrawing, applying it to every template.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    effects = ADMIN_EFFECTS.read_text(encoding="utf-8")
+
+    for name in ("DEFAULT_EFFECTS", "EFFECT_DOM"):
+        assert f"export const {name} =" in effects, name
+        assert f"const {name} =" not in js, name
+    for name in ("defaultEffects", "effectInstances", "primaryEffect", "setEffectValueLabel",
+                 "getFieldElement", "setEffectInstanceValues", "readEffectInstanceValues",
+                 "effectGroupForKey", "syncEffectAddButton", "updateEffectPanelCollapsed",
+                 "toggleEffectPanelCollapsed", "prepareEffectGroupControls"):
+        assert f"export function {name}(" in effects, name
+        assert f"function {name}(" not in js, name
+
+    # It knows the panel, not the studio: no state, no requests, no saving.
+    for reference in ("state.", "api(", "saveTemplate", "drawSelection", "localStorage"):
+        assert reference not in effects, reference
+
+    # And the studio imports what it needs rather than redefining it.
+    assert 'from "./modules/effects.js"' in js
