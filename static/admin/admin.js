@@ -421,7 +421,7 @@
     mask_expand_top: 0,
     mask_expand_bottom: 0,
     mask_build_quality: 2,
-    feather_radius: 2,
+    feather_radius: 0,
     edge_aa_radius: 0,
     aa_scale: 1,
     enable_inner_shadow: false,

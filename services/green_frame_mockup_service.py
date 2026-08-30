@@ -36,7 +36,7 @@ class GreenFrameSettings:
     mask_expand_right: int = 0
     mask_expand_top: int = 0
     mask_expand_bottom: int = 0
-    feather_radius: int = 2
+    feather_radius: int = 0
     mask_build_quality: int = 2
     aa_scale: int = 1
     edge_aa_radius: int = 0
@@ -192,7 +192,7 @@ def parse_green_frame_settings(effects: dict | None, fallback_fit_mode: str = "c
         mask_expand_right=int(_clamp(number("mask_expand_right", 0), -50, 150)),
         mask_expand_top=int(_clamp(number("mask_expand_top", 0), -50, 150)),
         mask_expand_bottom=int(_clamp(number("mask_expand_bottom", 0), -50, 150)),
-        feather_radius=int(_clamp(number("feather_radius", 2), 0, 12)),
+        feather_radius=int(_clamp(number("feather_radius", 0), 0, 12)),
         mask_build_quality=int(_clamp(number("mask_build_quality", 2), 1, 3)),
         aa_scale=int(_clamp(number("aa_scale", 1), 1, 8)),
         edge_aa_radius=int(_clamp(number("edge_aa_radius", 0), 0, 6)),

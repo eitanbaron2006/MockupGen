@@ -1,13 +1,13 @@
 {
   "template_id": "template_d8e9e117aa73",
-  "name": "ChatGPT Image May 29 2026 04 12 41 PM 2",
+  "name": "H1-13",
   "product_type": "horizontal-wall-art",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
     "x": 279,
     "y": 215,
-    "width": 776,
+    "width": 774,
     "height": 438,
     "corners": [
       {
@@ -15,16 +15,16 @@
         "y": 215
       },
       {
-        "x": 1055,
-        "y": 216
+        "x": 1053,
+        "y": 215
       },
       {
-        "x": 1055,
+        "x": 1053,
         "y": 653
       },
       {
         "x": 279,
-        "y": 652
+        "y": 653
       }
     ]
   },
@@ -32,7 +32,7 @@
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,
-  "mask": null,
+  "mask": "mask.png",
   "preview": "preview.png",
   "supported_modes": [
     "simple"
@@ -86,21 +86,24 @@
       "target": "artwork"
     },
     "green_frame_mockups": {
-      "aa_scale": 1,
-      "artwork_scale": 1,
-      "contain_bg_color": "#ffffff",
-      "edge_aa_radius": 0,
-      "edge_expand": 1,
-      "enable_inner_shadow": true,
-      "feather_radius": 2,
+      "use_perspective": true,
+      "use_vector_clip": true,
       "fit_mode": "stretch",
-      "inner_shadow_size": 12,
-      "inner_shadow_strength": 0.04,
-      "mask_build_quality": 2,
+      "artwork_scale": 1,
       "offset_x": 0,
       "offset_y": 0,
-      "use_perspective": true,
-      "use_vector_clip": true
+      "edge_expand": 1,
+      "tolerance": 440,
+      "mask_expand_top": 0,
+      "mask_expand_bottom": 0,
+      "mask_expand_left": 0,
+      "mask_expand_right": 0,
+      "mask_build_quality": 2,
+      "feather_radius": 0,
+      "edge_aa_radius": 0,
+      "aa_scale": 1,
+      "enable_inner_shadow": false,
+      "contain_bg_color": "#ffffff"
     },
     "inner_shadow": {
       "blur": 15,
@@ -128,95 +131,91 @@
     }
   },
   "raw_artwork_area": {
-    "corners": [
-      {},
-      {
-        "x": null
-      },
-      {
-        "x": null,
-        "y": null
-      },
-      {
-        "y": null
-      }
-    ],
-    "layers": [
-      [
-        {
-          "x": 270,
-          "y": 206
-        },
-        {
-          "x": 1062,
-          "y": 206
-        },
-        {
-          "x": 1072,
-          "y": 658
-        },
-        {
-          "x": 297,
-          "y": 678
-        }
-      ],
-      [
-        {
-          "x": 281,
-          "y": 218
-        },
-        {
-          "x": 1050,
-          "y": 217
-        },
-        {
-          "x": 1051,
-          "y": 649
-        },
-        {
-          "x": 282,
-          "y": 651
-        }
-      ],
-      [
-        {
-          "x": 279,
-          "y": 215
-        },
-        {
-          "x": 1055,
-          "y": 216
-        },
-        {
-          "x": 1054,
-          "y": 651
-        },
-        {
-          "x": 279,
-          "y": 652
-        }
-      ]
-    ],
-    "mode": "geometry",
+    "edge_expand": 1,
+    "green_pixels": 338660,
+    "mode": "green_frames_mockups",
     "original_corners": [
       {
         "x": 279,
         "y": 215
       },
       {
-        "x": 1055,
-        "y": 216
+        "x": 1053,
+        "y": 215
       },
       {
-        "x": 1054,
-        "y": 651
+        "x": 1053,
+        "y": 653
       },
       {
         "x": 279,
-        "y": 652
+        "y": 653
+      }
+    ],
+    "regions": [
+      {
+        "area": 339451,
+        "corners": [
+          {
+            "x": 279,
+            "y": 215
+          },
+          {
+            "x": 1053,
+            "y": 215
+          },
+          {
+            "x": 1053,
+            "y": 653
+          },
+          {
+            "x": 279,
+            "y": 653
+          }
+        ],
+        "height": 439,
+        "inner_corners": [
+          {
+            "x": 280,
+            "y": 215
+          },
+          {
+            "x": 1052,
+            "y": 215
+          },
+          {
+            "x": 1053,
+            "y": 651
+          },
+          {
+            "x": 279,
+            "y": 652
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 280,
+            "y": 215
+          },
+          {
+            "x": 1052,
+            "y": 215
+          },
+          {
+            "x": 1053,
+            "y": 651
+          },
+          {
+            "x": 279,
+            "y": 652
+          }
+        ],
+        "width": 775,
+        "x": 279,
+        "y": 215
       }
     ]
   },
   "detection_provider": "classic",
-  "detection_confidence": 0.9
+  "detection_confidence": 0.85
 }
