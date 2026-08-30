@@ -400,6 +400,7 @@ def detect_green_frames(mockup: Image.Image, settings: GreenFrameSettings | None
     corner_mask = _dilate_mask(raw_mask, min(1, settings.edge_expand))
     min_area = max(1200, min(settings.min_area, max(1200, int(w * h * 0.005))))
     regions = _connected_regions(detect_mask, min_area)
+    regions = _green_regions_only(regions, rgb, detect_mask, settings)
 
     union = np.zeros((h, w), dtype=bool)
     for region in regions:
@@ -493,6 +494,55 @@ def reshape_opening(
         soft = soft * bounds.astype(np.float32)
     state.clip_mask = clip
     state.soft_mask = soft
+
+
+# What a blob is scored against when deciding whether it is a screen at all.
+# The tolerance says how far the screen's own colour may drift; this says how
+# green the blob has to be at heart, and it does not move with the tolerance --
+# scoring a blob with the same wide setting that found it would call the whole
+# room green.
+_GREEN_REFERENCE_TOLERANCE = 160
+# ...and how green that is: half of what the greenest blob in the picture
+# manages, never below this floor. Relative, so a screen that photographed dull
+# still passes on a mockup where nothing is brighter.
+_GREEN_REGION_FLOOR = 0.35
+_GREEN_REGION_SHARE = 0.5
+
+
+def _green_regions_only(
+    regions: list[GreenRegion],
+    rgb: np.ndarray,
+    mask: np.ndarray,
+    settings: GreenFrameSettings,
+) -> list[GreenRegion]:
+    """Keep the blobs that are actually green.
+
+    Raising the tolerance is meant to find more of a screen that photographed
+    dull; past a point it starts finding the room instead. At 200 a single
+    framed print came back as six regions -- five of them wall and plant, which
+    score 0.005 where the frame scores 0.945. Scoring every blob against a
+    fixed idea of green and dropping the ones far below the best is what makes
+    the tolerance safe to raise.
+    """
+    if len(regions) < 2:
+        return regions
+    reference = _green_confidence(
+        rgb, settings.target_color, min(settings.tolerance, _GREEN_REFERENCE_TOLERANCE)
+    )
+    scored = []
+    for region in regions:
+        window = mask[region.y : region.y + region.h, region.x : region.x + region.w]
+        if not window.any():
+            continue
+        patch = reference[region.y : region.y + region.h, region.x : region.x + region.w][window]
+        scored.append((float(patch.mean()), region))
+    if not scored:
+        return regions
+    best = max(score for score, _ in scored)
+    floor = max(_GREEN_REGION_FLOOR, best * _GREEN_REGION_SHARE)
+    kept = [region for score, region in scored if score >= floor]
+    # Nothing cleared the floor: keep the greenest one rather than none at all.
+    return kept or [max(scored, key=lambda item: item[0])[1]]
 
 
 def _soft_mask_for_regions(

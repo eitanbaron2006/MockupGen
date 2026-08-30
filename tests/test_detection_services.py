@@ -965,3 +965,45 @@ def test_a_tolerance_that_counts_everything_falls_back_to_the_recorded_shape():
     assert "tolerance=self.green_tolerance" in classic
     detection = Path("services/detection_service.py").read_text(encoding="utf-8")
     assert '"CLASSIC_GREEN_TOLERANCE"' in detection
+
+
+def test_detection_does_not_invent_frames_when_the_tolerance_is_raised():
+    """A wide tolerance is meant to find more screen, not more furniture.
+
+    Raising it past ~180 used to turn one framed print into six regions: the
+    wall, a plant and a wooden edge all scored as green once the test was loose
+    enough. Every blob is now scored against a fixed idea of green -- not the
+    loose one that found it -- and the ones far below the greenest are dropped,
+    which is what makes the setting safe to raise.
+    """
+    import numpy as np
+
+    from services.green_frame_mockup_service import GreenFrameSettings, detect_green_frames
+
+    canvas = np.full((260, 260, 3), 235, dtype=np.uint8)   # a bright room
+    canvas[40:200, 40:200] = (16, 220, 32)                  # the screen
+    canvas[210:250, 20:120] = (150, 190, 150)               # a sage-green cushion
+    canvas[210:250, 140:240] = (120, 150, 105)              # an olive plant
+    mockup = Image.fromarray(canvas, mode="RGB").convert("RGBA")
+
+    strict = detect_green_frames(mockup, GreenFrameSettings(tolerance=95, min_area=1200))
+    assert len(strict.regions) == 1
+
+    loose = detect_green_frames(mockup, GreenFrameSettings(tolerance=200, min_area=1200))
+    assert len(loose.regions) == 1, [(r.x, r.y, r.w, r.h) for r in loose.regions]
+
+    # It is the screen that survived, not one of the props.
+    region = loose.regions[0]
+    assert region.x <= 45 and region.y <= 45
+    assert region.w >= 150 and region.h >= 150
+
+    # And a mockup that really does hold three screens still comes back with
+    # three: the rule is relative to the greenest thing in the picture.
+    three = np.full((260, 400, 3), 235, dtype=np.uint8)
+    for left in (20, 160, 300):
+        three[60:200, left : left + 80] = (16, 220, 32)
+    found = detect_green_frames(
+        Image.fromarray(three, mode="RGB").convert("RGBA"),
+        GreenFrameSettings(tolerance=200, min_area=1200),
+    )
+    assert len(found.regions) == 3
