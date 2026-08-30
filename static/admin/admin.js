@@ -1,5 +1,16 @@
 import { api, csrfHeaders, maskVersion } from "./modules/api.js";
 import {
+  $,
+  dismissSystemDialog,
+  openSystemDialog,
+  wireSystemDialog,
+  setStatus,
+  systemAlert,
+  systemConfirm,
+  systemPrompt,
+  toast,
+} from "./modules/dom.js";
+import {
   KEYS,
   readBoolean,
   readJson,
@@ -196,7 +207,6 @@ import {
     // re-generating only renders what was not produced yet.
     renderCache: new Map()
   };
-  const $ = (id) => document.getElementById(id);
   const DEFAULT_EFFECTS = {
     inner_shadow: { enabled: false, top: 10, right: 10, bottom: 10, left: 10, opacity: 0.4, blur: 15, target: "artwork" },
     glass_reflection: { enabled: false, type: "diagonal", opacity: 0.15, target: "artwork" },
@@ -686,82 +696,12 @@ import {
   // artwork; 80 closes that without splitting one frame into several.
   const DEFAULT_MASK_TOLERANCE = 80;
 
-  let toastTimer;
-  function toast(message) {
-    $("toast").textContent = message;
-    $("toast").classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => $("toast").classList.remove("show"), 3200);
-  }
 
-  let activeSystemDialog = null;
-  function closeSystemDialog(value) {
-    if (!activeSystemDialog) return;
-    $("systemDialog").classList.remove("open");
-    activeSystemDialog.resolve(value);
-    activeSystemDialog = null;
-  }
 
-  function openSystemDialog({
-    title,
-    message = "",
-    defaultValue = "",
-    mode = "alert",
-    confirmLabel = "OK",
-    cancelLabel = "Cancel",
-    danger = false
-  }) {
-    return new Promise((resolve) => {
-      if (activeSystemDialog) {
-        closeSystemDialog(mode === "prompt" ? null : false);
-      }
-      activeSystemDialog = { resolve, mode };
-      const input = $("systemDialogInput");
-      const cancel = $("systemDialogCancel");
-      const confirm = $("systemDialogConfirm");
-      $("systemDialogTitle").textContent = title;
-      $("systemDialogMessage").textContent = message;
-      input.value = defaultValue;
-      input.classList.toggle("hidden", mode !== "prompt");
-      cancel.textContent = cancelLabel;
-      cancel.classList.toggle("hidden", mode === "alert");
-      confirm.textContent = confirmLabel;
-      confirm.classList.toggle("danger", danger);
-      $("systemDialog").classList.add("open");
-      setTimeout(() => (mode === "prompt" ? input : confirm).focus(), 0);
-    });
-  }
 
-  function systemAlert(title, message = "") {
-    return openSystemDialog({ title, message, mode: "alert", confirmLabel: "OK" });
-  }
 
-  function systemConfirm(title, message, options = {}) {
-    return openSystemDialog({
-      title,
-      message,
-      mode: "confirm",
-      confirmLabel: options.confirmLabel || "Confirm",
-      cancelLabel: options.cancelLabel || "Cancel",
-      danger: Boolean(options.danger)
-    });
-  }
 
-  function systemPrompt(title, defaultValue = "", message = "") {
-    return openSystemDialog({
-      title,
-      message,
-      defaultValue,
-      mode: "prompt",
-      confirmLabel: "Save",
-      cancelLabel: "Cancel"
-    });
-  }
 
-  function setStatus(message, failure = false) {
-    $("status").textContent = message;
-    $("status").style.color = failure ? "var(--accent)" : "var(--success)";
-  }
 
 
   async function loadCategories(preferredId) {
@@ -4480,22 +4420,7 @@ import {
   $("deleteModal").onclick = (event) => {
     if (event.target === $("deleteModal")) closeDeleteModal();
   };
-  $("systemDialogCancel").onclick = () => closeSystemDialog(activeSystemDialog && activeSystemDialog.mode === "prompt" ? null : false);
-  $("systemDialogConfirm").onclick = () => {
-    if (!activeSystemDialog) return;
-    closeSystemDialog(activeSystemDialog.mode === "prompt" ? $("systemDialogInput").value : true);
-  };
-  $("systemDialog").onclick = (event) => {
-    if (event.target === $("systemDialog")) {
-      closeSystemDialog(activeSystemDialog && activeSystemDialog.mode === "prompt" ? null : false);
-    }
-  };
-  $("systemDialogInput").onkeydown = (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      closeSystemDialog($("systemDialogInput").value);
-    }
-  };
+  wireSystemDialog();
   $("createCategory").onclick = async () => {
     try {
       const payload = await api("/api/admin/categories", {
@@ -4518,9 +4443,8 @@ import {
   };
 
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && activeSystemDialog) {
+    if (event.key === "Escape" && dismissSystemDialog()) {
       event.preventDefault();
-      closeSystemDialog(activeSystemDialog.mode === "prompt" ? null : false);
       return;
     }
     if (event.key === "Escape" && wizardState.active) {

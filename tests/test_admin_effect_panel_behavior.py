@@ -12,6 +12,8 @@ ADMIN_RAILS = SERVER_ROOT / "static" / "admin" / "modules" / "canvasRails.js"
 ADMIN_SLIDERS = SERVER_ROOT / "static" / "admin" / "modules" / "sliders.js"
 # What the studio remembers between visits goes through one door.
 ADMIN_PREFERENCES = SERVER_ROOT / "static" / "admin" / "modules" / "preferences.js"
+# The page itself: finding an element, and the studio's three ways of speaking.
+ADMIN_DOM = SERVER_ROOT / "static" / "admin" / "modules" / "dom.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -763,7 +765,6 @@ def test_top_bar_keeps_server_pulse_as_an_icon_and_hides_the_status_line():
     only, so it is still written and can be brought back in one line.
     """
     css = ADMIN_CSS.read_text(encoding="utf-8")
-    js = ADMIN_JS.read_text(encoding="utf-8")
     html = ADMIN_HTML.read_text(encoding="utf-8")
 
     pulse = html.split('<div class="top-actions">', 1)[1].split("</a>", 1)[0]
@@ -774,7 +775,7 @@ def test_top_bar_keeps_server_pulse_as_an_icon_and_hides_the_status_line():
 
     status = css.split(chr(10) + ".top-status {", 1)[1].split("}", 1)[0]
     assert "display: none" in status
-    assert '$("status").textContent = message;' in js
+    assert '$("status").textContent = message;' in ADMIN_DOM.read_text(encoding="utf-8")
 
 
 def test_studio_name_shares_the_row_with_the_sidebar_controls():
@@ -1089,3 +1090,28 @@ def test_what_the_studio_remembers_goes_through_one_door():
     for reader in ("function read(key)", "function write(key, value)"):
         body = preferences.split(reader, 1)[1].split(chr(10) + "}", 1)[0]
         assert "catch" in body, reader
+
+
+def test_the_studio_speaks_through_one_module():
+    """A toast, a status line, and one dialog that stands in for three browser ones.
+
+    They were scattered through the editor with the element lookups they use;
+    they are the page's own business, not the mockups', so they moved out
+    together -- including the dialog's buttons and the Escape that dismisses
+    it, which had been left behind in the editor reaching for a variable that
+    was no longer there.
+    """
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    dom = ADMIN_DOM.read_text(encoding="utf-8")
+
+    for name in ("$", "toast", "setStatus", "openSystemDialog", "systemAlert",
+                 "systemConfirm", "systemPrompt", "wireSystemDialog", "dismissSystemDialog"):
+        assert f"export function {name}(" in dom or f"export const {name} =" in dom, name
+
+    # The dialog keeps its own state and its own buttons.
+    assert "let activeSystemDialog" in dom
+    assert "activeSystemDialog" not in js
+    assert "wireSystemDialog();" in js
+
+    # Escape asks the dialog whether there was one to close.
+    assert 'if (event.key === "Escape" && dismissSystemDialog())' in js
