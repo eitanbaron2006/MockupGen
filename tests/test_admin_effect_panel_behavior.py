@@ -14,6 +14,10 @@ ADMIN_SLIDERS = SERVER_ROOT / "static" / "admin" / "modules" / "sliders.js"
 ADMIN_PREFERENCES = SERVER_ROOT / "static" / "admin" / "modules" / "preferences.js"
 # The page itself: finding an element, and the studio's three ways of speaking.
 ADMIN_DOM = SERVER_ROOT / "static" / "admin" / "modules" / "dom.js"
+# ...and what the studio is holding at any moment.
+ADMIN_STATE = SERVER_ROOT / "static" / "admin" / "modules" / "state.js"
+# The Test mockups window, which writes names into markup of its own.
+ADMIN_TEST_MODAL = SERVER_ROOT / "static" / "admin" / "modules" / "testModal.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
 ADMIN_HTML = SERVER_ROOT / "templates" / "admin" / "index.html"
 
@@ -955,7 +959,8 @@ def test_names_injected_into_attributes_are_escaped_for_attributes():
     """
     import re
 
-    js = ADMIN_JS.read_text(encoding="utf-8")
+    # Every file that writes a name into markup, checked together.
+    js = ADMIN_JS.read_text(encoding="utf-8") + ADMIN_TEST_MODAL.read_text(encoding="utf-8")
     helpers = ADMIN_HELPERS.read_text(encoding="utf-8")
 
     # The helper is the one that closes the quotes.
@@ -1074,17 +1079,18 @@ def test_what_the_studio_remembers_goes_through_one_door():
     """
     js = ADMIN_JS.read_text(encoding="utf-8")
     rails = ADMIN_RAILS.read_text(encoding="utf-8")
+    studio_state = ADMIN_STATE.read_text(encoding="utf-8")
     preferences = ADMIN_PREFERENCES.read_text(encoding="utf-8")
 
     # Nothing else touches storage directly any more.
-    assert "localStorage" not in js
-    assert "localStorage" not in rails
+    for module in (js, rails, studio_state):
+        assert "localStorage" not in module
     assert "localStorage" in preferences
 
     for key in ("selectionStyle", "sidebarWidth", "sidebarLocked", "queueCompact",
                 "greenPanelCollapsed", "toolbarPositions"):
         assert f"{key}: " in preferences.split("export const KEYS = {", 1)[1].split("};", 1)[0], key
-        assert f"KEYS.{key}" in js + rails, key
+        assert f"KEYS.{key}" in js + rails + studio_state, key
 
     # Every read is guarded, so storage that refuses is a default, not a crash.
     for reader in ("function read(key)", "function write(key, value)"):
@@ -1115,3 +1121,32 @@ def test_the_studio_speaks_through_one_module():
 
     # Escape asks the dialog whether there was one to close.
     assert 'if (event.key === "Escape" && dismissSystemDialog())' in js
+
+
+def test_the_test_mockups_window_is_a_module_of_its_own():
+    """Eight hundred lines that were never about editing a template.
+
+    The window keeps its own state -- the images dropped into it, which
+    mockups are ticked, the renders already produced -- and shares only the
+    studio's state object with the editor behind it. Nothing in it reaches
+    back into the editor's functions, which is what let it come out whole.
+    """
+    import re
+
+    js = ADMIN_JS.read_text(encoding="utf-8")
+    modal = ADMIN_TEST_MODAL.read_text(encoding="utf-8")
+
+    # Its own state, and the studio's, both from the one place that holds them.
+    assert 'from "./state.js"' in modal
+    assert "testState" not in js.split('from "./modules/state.js"', 1)[1] or "testState," in js
+
+    # The editor asks it to redraw its lists; it asks the editor for nothing.
+    assert "export function renderMockupGallery(" in modal
+    assert "export function renderTestGallery(" in modal
+    for name in ("drawSelection", "saveTemplate", "setBusy", "showProvider",
+                 "switchDetectionProvider", "loadLocalModels"):
+        assert not re.search(rf"(?<![\w$.]){name}\s*\(", modal), name
+
+    # And what it does need, it imports rather than assumes.
+    for line in ("import { escapeAttr, escapeHtml }", "import { $, toast }", "import { api, csrfHeaders }"):
+        assert line in modal, line
