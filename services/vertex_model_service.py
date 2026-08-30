@@ -1,6 +1,5 @@
 from typing import Any
 
-
 FALLBACK_VERTEX_DETECTION_MODELS = [
     {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", "stage": "GA"},
     {

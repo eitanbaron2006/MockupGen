@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -1205,7 +1204,7 @@ def render_green_frame_mockup(
             shadows.append((shadow, region))
 
     result = Image.fromarray(base_after_rect)
-    for overlay, cx0, cy0, cw, ch in overlays:
+    for overlay, cx0, cy0, _cw, _ch in overlays:
         result.alpha_composite(overlay, (cx0, cy0))
     for shadow, region in shadows:
         result.alpha_composite(shadow, (region.x, region.y))
@@ -1301,8 +1300,10 @@ def _homography(src: list[dict[str, float]], dst: list[dict[str, float]]) -> Opt
     rows, vals = [], []
     for s, d in zip(src, dst):
         x, y, u, v = s["x"], s["y"], d["x"], d["y"]
-        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y]); vals.append(u)
-        rows.append([0, 0, 0, x, y, 1, -v * x, -v * y]); vals.append(v)
+        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        vals.append(u)
+        rows.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        vals.append(v)
     try:
         h = np.linalg.solve(np.asarray(rows, dtype=np.float64), np.asarray(vals, dtype=np.float64))
     except np.linalg.LinAlgError:

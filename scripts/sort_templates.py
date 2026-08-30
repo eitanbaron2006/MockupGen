@@ -21,8 +21,8 @@ if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
 from config import Config
-from services.catalog_service import CatalogService
 from scripts.rename_templates import _frame_boxes, _orientation
+from services.catalog_service import CatalogService
 
 SINGLE_BY_SHAPE = {
     "V": "vertival-wall-art-frame",

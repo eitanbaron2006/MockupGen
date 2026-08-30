@@ -1,0 +1,23 @@
+# One service, and the folders whose contents have to outlive the container:
+# the catalog database, the published templates, and what the studio renders.
+services:
+  studio:
+    build: .
+    image: mockupgen
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      # Waitress serves it; these are the knobs worth setting from here.
+      WAITRESS_THREADS: "8"
+    volumes:
+      - ./data:/app/data
+      - ./templates_data:/app/templates_data
+      - ./draft_templates:/app/draft_templates
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      # The local-model weights, for an image built with requirements-ml.txt.
+      - ./models:/app/models
+    restart: unless-stopped

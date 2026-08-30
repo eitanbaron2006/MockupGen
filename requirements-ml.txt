@@ -1,0 +1,7 @@
+# The optional local-model stack: SAM 2.1 segmentation for the Local AI
+# detection mode. Multi-gigabyte, CUDA-aware, and not needed to run the studio
+# or its tests -- install it only on a machine that will run those models, and
+# put the weights in models/ (sam2.1_l.pt, RealESRGAN_x4plus.pth).
+-r requirements.txt
+torch>=2.2
+ultralytics>=8.3,<9.0

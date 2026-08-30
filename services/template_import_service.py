@@ -8,7 +8,7 @@ from PIL import Image, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from services.catalog_service import CatalogError, CatalogService, orientation_for_size
+from services.catalog_service import CatalogService, orientation_for_size
 from services.image_utils import ALLOWED_ARTWORK_EXTENSIONS
 
 

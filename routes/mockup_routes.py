@@ -19,7 +19,6 @@ from services.simple_mockup_service import (
     select_template_for_artwork,
 )
 
-
 mockup_routes = Blueprint("mockup_routes", __name__)
 
 

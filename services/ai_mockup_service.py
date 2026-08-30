@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
+
 from PIL import Image
 
 from services.simple_mockup_service import RenderResult, load_manifest

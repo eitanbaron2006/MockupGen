@@ -1,0 +1,25 @@
+.git
+.github
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+archive
+scratch
+scratchpad
+workspace
+logs
+# Data, not code: these are volumes. Baking them in doubles the image and
+# ships a catalog that is stale the moment anyone edits a template.
+data
+templates_data
+draft_templates
+uploads
+outputs
+mockups
+shadow_overlays
+models
+docs
+*.md
+.env

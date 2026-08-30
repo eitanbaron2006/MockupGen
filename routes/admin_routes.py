@@ -1,13 +1,12 @@
 import hmac
 import io
-import json
 import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
-from concurrent.futures import ThreadPoolExecutor
 
 from flask import (
     Blueprint,
@@ -32,10 +31,6 @@ from services.green_frame_mockup_service import (
     green_mask_image,
 )
 from services.local_detection_service import discover_local_models
-from services.vertex_model_service import (
-    FALLBACK_VERTEX_DETECTION_MODELS,
-    list_vertex_detection_models,
-)
 from services.template_import_service import (
     TemplateImportError,
     delete_template_assets,
@@ -43,7 +38,10 @@ from services.template_import_service import (
     import_backgrounds,
     publish_template,
 )
-
+from services.vertex_model_service import (
+    FALLBACK_VERTEX_DETECTION_MODELS,
+    list_vertex_detection_models,
+)
 
 admin_routes = Blueprint("admin_routes", __name__)
 SETTINGS_KEYS = {
@@ -709,7 +707,7 @@ def detect_admin_template(template_id: str):
         else:
             provider = build_provider(catalog().get_settings(), current_app.config)
             if provider.__class__.__name__ == "ClassicDetectionProvider":
-                proposal = getattr(provider, "detect")(background, mode=mode, point=point)
+                proposal = provider.detect(background, mode=mode, point=point)
             else:
                 proposal = provider.detect(background)
             mask_name = save_green_frame_mask_if_needed(provider, background, mode, proposal)

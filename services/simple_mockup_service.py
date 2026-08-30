@@ -1,27 +1,31 @@
+import base64
 import json
 import math
 import random
-import base64
 import re
 import threading
-from collections import OrderedDict
 from base64 import b64encode
-from io import BytesIO
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageEnhance, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
-from services.image_utils import ImageProcessingError, fit_artwork, load_mask, load_rgba
-from services.image_utils import get_perspective_coefficients
 from services.green_frame_mockup_service import (
-    detection_from_mask,
     detect_green_frames,
+    detection_from_mask,
     parse_green_frame_settings,
     render_green_frame_mockup,
+)
+from services.image_utils import (
+    fit_artwork,
+    get_perspective_coefficients,
+    load_mask,
+    load_rgba,
 )
 
 
@@ -99,8 +103,8 @@ def load_manifest(templates_folder: Path, template_id: str) -> tuple[Path, dict[
     manifest_path = template_folder / "manifest.json"
     try:
         stat = manifest_path.stat()
-    except OSError:
-        raise TemplateNotFoundError(template_id)
+    except OSError as error:
+        raise TemplateNotFoundError(template_id) from error
     stamp = (stat.st_mtime_ns, stat.st_size)
     cache_key = str(manifest_path)
     with _MANIFEST_CACHE_LOCK:
@@ -1408,7 +1412,7 @@ def _apply_effects_by_target(img: Image.Image, effects: dict | None, target_name
                 window_blur = float(opts.get("window_blur", 20.0))
                 blur_px = max(2, int(window_blur * width / 800))
                 window_mask = _create_window_frame_mask(width, height, window_type, blur_px)
-                window_mask = window_mask.point(lambda p: int(p * window_opacity))
+                window_mask = window_mask.point(lambda p, o=window_opacity: int(p * o))
                 reflection_layer = Image.new("RGBA", (width, height), (255, 255, 255, 255))
                 img = Image.composite(reflection_layer, img, window_mask)
                 
@@ -1840,7 +1844,8 @@ def render_simple_mockup(
         # source, mirroring the non-green render path.
         artwork_filter = None
         if realism:
-            artwork_filter = lambda img: _apply_realism_filter(img, active_effects)
+            def artwork_filter(image):
+                return _apply_realism_filter(image, active_effects)
         composed = _render_green_frame_mockup(
             background=background,
             artwork=artworks if len(artworks) > 1 else artwork,

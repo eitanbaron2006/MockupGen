@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 ADMIN_JS = SERVER_ROOT / "static" / "admin" / "admin.js"
 ADMIN_CSS = SERVER_ROOT / "static" / "admin" / "admin.css"
@@ -562,7 +561,6 @@ def test_coordinate_readout_is_a_rail_of_its_own():
     css = ADMIN_CSS.read_text(encoding="utf-8")
     html = ADMIN_HTML.read_text(encoding="utf-8")
 
-    rail = html.split('id="coordsRail"', 1)[1].split("</div>", 1)[0]
     assert "data-drag-handle" in html.split('id="coordsRail"', 1)[1][:400]
     assert 'class="canvas-rail coords-rail is-horizontal"' in html
     for field in ('id="coordX"', 'id="coordY"', 'id="coordW"', 'id="coordH"'):

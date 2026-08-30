@@ -1,11 +1,10 @@
+import base64
 import io
 import json
-import base64
 import sys
 from pathlib import Path
 
 from PIL import Image
-
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVER_ROOT) not in sys.path:
@@ -1205,7 +1204,6 @@ def _multi_frame_template(
     boxes: list[tuple[int, int, int, int]] | None = None,
 ) -> dict:
     """A two-frame template whose regions are exact geometric quads."""
-    from PIL import ImageDraw
 
     template_id = "template_frames"
     folder = templates_folder / template_id

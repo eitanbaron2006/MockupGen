@@ -5,18 +5,16 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageDraw
 
-
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
-from services.detection_service import DetectionError, validate_proposal
-from services.detection_service import build_provider
-from services.frame_refinement_service import refine_artwork_area
 from services.classic_detection_service import ClassicDetectionProvider
+from services.detection_service import DetectionError, build_provider, validate_proposal
+from services.frame_refinement_service import refine_artwork_area
 from services.local_detection_service import discover_local_models
-from services.vertex_model_service import list_vertex_detection_models
 from services.vertex_detection_service import VertexDetectionProvider
+from services.vertex_model_service import list_vertex_detection_models
 
 
 def test_detection_proposal_validation_rejects_area_outside_image():
@@ -706,6 +704,7 @@ def test_frame_of_a_rounded_opening_follows_its_edges_instead_of_tilting():
     comes out visibly rotated inside the screen.
     """
     import numpy as np
+
     from services.green_frame_mockup_service import GreenRegion, _region_quad
 
     opening = Image.new("L", (300, 500), 0)
@@ -727,6 +726,7 @@ def test_frame_of_a_slanted_opening_keeps_its_slant():
     """The tighter shape wins, and for a frame seen at an angle that is its own
     quad -- squaring it off would waste a corner of the mask on every side."""
     import numpy as np
+
     from services.green_frame_mockup_service import GreenRegion, _region_quad
 
     opening = Image.new("L", (500, 400), 0)
@@ -750,8 +750,12 @@ def test_frame_points_does_not_leak_through_a_gap_in_a_hard_bezel(tmp_path: Path
     sits on a hard edge now blocks the fill, so the opening stays the opening.
     """
     import numpy as np
+
     from services.green_frame_mockup_service import (
-        GreenFrameSettings, detect_frames_from_points, green_detection_raw)
+        GreenFrameSettings,
+        detect_frames_from_points,
+        green_detection_raw,
+    )
 
     opening = (60, 60, 180, 260)
     canvas = np.full((320, 240, 3), 246, np.uint8)              # wall, near the opening's own colour
@@ -780,10 +784,15 @@ def test_frame_points_keeps_the_angle_of_a_frame_that_is_not_level(tmp_path: Pat
     fill is a straight line, the region is trimmed back to it.
     """
     import math
-    import numpy as np
+
     import cv2
+    import numpy as np
+
     from services.green_frame_mockup_service import (
-        GreenFrameSettings, detect_frames_from_points, green_detection_raw)
+        GreenFrameSettings,
+        detect_frames_from_points,
+        green_detection_raw,
+    )
 
     tilt = 3.0
     canvas = np.full((420, 520, 3), 236, np.uint8)                     # wall

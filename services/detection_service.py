@@ -23,6 +23,7 @@ class DetectionProvider(Protocol):
 
 import math
 
+
 def sort_clockwise(corners: list[dict[str, int]]) -> list[dict[str, int]]:
     if len(corners) != 4:
         return corners

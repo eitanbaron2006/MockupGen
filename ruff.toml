@@ -1,0 +1,27 @@
+# What the linter is here to catch: real mistakes -- an undefined name, an
+# import that is not used, a closure that captured a loop variable -- and a
+# consistent import order. Style opinions that would rewrite working code for
+# taste (blind excepts, int() casts, Optional[X] spelling) are left alone; this
+# codebase makes those choices deliberately and in comments.
+line-length = 110
+target-version = "py312"
+extend-exclude = ["archive", "scratch", "scratchpad", ".venv", "workspace"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B", "I"]
+
+# zip() without strict=: eight call sites pair geometry that is expected to
+# match in length. Turning strict on would raise where the code currently
+# truncates, which is a behaviour change and belongs in its own pass.
+ignore = ["B905"]
+
+[lint.per-file-ignores]
+# Tests reach into the modules they are testing and build apps inline.
+"tests/*" = ["E402"]
+# Logging is configured before Flask's import chain gets a chance to log.
+"app.py" = ["E402"]
+# Standalone scripts put the project on sys.path before importing from it.
+"scripts/*" = ["E402"]
+# The provider modules are imported where they are chosen, so that a missing
+# optional dependency only breaks the provider that needs it.
+"services/detection_service.py" = ["E402"]

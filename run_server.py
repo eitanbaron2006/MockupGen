@@ -3,10 +3,12 @@ WSGI Production Server Runner for MockupGen
 Uses Waitress WSGI server with multi-threading for high concurrency and performance.
 """
 
+import logging
 import os
 import sys
-import logging
+
 from waitress import serve
+
 from app import create_app
 
 # Configure logging

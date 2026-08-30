@@ -8,7 +8,6 @@ from PIL import Image
 from services.detection_service import DetectionError, DetectionProposal, validate_proposal
 from services.frame_refinement_service import refine_artwork_area, refine_perspective_corners
 
-
 PROMPT = """Find ALL inner artwork replacement areas in this product mockup.
 For EACH separate picture frame, poster opening, canvas, or artwork slot in the mockup (whether 1 single frame, a diptych of 2 frames, a triptych of 3 frames, or a multi-frame gallery wall):
 Detect the exact 4 inner corners of the frame opening (excluding the wooden frame border, matting, or external cast shadows) in clockwise order starting from the top-left corner:
@@ -93,8 +92,8 @@ def check_vertex_health(
             location=location or "global",
             http_options=types.HttpOptions(httpx_client=http_client),
         )
-        # Fast lightweight ping
-        res = client.models.generate_content(
+        # Fast lightweight ping: it either answers or raises.
+        client.models.generate_content(
             model=model or "gemini-2.5-flash",
             contents="ping",
         )

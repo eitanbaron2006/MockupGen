@@ -34,7 +34,6 @@ from services.template_selection_service import (
     template_frames,
 )
 
-
 MAX_ITEMS_PER_REQUEST = 20
 MAX_ARTWORKS_PER_ITEM = 12
 
@@ -81,10 +80,10 @@ def _artwork_specs(item: dict, item_id: str) -> list[dict]:
                 if frame is not None:
                     try:
                         frame = int(frame)
-                    except (TypeError, ValueError):
+                    except (TypeError, ValueError) as error:
                         raise RequestValidationError(
                             f"Item '{item_id}': 'frame' must be a positive integer"
-                        )
+                        ) from error
                     if frame < 1:
                         raise RequestValidationError(
                             f"Item '{item_id}': 'frame' must be a positive integer"
@@ -174,8 +173,10 @@ def _merge_output(defaults: dict, item: dict) -> tuple[str, int | None]:
     if quality is not None:
         try:
             quality = int(quality)
-        except (TypeError, ValueError):
-            raise RequestValidationError("output.quality must be an integer between 1 and 100")
+        except (TypeError, ValueError) as error:
+            raise RequestValidationError(
+                "output.quality must be an integer between 1 and 100"
+            ) from error
     return output_format, quality
 
 

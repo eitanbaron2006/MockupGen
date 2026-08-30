@@ -1,6 +1,7 @@
 from pathlib import Path
-from services.telemetry_service import TelemetryService
+
 from app import create_app
+from services.telemetry_service import TelemetryService
 
 
 def test_telemetry_service_unit(tmp_path: Path):

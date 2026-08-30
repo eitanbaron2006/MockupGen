@@ -6,7 +6,6 @@ console with "Expected number, NaN". The area's own box still describes the
 frame, so the empty list is simply removed.
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 

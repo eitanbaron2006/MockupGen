@@ -7,11 +7,9 @@ server resource utilization (CPU, RAM, threads, disk), and mockup rendering perf
 
 from __future__ import annotations
 
-import os
 import sys
-import time
-import shutil
 import threading
+import time
 import traceback
 from collections import deque
 from dataclasses import asdict, dataclass

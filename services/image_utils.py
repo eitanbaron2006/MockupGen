@@ -6,7 +6,6 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-
 ALLOWED_ARTWORK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 

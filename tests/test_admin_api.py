@@ -6,7 +6,6 @@ from pathlib import Path
 
 from PIL import Image
 
-
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
@@ -210,7 +209,7 @@ def test_auto_detection_returns_all_frames_without_writing_a_mask(tmp_path: Path
     raw = payload["proposal"]["raw_artwork_area"]
     regions = raw["regions"]
     assert len(regions) == 3
-    for region, (left, top, right, bottom) in zip(regions, boxes):
+    for region, (left, top, _right, _bottom) in zip(regions, boxes):
         assert abs(region["x"] - left) <= 16
         assert abs(region["y"] - top) <= 16
 
@@ -1155,3 +1154,76 @@ def test_detection_on_new_mockups_is_its_own_setting(tmp_path: Path):
     for mode in ("none", "auto", "green_frames"):
         assert f'value="{mode}"' in select, mode
     assert 'value="color_pick"' not in select
+
+
+def test_the_requirements_list_what_the_app_imports():
+    """A missing dependency is a container that builds and then falls over.
+
+    The list had drifted: numpy and OpenCV are imported at the top of the
+    detection services and neither was in it, so a clean install ran until the
+    first detection and stopped. This walks the imports and asks for each one.
+    """
+    import ast
+
+    distribution_for = {
+        "flask": "Flask",
+        "flask_cors": "Flask-Cors",
+        "PIL": "Pillow",
+        "dotenv": "python-dotenv",
+        "numpy": "numpy",
+        "cv2": "opencv-python-headless",
+        "scipy": "scipy",
+        "psutil": "psutil",
+        "httpx": "httpx",
+        "requests": "requests",
+        "waitress": "waitress",
+        "google": "google-genai",
+    }
+    optional = {"ultralytics", "torch"}   # requirements-ml.txt
+
+    def packages(name: str) -> str:
+        # The comments in these files talk about packages they deliberately do
+        # not install, so only the requirement lines count.
+        lines = (SERVER_ROOT / name).read_text(encoding="utf-8").splitlines()
+        return chr(10).join(
+            line for line in lines if line.strip() and not line.startswith("#")
+        ).lower()
+
+    requirements = packages("requirements.txt")
+    imported: set[str] = set()
+    for folder in ("services", "routes"):
+        for path in (SERVER_ROOT / folder).glob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name.split(".")[0] for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    imported.add(node.module.split(".")[0])
+
+    missing = []
+    for name in sorted(imported & set(distribution_for)):
+        if distribution_for[name].lower() not in requirements:
+            missing.append(f"{name} (install {distribution_for[name]})")
+    assert not missing, f"imported but not in requirements.txt: {missing}"
+
+    # The heavy optional stack stays out of the runtime list.
+    for name in optional:
+        assert name not in requirements
+        assert name in packages("requirements-ml.txt")
+
+
+def test_the_container_and_ci_describe_a_server_that_boots():
+    """The deployment files are checked in, and say what they should."""
+    dockerfile = (SERVER_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert 'CMD ["python", "run_server.py"]' in dockerfile
+    assert "HEALTHCHECK" in dockerfile and "/api/health" in dockerfile
+    assert "USER studio" in dockerfile           # not root
+    assert "opencv" not in dockerfile            # dependencies come from the list
+
+    ignored = (SERVER_ROOT / ".dockerignore").read_text(encoding="utf-8").split()
+    for folder in ("data", "templates_data", "draft_templates", "outputs", "models"):
+        assert folder in ignored, folder        # volumes, not image content
+
+    workflow = (SERVER_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "ruff check ." in workflow
+    assert "pytest tests/ -q" in workflow
+    assert "docker build" in workflow and "/api/health" in workflow

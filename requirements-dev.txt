@@ -1,0 +1,4 @@
+# Everything above, plus what the tests and the linter need.
+-r requirements.txt
+pytest>=8.0,<9.0
+ruff>=0.6,<1.0
