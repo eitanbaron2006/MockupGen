@@ -5100,58 +5100,9 @@ input[type="checkbox"]:disabled {
   background: var(--page);
 }
 
-/* ---- the guide library ---- */
-
-.listing-guides {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  flex: 1;
-  min-height: 0;
-}
-
-.listing-guide-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.listing-guide-form .listing-field-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-/* The ratio is one short choice, not a field to stretch across the window. */
-.listing-guide-form .test-select-wrapper {
-  flex: 0 0 200px;
-}
-
-.listing-guide-form select {
-  height: 36px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 8px;
-  padding: 0 12px;
-  font-size: 13px;
-  color: var(--ink);
-  min-width: 180px;
-}
-
-.listing-guide-form .btn {
-  height: 36px;
-}
-
-.listing-guide-form .test-select-wrapper label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-family: var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
+/* The size guide slot's own controls. These were lost when the guide library
+   styles below were rewritten, which left a full-width select and a stacked
+   button in the middle of a screen nobody asked to change. */
 .listing-slot-tools {
   display: flex;
   align-items: center;
@@ -5161,7 +5112,8 @@ input[type="checkbox"]:disabled {
 
 .listing-slot-tools select {
   height: 28px;
-  max-width: 132px;
+  flex: 0 0 116px;
+  width: 116px;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 8px;
@@ -5174,62 +5126,57 @@ input[type="checkbox"]:disabled {
   height: 28px;
 }
 
-.listing-prompt {
+/* ---- the guide library ----
+   Read from the top down: the charts that exist, the styles that make more,
+   and the wording at the bottom for when a style needs changing first. */
+
+.listing-guides {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  padding-top: 18px;
 }
 
-.listing-prompt-head {
+.listing-guide-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.listing-prompt-head label {
-  font-family: var(--mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.listing-prompt-head .btn {
-  height: 26px;
-  margin-left: auto;
-}
-
-.listing-prompt textarea {
-  width: 100%;
+/* Selects are 100% wide across this admin, so one dropped into a row has to
+   be given a width of its own or it swallows the row. */
+.listing-guide-bar select {
+  height: 32px;
+  flex: 0 0 170px;
+  width: 170px;
   border: 1px solid var(--line);
-  border-radius: 10px;
   background: var(--panel);
-  padding: 12px 14px;
-  font-family: var(--mono);
+  border-radius: 8px;
+  padding: 0 10px;
   font-size: 12px;
-  line-height: 1.6;
   color: var(--ink);
-  resize: vertical;
 }
 
-.listing-prompt textarea:focus {
-  outline: none;
-  border-color: var(--accent);
+.listing-guide-bar .btn {
+  height: 32px;
 }
 
-.listing-prompt code {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink);
+.listing-guide-bar .listing-hint {
+  flex: 1;
+  min-width: 0;
 }
 
 .listing-guide-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 16px;
   overflow-y: auto;
   align-content: start;
   flex: 1;
+  min-height: 0;
+  padding-right: 4px;
 }
 
 .listing-guide-card {
@@ -5249,6 +5196,21 @@ input[type="checkbox"]:disabled {
   object-fit: contain;
   background: var(--page);
   border-radius: 6px;
+  cursor: zoom-in;
+}
+
+.listing-guide-lost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  margin: 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 10px;
 }
 
 .listing-guide-meta {
@@ -5264,6 +5226,173 @@ input[type="checkbox"]:disabled {
   position: absolute;
   top: 6px;
   right: 6px;
+}
+
+/* ---- the styles on offer ---- */
+
+.listing-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.listing-styles-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.listing-styles-head label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.listing-style-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* One width for every style, or the row reads as a ransom note: a flex item
+   sized by its own text made each card as wide as its longest line. */
+.listing-style {
+  display: flex;
+  align-items: stretch;
+  width: 258px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.listing-style-draw {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.listing-style-draw strong {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.listing-style-draw {
+  flex: 1;
+  min-width: 0;
+}
+
+.listing-style-draw span {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.listing-style-draw:hover {
+  background: var(--accent-soft);
+}
+
+/* The pencil is the way to change a style before drawing it, so it lives on
+   the style rather than somewhere the user has to go looking. */
+.listing-style-edit {
+  width: 30px;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.listing-style-edit:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* A style that has been shown an example says so, because that is what makes
+   its charts come out the way the admin meant. */
+.listing-style-edit.has-example {
+  color: var(--accent);
+}
+
+/* Drawing takes seconds, so the button says so without losing what it says. */
+.listing-style-draw.is-busy,
+.btn.is-busy {
+  opacity: 0.55;
+}
+
+.listing-style-draw.is-busy strong::after {
+  content: " -- drawing...";
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---- the wording, at the bottom, where it is read only when needed ---- */
+
+.listing-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.listing-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.listing-prompt-head label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.listing-prompt-head .btn {
+  height: 28px;
+}
+
+.listing-prompt-head #listingPromptReset {
+  margin-left: auto;
+}
+
+.listing-reference-name {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listing-prompt textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.listing-prompt textarea:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* The set controls live with the result they produce, not among the render

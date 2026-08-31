@@ -1483,31 +1483,41 @@
       </div>
 
       <div class="modal-body listing-guides hidden" id="listingGuidesPane">
-        <div class="listing-guide-form">
-          <p class="listing-hint">A size chart is what a buyer measures a wall against, so a listing ships a
-            ready-made one. Keep one chart per ratio; the ratio says which way round it is drawn.</p>
-          <div class="listing-field-row">
-            <div class="test-select-wrapper">
-              <label for="listingGuideRatio">Ratio</label>
-              <select id="listingGuideRatio"></select>
-            </div>
-            <input type="file" id="listingGuideFile" accept="image/png, image/jpeg, image/webp" class="hidden-input">
-            <button class="btn" id="listingGuideUpload" type="button">Upload chart</button>
-            <button class="btn primary" id="listingGuideGenerate" type="button">Generate with AI</button>
-          </div>
-          <div class="listing-prompt">
-            <div class="listing-prompt-head">
-              <label for="listingGuidePrompt">Prompt sent to the model</label>
-              <button class="btn compact" id="listingPromptReset" type="button">Restore default</button>
-            </div>
-            <textarea id="listingGuidePrompt" rows="7" spellcheck="false"></textarea>
-            <p class="listing-hint">Edited wording is kept and used for every chart from then on.
-              <code>{ratio}</code>, <code>{sizes}</code>, <code>{unit}</code>, <code>{orientation}</code> and
-              <code>{count}</code> are filled in by the studio.</p>
-          </div>
+        <div class="listing-guide-bar">
+          <select id="listingGuideRatio" title="Which ratio to draw or upload"></select>
+          <button class="btn compact" id="listingGuideUpload" type="button">Upload chart</button>
+          <input type="file" id="listingGuideFile" accept="image/png, image/jpeg, image/webp" class="hidden-input">
+          <span class="listing-hint">The ratio says which way round a chart is drawn, so one per
+            ratio is all a shop needs. Click a chart to see it full size.</span>
         </div>
+
         <div class="listing-guide-grid" id="listingGuideGrid">
-          <div class="gallery-empty">No size guides yet</div>
+          <div class="gallery-empty">No size guides yet &mdash; pick a style below</div>
+        </div>
+
+        <div class="listing-styles">
+          <div class="listing-styles-head">
+            <label>Styles</label>
+            <span class="listing-hint">A click draws one. The pencil opens its wording below to
+              change first.</span>
+          </div>
+          <div class="listing-style-row" id="listingStyleRow"></div>
+          <input type="file" id="listingStyleExampleFile" accept="image/png, image/jpeg, image/webp"
+            class="hidden-input">
+        </div>
+
+        <div class="listing-prompt">
+          <div class="listing-prompt-head">
+            <label for="listingGuidePrompt">Prompt</label>
+            <button class="btn compact" id="listingReferenceButton" type="button"
+              title="Send an example image for the model to imitate">Reference image</button>
+            <input type="file" id="listingReferenceFile" accept="image/png, image/jpeg, image/webp"
+              class="hidden-input">
+            <span class="listing-reference-name" id="listingReferenceName"></span>
+            <button class="btn compact" id="listingPromptReset" type="button">Restore default</button>
+            <button class="btn primary compact" id="listingGuideGenerate" type="button">Generate</button>
+          </div>
+          <textarea id="listingGuidePrompt" rows="4" spellcheck="false"></textarea>
         </div>
       </div>
     </div>

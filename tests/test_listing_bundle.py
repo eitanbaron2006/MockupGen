@@ -488,16 +488,98 @@ def test_the_generation_prompt_can_be_read_edited_and_is_remembered(tmp_path, mo
     assert client.get("/api/admin/size-guides").get_json()["prompt"] == "Draw a {ratio} chart my way."
 
 
-def test_a_rewritten_prompt_still_carries_the_sizes():
-    from services.size_guide_service import guide_prompt
+def test_a_rewritten_prompt_still_carries_the_sizes_and_the_demand_for_exact_text():
+    """Two things survive any rewrite: the sizes, and how they must be lettered.
+
+    An image model misspells what it draws -- one chart came back reading
+    "10bs15 cm" -- and a size guide with a wrong number in it is worse than
+    none, so the demand for exact characters is appended even to wording the
+    admin replaced entirely.
+    """
+    from services.size_guide_service import TEXT_ACCURACY_CLAUSE, guide_prompt
 
     filled = guide_prompt("2:3", ["12x18 in", "24x36 in"], "in", "portrait", "My own wording.")
 
     assert filled.startswith("My own wording.")
     assert "12x18 in, 24x36 in" in filled
+    assert TEXT_ACCURACY_CLAUSE in filled
 
     placed = guide_prompt("2:3", ["12x18 in"], "in", "portrait", "A {orientation} {ratio} chart: {sizes}.")
-    assert placed == "A portrait 2:3 chart: 12x18 in."
+    assert placed.startswith("A portrait 2:3 chart: 12x18 in.")
+    assert placed.endswith(TEXT_ACCURACY_CLAUSE)
+    # ...and it is stated once, not once per generation.
+    assert placed.count("TEXT ACCURACY") == 1
+
+
+def test_every_style_the_studio_offers_can_be_generated(tmp_path, monkeypatch):
+    """A shop's chart comes in styles; which one suits a listing is the seller's call."""
+    import routes.admin_routes as admin_routes
+    from services.size_guide_service import GUIDE_PROMPT_PRESETS
+
+    client, _ = build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
+    csrf = admin_login(client)
+
+    offered = client.get("/api/admin/size-guides").get_json()["presets"]
+    assert [preset["key"] for preset in offered] == [p["key"] for p in GUIDE_PROMPT_PRESETS]
+    assert all(preset["name"] and preset["prompt"] for preset in offered)
+
+    seen = {}
+    monkeypatch.setattr(
+        admin_routes,
+        "generate_size_guide",
+        lambda **kwargs: (seen.update(kwargs), Image.new("RGB", (32, 48)))[1],
+    )
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", True)
+    monkeypatch.setitem(client.application.config, "VERTEX_PROJECT_ID", "test-project")
+
+    made = client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "2:3", "preset": "outlined"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert made.status_code == 201
+    assert "rectangle outlines" in seen["template"]
+    # Trying a style is not the same as rewriting the studio's own wording.
+    assert client.get("/api/admin/size-guides").get_json()["prompt"] != seen["template"]
+
+    unknown = client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "2:3", "preset": "no-such-style"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert unknown.status_code == 400
+
+
+def test_a_reference_image_is_sent_to_the_model(tmp_path, monkeypatch):
+    """Showing the model the chart to imitate carries a style further than words."""
+    import routes.admin_routes as admin_routes
+
+    client, _ = build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
+    csrf = admin_login(client)
+    seen = {}
+    monkeypatch.setattr(
+        admin_routes,
+        "generate_size_guide",
+        lambda **kwargs: (seen.update(kwargs), Image.new("RGB", (32, 48)))[1],
+    )
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", True)
+    monkeypatch.setitem(client.application.config, "VERTEX_PROJECT_ID", "test-project")
+
+    made = client.post(
+        "/api/admin/size-guides/generate",
+        data={
+            "ratio": "2:3",
+            "prompt": "Copy this one.",
+            "reference": (image_bytes((16, 16), (1, 2, 3, 255)), "example.png"),
+        },
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    )
+
+    assert made.status_code == 201
+    data, mime = seen["reference"]
+    assert data[:4] == bytes([0x89, 0x50, 0x4E, 0x47])
+    assert mime.startswith("image/")
 
 
 def test_generation_is_refused_rather_than_pretended(tmp_path, monkeypatch):
@@ -516,3 +598,74 @@ def test_generation_is_refused_rather_than_pretended(tmp_path, monkeypatch):
         "/api/admin/size-guides/generate", json={"ratio": "2:3"}, headers={"X-CSRF-Token": csrf}
     )
     assert unconfigured.status_code == 400
+
+
+def test_a_style_carries_the_picture_it_was_modelled_on(tmp_path, monkeypatch):
+    """Words carry a style only so far.
+
+    The example is what the model is shown, so "elegant" means the admin's idea
+    of it. It rides with the style it belongs to -- and never with wording the
+    admin wrote themselves, which is their design and not a copy of ours.
+    """
+    import routes.admin_routes as admin_routes
+
+    client, _ = build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
+    csrf = admin_login(client)
+
+    assert all(not preset["example"] for preset in client.get("/api/admin/size-guides").get_json()["presets"])
+    assert client.get("/api/admin/size-guides/styles/room/example").status_code == 404
+
+    saved = client.post(
+        "/api/admin/size-guides/styles/room/example",
+        data={"example": (image_bytes((32, 32), (9, 9, 9, 255)), "example.png")},
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    )
+    assert saved.status_code == 201
+    presets = {preset["key"]: preset for preset in client.get("/api/admin/size-guides").get_json()["presets"]}
+    assert presets["room"]["example"] is True
+    assert presets["gallery"]["example"] is False
+
+    served = client.get("/api/admin/size-guides/styles/room/example")
+    assert served.status_code == 200
+    served.close()
+
+    seen = {}
+    monkeypatch.setattr(
+        admin_routes,
+        "generate_size_guide",
+        lambda **kwargs: (seen.update(kwargs), Image.new("RGB", (32, 48)))[1],
+    )
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", True)
+    monkeypatch.setitem(client.application.config, "VERTEX_PROJECT_ID", "test-project")
+
+    client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "2:3", "preset": "room"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert seen["reference"] is not None
+
+    seen.clear()
+    client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "2:3", "prompt": "My own wording."},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert seen["reference"] is None
+
+    # A style with no example of its own is drawn from its words alone.
+    seen.clear()
+    client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "2:3", "preset": "gallery"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert seen["reference"] is None
+
+    assert client.post(
+        "/api/admin/size-guides/styles/nonsense/example",
+        data={"example": (image_bytes((8, 8), (1, 1, 1, 255)), "x.png")},
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    ).status_code == 404

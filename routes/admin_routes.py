@@ -43,11 +43,15 @@ from services.listing_set_service import PRODUCT_TYPES, ListingSetError, normali
 from services.local_detection_service import discover_local_models
 from services.size_guide_service import (
     DEFAULT_GUIDE_PROMPT,
+    GUIDE_PROMPT_PRESETS,
     SizeGuideError,
     generate_size_guide,
     guide_path,
+    preset_prompt,
     store_guide_image,
     store_guide_upload,
+    store_style_example,
+    style_example_path,
 )
 from services.template_import_service import (
     TemplateImportError,
@@ -510,6 +514,15 @@ def get_admin_size_guides():
             "ratios": list(GUIDE_RATIOS),
             "prompt": _guide_prompt_template(),
             "default_prompt": DEFAULT_GUIDE_PROMPT,
+            # The styles a shop's chart is drawn in: offered as they are, and
+            # any of them can be opened in the editor and rewritten.
+            "presets": [
+                {
+                    **preset,
+                    "example": style_example_path(_guides_folder(), preset["key"]) is not None,
+                }
+                for preset in GUIDE_PROMPT_PRESETS
+            ],
         }
     )
 
@@ -560,7 +573,29 @@ def generate_admin_size_guide():
     if not project_id:
         return json_error("Vertex AI is not configured (no project id)", 400)
     payload = request.get_json(silent=True) or {}
+    if request.form:
+        payload = {**payload, **request.form.to_dict()}
     template = str(payload.get("prompt") or "").strip()
+    preset = str(payload.get("preset") or "").strip()
+    if not template and preset:
+        template = preset_prompt(preset) or ""
+        if not template:
+            return json_error(f"Unknown size guide style: {preset}", 400)
+    reference = None
+    upload = request.files.get("reference")
+    if upload is not None and upload.filename:
+        data = upload.read()
+        if len(data) > 8 * 1024 * 1024:
+            return json_error("A reference image must be 8MB or smaller", 400)
+        reference = (data, upload.mimetype or "image/png")
+    elif preset:
+        # A style carries the picture it was modelled on. Wording the admin
+        # wrote gets no example attached to it: it is their design, not a copy
+        # of one of ours.
+        example = style_example_path(_guides_folder(), preset)
+        if example is not None:
+            mime = "image/png" if example.suffix == ".png" else "image/jpeg"
+            reference = (example.read_bytes(), "image/webp" if example.suffix == ".webp" else mime)
     try:
         ratio = _checked_ratio()
         orientation = orientation_for_guide_ratio(ratio)
@@ -575,6 +610,7 @@ def generate_admin_size_guide():
             project_id=project_id,
             location=str(current_app.config.get("VERTEX_LOCATION", "global") or "global"),
             template=template or _guide_prompt_template(),
+            reference=reference,
         )
         file_name, width, height = store_guide_image(image, _guides_folder())
     except SizeGuideError as error:
@@ -582,11 +618,12 @@ def generate_admin_size_guide():
     except Exception as error:  # a model that will not answer is not a crash
         return json_error(str(error) or "The size guide could not be generated", 502)
     # Wording the admin edited is kept, so the next chart is drawn the same way.
-    if template and template != _guide_prompt_template():
+    if template and not preset and template != _guide_prompt_template():
         catalog().set_settings({SIZE_GUIDE_PROMPT_KEY: template})
     guide = catalog().create_size_guide(
         {
-            "name": str(payload.get("name", "")).strip() or f"{ratio} chart (AI)",
+            "name": str(payload.get("name", "")).strip()
+            or f"{ratio} {preset or 'chart'} (AI)".replace("  ", " "),
             "ratio": ratio,
             "orientation": orientation,
             "file_name": file_name,
@@ -594,6 +631,43 @@ def generate_admin_size_guide():
         }
     )
     return jsonify({"success": True, "guide": {**guide, "width": width, "height": height}}), 201
+
+
+@admin_routes.get("/api/admin/size-guides/styles/<style_key>/example")
+@require_admin_json
+def get_admin_style_example(style_key: str):
+    example = style_example_path(_guides_folder(), style_key)
+    if example is None:
+        return json_error("No example for that style", 404)
+    return send_file(example)
+
+
+@admin_routes.post("/api/admin/size-guides/styles/<style_key>/example")
+@require_admin_json
+@require_csrf
+def set_admin_style_example(style_key: str):
+    """The picture a style should be drawn in the manner of."""
+    if not any(preset["key"] == style_key for preset in GUIDE_PROMPT_PRESETS):
+        return json_error(f"Unknown size guide style: {style_key}", 404)
+    upload = request.files.get("example")
+    if upload is None or not upload.filename:
+        return json_error("An example image is required", 400)
+    try:
+        store_style_example(upload, _guides_folder(), style_key)
+    except SizeGuideError as error:
+        return json_error(str(error), 400)
+    return jsonify({"success": True, "style": style_key, "example": True}), 201
+
+
+@admin_routes.delete("/api/admin/size-guides/styles/<style_key>/example")
+@require_admin_json
+@require_csrf
+def delete_admin_style_example(style_key: str):
+    example = style_example_path(_guides_folder(), style_key)
+    if example is None:
+        return json_error("No example for that style", 404)
+    example.unlink(missing_ok=True)
+    return jsonify({"success": True, "style": style_key, "example": False})
 
 
 @admin_routes.get("/api/admin/size-guides/<int:guide_id>/asset")

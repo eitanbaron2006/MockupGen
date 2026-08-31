@@ -20,6 +20,8 @@ ADMIN_STATE = SERVER_ROOT / "static" / "admin" / "modules" / "state.js"
 ADMIN_TEST_MODAL = SERVER_ROOT / "static" / "admin" / "modules" / "testModal.js"
 # The Listing sets screen: which mockups a listing is built from.
 ADMIN_LISTING_SETS = SERVER_ROOT / "static" / "admin" / "modules" / "listingSets.js"
+# The full-screen preview, shared by every screen that shows results.
+ADMIN_LIGHTBOX = SERVER_ROOT / "static" / "admin" / "modules" / "lightbox.js"
 # What an effect is, and how its panel behaves.
 ADMIN_EFFECTS = SERVER_ROOT / "static" / "admin" / "modules" / "effects.js"
 # Which engine finds the frames, and how it is set up.
@@ -1347,24 +1349,45 @@ def test_a_confirmation_sits_above_the_window_that_asked_for_it():
     assert html.index('id="systemDialog"') < html.index('id="listingSetsModal"')
 
 
-def test_the_size_guide_prompt_is_shown_and_editable():
-    """The wording is what separates a diagram from a shop's size guide.
+def test_the_size_guide_tab_reads_from_results_down_to_the_wording():
+    """The charts first, the styles that make more, the wording last.
 
-    It is on the page to be read and rewritten, the studio's own version can be
-    brought back, and a set can draw its chart without leaving the set.
+    A style is one click, because most of the time the wording is not what the
+    admin came for; it waits at the bottom for the times it is. Every chart
+    opens full size, since the labels are the whole point of one.
     """
     html = ADMIN_HTML.read_text(encoding="utf-8")
     js = ADMIN_LISTING_SETS.read_text(encoding="utf-8")
+    pane = html.split('id="listingGuidesPane"', 1)[1]
 
-    assert 'id="listingGuidePrompt"' in html
-    assert 'id="listingPromptReset"' in html
-    # The chart for a set is generated from the set itself, and pinned to it.
-    assert 'id="listingSlotGenerate"' in html
-    assert 'id="listingSlotRatio"' in html
 
-    generate = js.split("async function generateGuide(", 1)[1].split(chr(10) + "}", 1)[0]
-    assert '$("listingGuidePrompt")?.value' in generate
-    assert "listingState.draft.guide = answer.guide.id" in generate
+    assert pane.index('id="listingGuideGrid"') < pane.index('id="listingStyleRow"')
+    assert pane.index('id="listingStyleRow"') < pane.index('id="listingGuidePrompt"')
+    assert 'id="listingReferenceFile"' in pane
+    assert 'rows="4"' in pane
 
-    # Restoring means the studio's wording, not an empty box.
-    assert "listingState.defaultPrompt" in js
+    # A style draws straight away; the pencil brings its wording down to edit.
+    styles = js.split("function renderStyles(", 1)[1].split(chr(10) + "}" + chr(10), 1)[0]
+    assert "preset: button.dataset.style" in styles
+    assert '$("listingGuidePrompt").value = preset.prompt' in styles
+
+    generate = js.split("async function generateGuide(", 1)[1].split(chr(10) + "}" + chr(10), 1)[0]
+    assert 'form.append("preset", preset)' in generate
+    assert 'form.append("reference", listingState.reference)' in generate
+    # Trying a style must not overwrite the admin's own wording.
+    assert 'if (!preset) listingState.prompt' in generate
+
+    # The full-size view is the studio's own, not a second one written here.
+    assert 'from "./lightbox.js"' in js
+    assert "showLightbox(" in js
+
+
+def test_the_lightbox_is_one_module_every_screen_shares():
+    admin_test_modal = ADMIN_TEST_MODAL.read_text(encoding="utf-8")
+    lightbox = ADMIN_LIGHTBOX.read_text(encoding="utf-8")
+
+    assert "export function showLightbox(" in lightbox
+    assert "function showLightbox(" not in admin_test_modal
+    assert 'from "./lightbox.js"' in admin_test_modal
+    # Arrows and Escape belong to the preview, wherever it was opened from.
+    assert "ArrowLeft" in lightbox and "Escape" in lightbox

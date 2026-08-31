@@ -10,6 +10,7 @@ import { escapeAttr, escapeHtml } from "./helpers.js";
 import { $, toast } from "./dom.js";
 import { api, csrfHeaders } from "./api.js";
 import { state, testState } from "./state.js";
+import { showLightbox } from "./lightbox.js";
 import { availableListingSets } from "./listingSets.js";
 
 // Test Mockups Modal Logic
@@ -27,52 +28,6 @@ $("closeTestModal").onclick = () => $("testModal").classList.remove("open");
 $("testModal").onclick = (event) => {
   if (event.target === $("testModal")) $("testModal").classList.remove("open");
 };
-
-// Lightbox Preview Handlers
-// The lightbox holds a gallery of the completed results currently on screen,
-// so the user can browse between them with arrows without closing it.
-const lightboxState = { items: [], index: 0 };
-
-function renderLightboxItem() {
-  const img = $("lightboxImage");
-  const caption = $("lightboxCaption");
-  const counter = $("lightboxCounter");
-  const item = lightboxState.items[lightboxState.index];
-  if (!img || !item) return;
-  img.src = item.src;
-  if (caption) caption.textContent = item.title || "Mockup Preview";
-  const hasGallery = lightboxState.items.length > 1;
-  if (counter) {
-    counter.classList.toggle("hidden", !hasGallery);
-    counter.textContent = hasGallery ? `${lightboxState.index + 1} / ${lightboxState.items.length}` : "";
-  }
-  if ($("lightboxPrevBtn")) $("lightboxPrevBtn").classList.toggle("hidden", !hasGallery);
-  if ($("lightboxNextBtn")) $("lightboxNextBtn").classList.toggle("hidden", !hasGallery);
-}
-
-function stepLightbox(delta) {
-  const count = lightboxState.items.length;
-  if (count < 2) return;
-  lightboxState.index = (lightboxState.index + delta + count) % count;
-  renderLightboxItem();
-}
-
-function showLightbox(src, title, items) {
-  const overlay = $("lightboxOverlay");
-  if (!overlay || !$("lightboxImage")) return;
-  lightboxState.items = (items && items.length ? items : [{ src, title }]);
-  const startIndex = lightboxState.items.findIndex((item) => item.src === src);
-  lightboxState.index = startIndex === -1 ? 0 : startIndex;
-  renderLightboxItem();
-  overlay.classList.remove("hidden");
-}
-
-function hideLightbox() {
-  const overlay = $("lightboxOverlay");
-  if (overlay) {
-    overlay.classList.add("hidden");
-  }
-}
 
 // All currently visible completed results, in display order (batch grid
 // cards that succeeded, or the single result preview).
@@ -97,43 +52,6 @@ function collectLightboxItems() {
   }
   return items;
 }
-
-if ($("closeLightboxBtn")) {
-  $("closeLightboxBtn").onclick = hideLightbox;
-}
-if ($("lightboxPrevBtn")) {
-  $("lightboxPrevBtn").onclick = (e) => {
-    e.stopPropagation();
-    stepLightbox(-1);
-  };
-}
-if ($("lightboxNextBtn")) {
-  $("lightboxNextBtn").onclick = (e) => {
-    e.stopPropagation();
-    stepLightbox(1);
-  };
-}
-if ($("lightboxOverlay")) {
-  $("lightboxOverlay").onclick = (e) => {
-    if (e.target === $("lightboxOverlay") || e.target === $("closeLightboxBtn")) {
-      hideLightbox();
-    }
-  };
-}
-document.addEventListener("keydown", (e) => {
-  const overlay = $("lightboxOverlay");
-  if (!overlay || overlay.classList.contains("hidden")) return;
-  if (e.key === "ArrowLeft") {
-    e.preventDefault();
-    stepLightbox(-1);
-  } else if (e.key === "ArrowRight") {
-    e.preventDefault();
-    stepLightbox(1);
-  } else if (e.key === "Escape") {
-    e.preventDefault();
-    hideLightbox();
-  }
-});
 
 // Hook single preview click
 if ($("testResultImage")) {

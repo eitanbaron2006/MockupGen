@@ -14,6 +14,7 @@
 import { api, csrfHeaders } from "./api.js";
 import { $, systemConfirm, toast } from "./dom.js";
 import { escapeAttr, escapeHtml } from "./helpers.js";
+import { showLightbox } from "./lightbox.js";
 
 const MAX_MOCKUPS = 18;
 
@@ -25,6 +26,8 @@ const listingState = {
   ratios: [],
   prompt: "",
   defaultPrompt: "",
+  presets: [],
+  reference: null,
   productTypes: [],
   draft: null,
   slot: "hero",
@@ -64,11 +67,13 @@ async function loadEverything() {
   listingState.ratios = guides.ratios || [];
   listingState.prompt = guides.prompt || "";
   listingState.defaultPrompt = guides.default_prompt || "";
+  listingState.presets = guides.presets || [];
   listingState.loaded = true;
   renderChoices();
   renderSetList();
   renderEditor();
   renderGuides();
+  renderStyles();
 }
 
 function renderChoices() {
@@ -479,12 +484,14 @@ function renderGuides() {
   const grid = $("listingGuideGrid");
   if (!grid) return;
   if (!listingState.guides.length) {
-    grid.innerHTML = `<div class="gallery-empty">No size guides yet</div>`;
+    grid.innerHTML = `<div class="gallery-empty">No size guides yet &mdash; pick a style below</div>`;
     return;
   }
   grid.innerHTML = listingState.guides.map((guide) => `
     <div class="listing-guide-card">
-      <img src="/api/admin/size-guides/${guide.id}/asset" alt="${escapeAttr(guide.name)}" loading="lazy">
+      <img src="/api/admin/size-guides/${guide.id}/asset" alt="${escapeAttr(guide.name)}"
+           title="${escapeAttr(guide.name)}" loading="lazy" data-open="${guide.id}"
+           data-missing="Its image file is gone">
       <div class="listing-guide-meta">
         <strong>${escapeHtml(guide.ratio)}</strong>
         <span>${escapeHtml(guide.source === "ai" ? "generated" : "uploaded")}</span>
@@ -492,6 +499,28 @@ function renderGuides() {
       <button class="icon-button" type="button" data-drop="${guide.id}" title="Delete">&times;</button>
     </div>
   `).join("");
+  // A chart whose file has gone is said so, rather than shown as a broken
+  // image the admin has to guess at.
+  grid.querySelectorAll("[data-missing]").forEach((image) => {
+    image.onerror = () => {
+      const card = image.closest(".listing-guide-card");
+      image.remove();
+      if (card) card.insertAdjacentHTML(
+        "afterbegin",
+        `<p class="listing-guide-lost">${escapeHtml(image.dataset.missing)}</p>`
+      );
+    };
+  });
+  // A chart is judged full size or not at all: the labels are the point of it.
+  grid.querySelectorAll("[data-open]").forEach((image) => {
+    image.onclick = () => {
+      const gallery = listingState.guides.map((guide) => ({
+        src: `/api/admin/size-guides/${guide.id}/asset`,
+        title: `${guide.name} -- ${guide.ratio}`,
+      }));
+      showLightbox(image.getAttribute("src"), image.getAttribute("title"), gallery);
+    };
+  });
   grid.querySelectorAll("[data-drop]").forEach((button) => {
     button.onclick = async () => {
       const id = Number(button.dataset.drop);
@@ -505,6 +534,44 @@ function renderGuides() {
       } catch (error) {
         toast(error.message);
       }
+    };
+  });
+}
+
+/** The styles a chart can be drawn in: one click draws, the pencil edits. */
+function renderStyles() {
+  const row = $("listingStyleRow");
+  if (!row) return;
+  row.innerHTML = listingState.presets.map((preset) => `
+    <div class="listing-style">
+      <button class="listing-style-draw" type="button" data-style="${escapeAttr(preset.key)}">
+        <strong>${escapeHtml(preset.name)}</strong>
+        <span>${escapeHtml(preset.note || "")}</span>
+      </button>
+      <button class="listing-style-edit${preset.example ? " has-example" : ""}" type="button"
+              data-style-example="${escapeAttr(preset.key)}"
+              title="${preset.example ? "This style has an example -- click to replace it" : "Show this style the picture it should imitate"}">&#9635;</button>
+      <button class="listing-style-edit" type="button" data-style-edit="${escapeAttr(preset.key)}"
+              title="Open this wording below to change it first">&#9998;</button>
+    </div>
+  `).join("");
+  row.querySelectorAll("[data-style]").forEach((button) => {
+    button.onclick = () => generateGuide(button, $("listingGuideRatio").value, { preset: button.dataset.style });
+  });
+  row.querySelectorAll("[data-style-example]").forEach((button) => {
+    button.onclick = () => {
+      const picker = $("listingStyleExampleFile");
+      picker.dataset.style = button.dataset.styleExample;
+      picker.click();
+    };
+  });
+  row.querySelectorAll("[data-style-edit]").forEach((button) => {
+    button.onclick = () => {
+      const preset = listingState.presets.find((entry) => entry.key === button.dataset.styleEdit);
+      if (!preset) return;
+      $("listingGuidePrompt").value = preset.prompt;
+      $("listingGuidePrompt").focus();
+      toast(`${preset.name} opened below -- edit it, then Generate`);
     };
   });
 }
@@ -547,26 +614,37 @@ async function uploadGuide() {
   }
 }
 
-async function generateGuide(button, ratio, { pin = false } = {}) {
-  const label = button.textContent;
+async function generateGuide(button, ratio, { pin = false, preset = "" } = {}) {
+  // A style button holds markup, not a word: replacing its text while the
+  // chart draws flattened it, and it never came back.
+  const label = button.innerHTML;
   button.disabled = true;
-  button.textContent = "Drawing...";
+  button.classList.add("is-busy");
   try {
-    // Drawn once and kept, instead of again on every render that needs it.
-    const answer = await api("/api/admin/size-guides/generate", {
+    // A style is sent as itself; the box below is sent only when it holds a
+    // rewrite, so trying a style never overwrites the studio's own wording.
+    const form = new FormData();
+    form.append("ratio", ratio);
+    if (preset) form.append("preset", preset);
+    else form.append("prompt", $("listingGuidePrompt")?.value || "");
+    if (listingState.reference) form.append("reference", listingState.reference);
+    const response = await fetch("/api/admin/size-guides/generate", {
       method: "POST",
-      body: JSON.stringify({ ratio, prompt: $("listingGuidePrompt")?.value || "" }),
-      timeout: 180000,
+      headers: csrfHeaders(),
+      body: form,
     });
-    listingState.prompt = $("listingGuidePrompt")?.value || listingState.prompt;
-    if (pin && listingState.draft) listingState.draft.guide = answer.guide.id;
-    guideAdded(answer.guide);
-    toast(pin ? "Size guide generated and set" : "Size guide generated");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "The size guide could not be drawn");
+    if (!preset) listingState.prompt = $("listingGuidePrompt")?.value || listingState.prompt;
+    if (pin && listingState.draft) listingState.draft.guide = payload.guide.id;
+    guideAdded(payload.guide);
+    toast(pin ? "Size guide drawn and set" : "Size guide drawn");
   } catch (error) {
     toast(error.message);
   } finally {
     button.disabled = false;
-    button.textContent = label;
+    button.classList.remove("is-busy");
+    button.innerHTML = label;
   }
 }
 
@@ -631,6 +709,55 @@ if ($("listingGuideFile")) $("listingGuideFile").onchange = uploadGuide;
 if ($("listingGuideGenerate")) {
   $("listingGuideGenerate").onclick = () =>
     generateGuide($("listingGuideGenerate"), $("listingGuideRatio").value);
+}
+if ($("listingReferenceButton")) {
+  $("listingReferenceButton").onclick = () => {
+    if (listingState.reference) {
+      // A second click clears it, so an example never sticks to later charts
+      // without the user knowing.
+      listingState.reference = null;
+      $("listingReferenceFile").value = "";
+      $("listingReferenceName").textContent = "";
+      return;
+    }
+    $("listingReferenceFile").click();
+  };
+}
+if ($("listingStyleExampleFile")) {
+  // The example belongs to the style, so it is sent with every chart drawn in
+  // that style -- and never with wording the admin wrote themselves.
+  $("listingStyleExampleFile").onchange = async () => {
+    const input = $("listingStyleExampleFile");
+    const file = input.files?.[0];
+    const style = input.dataset.style;
+    input.value = "";
+    if (!file || !style) return;
+    const form = new FormData();
+    form.append("example", file);
+    try {
+      const response = await fetch(`/api/admin/size-guides/styles/${encodeURIComponent(style)}/example`, {
+        method: "POST",
+        headers: csrfHeaders(),
+        body: form,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "The example could not be saved");
+      const preset = listingState.presets.find((entry) => entry.key === style);
+      if (preset) preset.example = true;
+      renderStyles();
+      toast("Example saved for that style");
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+}
+
+if ($("listingReferenceFile")) {
+  $("listingReferenceFile").onchange = () => {
+    const file = $("listingReferenceFile").files?.[0] || null;
+    listingState.reference = file;
+    $("listingReferenceName").textContent = file ? `example: ${file.name} (click to clear)` : "";
+  };
 }
 if ($("listingSlotGenerate")) {
   // Generated from the set, the chart is pinned to it in the same step.
