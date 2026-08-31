@@ -1660,11 +1660,31 @@ def _save_output(
         composed.save(output_path, format="PNG", compress_level=2)
     elif pil_format == "WEBP":
         composed.save(output_path, format="WEBP", quality=resolved_quality, method=4)
+    elif pil_format == "AVIF":
+        # Without this branch an .avif file used to be written as JPEG data:
+        # the format was accepted, the extension was right, and the bytes were
+        # a lie. It also keeps its transparency, unlike the JPEG branch below.
+        composed.save(output_path, format="AVIF", quality=resolved_quality)
     else:
         composed.convert("RGB").save(
             output_path, format="JPEG", quality=resolved_quality, optimize=True
         )
     return output_name
+
+
+def save_render_image(
+    composed: Image.Image,
+    output_folder: Path,
+    output_format: str = "png",
+    quality: int | None = None,
+) -> str:
+    """Write a finished image to the outputs folder; returns its file name.
+
+    Callers that compose their own images -- a cropped close-up, a generated
+    size chart -- land in /outputs through the same encoder, naming and quality
+    handling as a render, instead of each inventing its own.
+    """
+    return _save_output(composed, output_folder, output_format, quality)
 
 
 def _render_geometric_frames(

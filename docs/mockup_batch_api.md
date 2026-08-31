@@ -176,3 +176,65 @@ values straight from a render response (bare file names work too); at most 200
 per archive. A name that is not a file in the outputs folder is refused with
 `404` rather than quietly leaving a hole in the archive, and two renders with
 the same name are both kept (`mockup_a.png`, `mockup_a-2.png`).
+
+## Listing bundles
+
+`POST /api/mockups/listing-bundle` — one artwork in, the images one shop
+listing needs out. Additive: nothing about the batch endpoint changes, and a
+client that never calls this keeps working exactly as before.
+
+multipart/form-data:
+
+- `artwork` — the artwork file (another field name can be used, see `spec.artwork`)
+- `spec` — optional JSON:
+
+```json
+{
+  "roles": ["hero", "closeup", "scale", "size_guide"],
+  "selection": { "product_type": "wall-art", "orientation": "portrait", "keywords": ["living room"] },
+  "templates": { "hero": "room_042" },
+  "sizes": [{ "label": "A3", "width": 29.7, "height": 42 }],
+  "format": "jpeg",
+  "quality": 90,
+  "realism": true,
+  "artwork": "artwork"
+}
+```
+
+The four roles, all optional — ask for the ones the listing needs:
+
+| role | what it is |
+| :--- | :--- |
+| `hero` | the main shot: the best-matching template, chosen automatically unless `templates.hero` names one |
+| `closeup` | the hero image cropped around the frame, so the buyer sees the print itself. Not a second render — it is a crop of the hero, so it costs nothing and always matches it |
+| `scale` | the piece in a second room, using a different template from the hero so the listing does not show the same picture twice |
+| `size_guide` | a print-size chart: nested outlines from the smallest offered size to the largest, labelled, with the artwork ghosted inside |
+
+`selection` takes the same hints as a batch item. `templates` pins any role to a
+specific template and skips selection for it. `sizes` replaces the standard
+chart with the seller's own list; left out, the sizes are the retail family the
+artwork's own ratio fits (2:3, 3:4, 4:5, 5:7, ISO A or 1:1), turned landscape
+when the artwork is.
+
+Response — `200` when every requested image was produced, `207` when some were:
+
+```json
+{
+  "success": true,
+  "artwork_ratio": 0.6667,
+  "items": [
+    { "role": "hero", "success": true, "template_id": "room_042", "output_url": "/outputs/mockup_a.png", "width": 3000, "height": 2000, "selection": "auto" },
+    { "role": "closeup", "success": true, "template_id": "room_042", "output_url": "/outputs/mockup_b.png", "width": 980, "height": 1310, "crop": { "x": 610, "y": 320, "width": 980, "height": 1310 } },
+    { "role": "scale", "success": true, "template_id": "room_101", "output_url": "/outputs/mockup_c.png", "width": 3000, "height": 2000, "selection": "auto" },
+    { "role": "size_guide", "success": true, "output_url": "/outputs/mockup_d.png", "width": 2000, "height": 2000, "size_family": "2:3", "unit": "in", "sizes": [{ "label": "4x6", "width": 4, "height": 6 }] }
+  ]
+}
+```
+
+Roles fail one at a time, like batch items: a template that will not render
+costs the listing that one picture and the rest still come back, each failed
+role carrying `"success": false` and an `error`. Only a request that is wrong in
+itself — an unknown role, no artwork file, an unsupported format — is refused
+whole with `400`. The `output_url` values are ordinary outputs, so they can be
+fetched one by one or handed to `POST /api/mockups/outputs/archive` to come
+back as a single ZIP.

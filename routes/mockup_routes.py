@@ -9,6 +9,11 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from routes.responses import json_error
 from services.ai_mockup_service import render_ai_mockup
 from services.image_utils import ImageProcessingError, store_uploaded_artwork
+from services.listing_bundle_service import (
+    BUNDLE_ROLES,
+    BundleValidationError,
+    build_listing_bundle,
+)
 from services.mockup_request_service import RequestValidationError, execute_batch_render
 from services.psd_mockup_service import render_psd_mockup
 from services.simple_mockup_service import (
@@ -148,6 +153,74 @@ def render_mockup_batch():
             default_realism=default_realism,
         )
     except RequestValidationError as error:
+        return error_response(str(error), 400)
+    except ImageProcessingError as error:
+        return error_response(str(error), 400)
+    status = 200 if payload["success"] else 207
+    return jsonify(payload), status
+
+
+@mockup_routes.post("/api/mockups/listing-bundle")
+def render_listing_bundle():
+    """Every image one shop listing needs, from a single artwork.
+
+    multipart/form-data:
+      - artwork: the artwork file (or another field named by spec.artwork)
+      - spec: optional JSON -- roles, selection hints, explicit templates,
+        print sizes, output format (see docs/mockup_batch_api.md)
+    """
+    if not current_app.config.get("ENABLE_SIMPLE_MODE", False):
+        return error_response("SIMPLE rendering mode is disabled", 503)
+
+    spec_raw = request.form.get("spec", "").strip()
+    spec: dict = {}
+    if spec_raw:
+        try:
+            parsed = json.loads(spec_raw)
+        except json.JSONDecodeError as error:
+            return error_response(f"Invalid spec JSON: {error}", 400)
+        if not isinstance(parsed, dict):
+            return error_response("spec must be a JSON object", 400)
+        spec = parsed
+
+    artwork_field = str(spec.get("artwork") or "artwork")
+    artwork = request.files.get(artwork_field)
+    if artwork is None or not artwork.filename:
+        return error_response(f"Artwork file '{artwork_field}' is required", 400)
+
+    roles = spec.get("roles")
+    if roles is not None and not isinstance(roles, list):
+        return error_response(f"spec.roles must be a list of {', '.join(BUNDLE_ROLES)}", 400)
+
+    catalog = current_app.extensions.get("catalog_service")
+
+    def template_record_lookup(template_id: str) -> dict | None:
+        return catalog.get_template(template_id) if catalog else None
+
+    quality = spec.get("quality")
+    try:
+        quality = int(quality) if quality is not None else None
+    except (TypeError, ValueError):
+        return error_response("spec.quality must be a number", 400)
+
+    try:
+        artwork_path = store_uploaded_artwork(
+            artwork, Path(current_app.config["UPLOAD_FOLDER"])
+        )
+        payload = build_listing_bundle(
+            artwork_path,
+            templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+            output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
+            roles=roles,
+            selection=spec.get("selection"),
+            templates=spec.get("templates"),
+            sizes=spec.get("sizes"),
+            output_format=str(spec.get("format") or "png").lower(),
+            quality=quality,
+            realism=bool(spec.get("realism", not current_app.config.get("TESTING"))),
+            template_record_lookup=template_record_lookup,
+        )
+    except BundleValidationError as error:
         return error_response(str(error), 400)
     except ImageProcessingError as error:
         return error_response(str(error), 400)
