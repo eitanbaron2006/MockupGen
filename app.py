@@ -24,6 +24,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             test_root = Path(app.config["OUTPUT_FOLDER"]).parent
             app.config["DATABASE_PATH"] = str(test_root / "data" / "mockup_catalog.sqlite3")
             app.config["DRAFT_TEMPLATES_FOLDER"] = str(test_root / "draft_templates")
+            app.config["SIZE_GUIDES_FOLDER"] = str(test_root / "size_guides")
 
     # The session cookie -- and with it the admin's logged-in state and the CSRF
     # token -- is only as good as the key that signs it. The shipped default is
@@ -40,7 +41,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             "to a long random value before running the server."
         )
 
-    for key in ("UPLOAD_FOLDER", "OUTPUT_FOLDER", "TEMPLATES_FOLDER", "DRAFT_TEMPLATES_FOLDER"):
+    for key in (
+        "UPLOAD_FOLDER",
+        "OUTPUT_FOLDER",
+        "TEMPLATES_FOLDER",
+        "DRAFT_TEMPLATES_FOLDER",
+        "SIZE_GUIDES_FOLDER",
+    ):
         Path(app.config[key]).mkdir(parents=True, exist_ok=True)
 
     # Earlier builds saved every admin canvas preview into the outputs folder.

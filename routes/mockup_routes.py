@@ -10,10 +10,14 @@ from routes.responses import json_error
 from services.ai_mockup_service import render_ai_mockup
 from services.image_utils import ImageProcessingError, store_uploaded_artwork
 from services.listing_bundle_service import (
-    BUNDLE_ROLES,
     BundleValidationError,
+    artwork_ratio,
+    auto_jobs,
     build_listing_bundle,
+    orientation_for_ratio,
+    size_family_for_ratio,
 )
+from services.listing_set_service import ListingSetError, resolve_items, rotation_for
 from services.mockup_request_service import RequestValidationError, execute_batch_render
 from services.psd_mockup_service import render_psd_mockup
 from services.simple_mockup_service import (
@@ -26,6 +30,7 @@ from services.simple_mockup_service import (
     render_simple_mockup,
     select_template_for_artwork,
 )
+from services.size_guide_service import SizeGuideError, guide_path
 from services.template_manifest import build_manifest, write_manifest
 
 mockup_routes = Blueprint("mockup_routes", __name__)
@@ -166,8 +171,8 @@ def render_listing_bundle():
 
     multipart/form-data:
       - artwork: the artwork file (or another field named by spec.artwork)
-      - spec: optional JSON -- roles, selection hints, explicit templates,
-        print sizes, output format (see docs/mockup_batch_api.md)
+      - spec: optional JSON -- the listing set to build, or selection hints for
+        the automatic fallback (see docs/mockup_batch_api.md)
     """
     if not current_app.config.get("ENABLE_SIMPLE_MODE", False):
         return error_response("SIMPLE rendering mode is disabled", 503)
@@ -188,44 +193,121 @@ def render_listing_bundle():
     if artwork is None or not artwork.filename:
         return error_response(f"Artwork file '{artwork_field}' is required", 400)
 
-    roles = spec.get("roles")
-    if roles is not None and not isinstance(roles, list):
-        return error_response(f"spec.roles must be a list of {', '.join(BUNDLE_ROLES)}", 400)
-
-    catalog = current_app.extensions.get("catalog_service")
-
-    def template_record_lookup(template_id: str) -> dict | None:
-        return catalog.get_template(template_id) if catalog else None
-
     quality = spec.get("quality")
     try:
         quality = int(quality) if quality is not None else None
     except (TypeError, ValueError):
         return error_response("spec.quality must be a number", 400)
 
+    catalog = current_app.extensions.get("catalog_service")
+    records = (
+        {record["template_id"]: record for record in catalog.list_templates()}
+        if catalog
+        else {}
+    )
+
+    def is_main_template(template_id: str) -> bool:
+        record = records.get(template_id) or {}
+        return str(record.get("category_name") or "").strip().lower().startswith("main")
+
+    def category_templates(category_id: int) -> list[dict]:
+        return [
+            record for record in records.values()
+            if record.get("category_id") == category_id
+        ]
+
     try:
         artwork_path = store_uploaded_artwork(
             artwork, Path(current_app.config["UPLOAD_FOLDER"])
         )
+        ratio = artwork_ratio(artwork_path)
+
+        requested_set = spec.get("set")
+        if requested_set not in (None, ""):
+            if not catalog:
+                return error_response("The catalog is unavailable", 503)
+            try:
+                listing_set = catalog.get_listing_set(int(requested_set))
+            except (TypeError, ValueError):
+                return error_response("spec.set must be a listing set id", 400)
+            if not listing_set:
+                return error_response(f"Listing set not found: {requested_set}", 404)
+            jobs = resolve_items(
+                listing_set["items"],
+                category_templates=category_templates,
+                rotation=rotation_for(artwork_path.name),
+            )
+        else:
+            jobs = auto_jobs(
+                ratio,
+                templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
+                records=records or None,
+                selection=spec.get("selection"),
+                is_main_template=is_main_template,
+                templates=spec.get("templates"),
+            )
+
+        guides_folder = Path(current_app.config.get("SIZE_GUIDES_FOLDER", "data/size_guides"))
         payload = build_listing_bundle(
             artwork_path,
+            jobs=jobs,
             templates_folder=Path(current_app.config["TEMPLATES_FOLDER"]),
             output_folder=Path(current_app.config["OUTPUT_FOLDER"]),
-            roles=roles,
-            selection=spec.get("selection"),
-            templates=spec.get("templates"),
-            sizes=spec.get("sizes"),
             output_format=str(spec.get("format") or "png").lower(),
             quality=quality,
             realism=bool(spec.get("realism", not current_app.config.get("TESTING"))),
-            template_record_lookup=template_record_lookup,
+            records=records or None,
+            size_guides=catalog.list_size_guides() if catalog else [],
+            guide_asset_path=lambda guide: guide_path(guides_folder, guide.get("file_name", "")),
+            generate_size_guide=_size_guide_generator(),
         )
+    except ListingSetError as error:
+        return error_response(str(error), 400)
     except BundleValidationError as error:
         return error_response(str(error), 400)
-    except ImageProcessingError as error:
+    except (ImageProcessingError, SizeGuideError) as error:
         return error_response(str(error), 400)
     status = 200 if payload["success"] else 207
     return jsonify(payload), status
+
+
+def _size_guide_generator():
+    """Vertex draws a chart only where the library has none and AI is enabled.
+
+    Image models are unreliable at rendering exact numbers, and a size chart is
+    the one picture a buyer measures a wall against -- so this is the fallback
+    behind the library, never the default, and the answer says which one the
+    chart came from.
+    """
+    if not current_app.config.get("ENABLE_AI_MODE", False):
+        return None
+    if current_app.config.get("TESTING"):
+        # A test run must not call a paid API over the network, and one that
+        # did would pass or fail on someone else's quota.
+        return None
+    project_id = str(current_app.config.get("VERTEX_PROJECT_ID", "") or "").strip()
+    if not project_id:
+        catalog = current_app.extensions.get("catalog_service")
+        if catalog:
+            project_id = str(catalog.get_settings().get("VERTEX_PROJECT_ID", "") or "").strip()
+    if not project_id:
+        return None
+    location = str(current_app.config.get("VERTEX_LOCATION", "global") or "global")
+
+    def generate(ratio: float, family: str):
+        from services.size_guide_service import generate_size_guide
+
+        _, unit, sizes = size_family_for_ratio(ratio)
+        return generate_size_guide(
+            family=family,
+            sizes=[size.label for size in sizes],
+            unit=unit,
+            orientation=orientation_for_ratio(ratio),
+            project_id=project_id,
+            location=location,
+        )
+
+    return generate
 
 
 @mockup_routes.post("/api/mockups/render")

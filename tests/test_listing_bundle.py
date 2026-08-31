@@ -18,21 +18,18 @@ def write_room_template(
     *,
     canvas: tuple[int, int] = (200, 300),
     area: tuple[int, int, int, int] = (40, 60, 80, 120),
-    product_type: str = "wall-art",
     orientation: str = "portrait",
-) -> Path:
-    """A room-sized classic template, big enough that a crop is a real crop."""
+) -> dict:
+    """A room-sized classic template, big enough to be a real render."""
     template_folder = templates_folder / template_id
     template_folder.mkdir(parents=True)
     width, height = canvas
     x, y, area_width, area_height = area
-    background = Image.new("RGBA", canvas, (210, 205, 195, 255))
-    background.save(template_folder / "background.png")
-    background.save(template_folder / "preview.png")
+    Image.new("RGBA", canvas, (210, 205, 195, 255)).save(template_folder / "background.png")
+    Image.new("RGBA", canvas, (210, 205, 195, 255)).save(template_folder / "preview.png")
     manifest = {
         "template_id": template_id,
-        "name": f"Room {template_id}",
-        "product_type": product_type,
+        "name": template_id,
         "canvas_width": width,
         "canvas_height": height,
         "artwork_area": {"x": x, "y": y, "width": area_width, "height": area_height},
@@ -44,7 +41,41 @@ def write_room_template(
         "orientation": orientation,
     }
     (template_folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return template_folder
+    return manifest
+
+
+def register(client, manifest: dict, category_name: str) -> dict:
+    """Put a template on a catalog shelf, which is what makes it MAIN or not."""
+    from flask import current_app
+
+    with client.application.app_context():
+        catalog = current_app.extensions["catalog_service"]
+        category = catalog.get_or_create_category(category_name)
+        record = catalog.create_template(
+            {
+                "template_id": manifest["template_id"],
+                "name": manifest["name"],
+                "category_id": category["id"],
+                "status": "active",
+                "canvas_width": manifest["canvas_width"],
+                "canvas_height": manifest["canvas_height"],
+                "artwork_area": manifest["artwork_area"],
+                "fit_mode": manifest["fit_mode"],
+                "orientation": manifest["orientation"],
+            }
+        )
+        return {**record, "category_id": category["id"]}
+
+
+def catalog_of(client):
+    from flask import current_app
+
+    with client.application.app_context():
+        return current_app.extensions["catalog_service"]
+
+
+def studio(tmp_path):
+    return build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
 
 
 def post_bundle(client, spec: dict | None = None, *, size: tuple[int, int] = (400, 600)):
@@ -56,181 +87,313 @@ def post_bundle(client, spec: dict | None = None, *, size: tuple[int, int] = (40
     )
 
 
-def by_role(payload: dict) -> dict:
-    return {item["role"]: item for item in payload["items"]}
+def admin_login(client) -> str:
+    response = client.post("/api/admin/login", json={"password": "test-admin"})
+    assert response.status_code == 200
+    return response.get_json()["csrf_token"]
 
 
-def output_image(paths: dict, item: dict) -> Image.Image:
-    return Image.open(paths["OUTPUT_FOLDER"] / item["output_url"].rsplit("/", 1)[-1])
+def two_shelves(client, paths) -> tuple[dict, dict]:
+    """One MAIN mockup and one ordinary one, which is the whole distinction."""
+    main = register(client, write_room_template(paths["TEMPLATES_FOLDER"], "room_main"), "Main Vertical")
+    plain = register(client, write_room_template(paths["TEMPLATES_FOLDER"], "room_plain"), "Vertical Wall Art")
+    return main, plain
 
 
-def test_bundle_returns_a_full_listing_set(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_b")
+def mockups_of(payload: dict) -> list[dict]:
+    return [item for item in payload["items"] if item["kind"] == "mockup"]
+
+
+def guide_of(payload: dict) -> dict | None:
+    return next((item for item in payload["items"] if item["kind"] == "size_guide"), None)
+
+
+def upload_guide(client, csrf, *, ratio="2:3", size=(400, 500)):
+    return client.post(
+        "/api/admin/size-guides",
+        data={"guide": (image_bytes(size, (250, 249, 246, 255)), "guide.png"), "ratio": ratio},
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    )
+
+
+def test_auto_bundle_keeps_main_mockups_for_the_main_image(tmp_path):
+    """MAIN is the picture Etsy shows in search, so it leads and never fills in.
+
+    Ranking scores aspect-ratio fit alone and would happily spend a MAIN mockup
+    on a filler slot; the rule is applied on top of that ranking.
+    """
+    client, paths = studio(tmp_path)
+    main, plain = two_shelves(client, paths)
+    register(client, write_room_template(paths["TEMPLATES_FOLDER"], "room_third"), "Vertical Wall Art")
+
+    payload = post_bundle(client).get_json()
+    mockups = mockups_of(payload)
+
+    assert mockups[0]["hero"] is True
+    assert mockups[0]["template_id"] == main["template_id"]
+    assert all(not item["hero"] for item in mockups[1:])
+    assert main["template_id"] not in {item["template_id"] for item in mockups[1:]}
+    assert guide_of(payload) is not None
+    # The picture is named after the mockup it came from, and nothing else.
+    assert mockups[0]["label"] == main["name"]
+
+
+def test_a_saved_set_decides_which_mockups_a_listing_gets(tmp_path):
+    client, paths = studio(tmp_path)
+    main, plain = two_shelves(client, paths)
+    second = register(
+        client, write_room_template(paths["TEMPLATES_FOLDER"], "room_two"), "Vertical Wall Art"
+    )
+    listing_set = catalog_of(client).create_listing_set(
+        {
+            "name": "Vertical listing",
+            "orientation": "portrait",
+            "product_type": "Printable Wall Art",
+            "items": [
+                {"kind": "mockup", "hero": True, "template_id": main["template_id"]},
+                {"kind": "mockup", "template_id": plain["template_id"]},
+                {"kind": "mockup", "template_id": second["template_id"]},
+            ],
+        }
+    )
+
+    payload = post_bundle(client, {"set": listing_set["id"]}).get_json()
+
+    assert payload["success"] is True
+    assert [item["template_id"] for item in payload["items"]] == [
+        main["template_id"],
+        plain["template_id"],
+        second["template_id"],
+    ]
+    # The main image leads, whatever order the set was built in.
+    assert payload["items"][0]["hero"] is True
+
+
+def test_a_set_can_draw_several_mockups_from_a_category(tmp_path):
+    client, paths = studio(tmp_path)
+    for index in range(4):
+        register(
+            client,
+            write_room_template(paths["TEMPLATES_FOLDER"], f"room_{index}"),
+            "Vertical Wall Art",
+        )
+    catalog = catalog_of(client)
+    category = catalog.get_or_create_category("Vertical Wall Art")
+    listing_set = catalog.create_listing_set(
+        {
+            "name": "Three rooms",
+            "items": [{"kind": "mockup", "category_id": category["id"], "count": 3}],
+        }
+    )
+
+    payload = post_bundle(client, {"set": listing_set["id"]}).get_json()
+
+    assert payload["success"] is True
+    assert len(payload["items"]) == 3
+    assert len({item["template_id"] for item in payload["items"]}) == 3
+
+
+def test_only_a_main_mockup_can_be_the_main_image(tmp_path):
+    client, paths = studio(tmp_path)
+    main, plain = two_shelves(client, paths)
+    csrf = admin_login(client)
+
+    def save(name, items):
+        return client.post(
+            "/api/admin/listing-sets",
+            json={"name": name, "items": items},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    filler = save("Wrong", [{"kind": "mockup", "template_id": main["template_id"]}])
+    assert filler.status_code == 400
+    assert "hero" in filler.get_json()["error"].lower()
+
+    wrong_hero = save("Also wrong", [{"kind": "mockup", "hero": True, "template_id": plain["template_id"]}])
+    assert wrong_hero.status_code == 400
+    assert "main" in wrong_hero.get_json()["error"].lower()
+
+    accepted = save(
+        "Right",
+        [
+            {"kind": "mockup", "hero": True, "template_id": main["template_id"]},
+            {"kind": "mockup", "template_id": plain["template_id"]},
+            {"kind": "size_guide"},
+        ],
+    )
+    assert accepted.status_code == 201
+    assert accepted.get_json()["set"]["items"][0]["hero"] is True
+
+
+def test_a_listing_has_one_main_image_one_chart_and_at_most_eighteen_mockups():
+    from services.listing_set_service import MAX_MOCKUPS, ListingSetError, normalize_items
+
+    def check(items, main_ids=()):
+        return normalize_items(
+            items,
+            is_main_template=lambda template_id: template_id in main_ids,
+            is_main_category=lambda _category_id: False,
+        )
+
+    with pytest.raises(ListingSetError, match="one hero"):
+        check(
+            [
+                {"kind": "mockup", "hero": True, "template_id": "a"},
+                {"kind": "mockup", "hero": True, "template_id": "b"},
+            ],
+            main_ids={"a", "b"},
+        )
+
+    with pytest.raises(ListingSetError, match="one size guide"):
+        check([{"kind": "size_guide"}, {"kind": "size_guide"}])
+
+    with pytest.raises(ListingSetError, match=str(MAX_MOCKUPS)):
+        check([{"kind": "mockup", "template_id": f"t{n}"} for n in range(MAX_MOCKUPS + 1)])
+
+    assert len(check([{"kind": "mockup", "template_id": f"t{n}"} for n in range(MAX_MOCKUPS)])) == MAX_MOCKUPS
+
+
+def test_the_size_guide_comes_from_the_library_matched_to_the_artwork(tmp_path):
+    """The ratio says which way round the chart is drawn, so one lookup answers both."""
+    client, paths = studio(tmp_path)
+    two_shelves(client, paths)
+    csrf = admin_login(client)
+    assert upload_guide(client, csrf, ratio="3:2").status_code == 201
+    portrait = upload_guide(client, csrf, ratio="2:3")
+    assert portrait.status_code == 201
+    guide_id = portrait.get_json()["guide"]["id"]
+
+    guide = guide_of(post_bundle(client, size=(400, 600)).get_json())
+
+    assert guide["success"] is True
+    assert guide["guide_id"] == guide_id
+    assert guide["source"] == "upload"
+    assert (paths["OUTPUT_FOLDER"] / guide["output_url"].rsplit("/", 1)[-1]).is_file()
+
+
+def test_a_landscape_artwork_gets_the_landscape_chart(tmp_path):
+    client, paths = studio(tmp_path)
+    register(
+        client,
+        write_room_template(
+            paths["TEMPLATES_FOLDER"], "room_wide", canvas=(300, 200),
+            area=(60, 40, 120, 80), orientation="landscape",
+        ),
+        "Main Horizontal",
+    )
+    csrf = admin_login(client)
+    assert upload_guide(client, csrf, ratio="2:3").status_code == 201
+    landscape = upload_guide(client, csrf, ratio="3:2")
+
+    guide = guide_of(post_bundle(client, size=(600, 400)).get_json())
+
+    assert guide["guide_id"] == landscape.get_json()["guide"]["id"]
+
+
+def test_a_missing_size_guide_costs_one_picture_not_the_listing(tmp_path):
+    client, paths = studio(tmp_path)
+    two_shelves(client, paths)
 
     response = post_bundle(client)
 
-    assert response.status_code == 200
+    assert response.status_code == 207
     payload = response.get_json()
-    assert payload["success"] is True
-    assert [item["role"] for item in payload["items"]] == [
-        "hero",
-        "closeup",
-        "scale",
-        "size_guide",
-    ]
-    assert all(item["success"] for item in payload["items"])
-    roles = by_role(payload)
-    # The second room must be a different room, or the listing shows one
-    # picture twice.
-    assert roles["scale"]["template_id"] != roles["hero"]["template_id"]
-    for item in payload["items"]:
-        assert (paths["OUTPUT_FOLDER"] / item["output_url"].rsplit("/", 1)[-1]).is_file()
+    assert guide_of(payload)["success"] is False
+    assert "library" in guide_of(payload)["error"].lower()
+    assert all(item["success"] for item in mockups_of(payload))
 
 
-def test_closeup_is_a_crop_of_the_hero_around_the_frame(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a", area=(40, 60, 80, 120))
+def test_size_guide_library_needs_only_a_ratio(tmp_path):
+    """A 3:2 chart is a landscape chart -- a second field could only disagree."""
+    client, paths = studio(tmp_path)
+    csrf = admin_login(client)
+    guide = upload_guide(client, csrf, ratio="3:2").get_json()["guide"]
+    assert guide["orientation"] == "landscape"
 
-    payload = post_bundle(client, {"roles": ["hero", "closeup"]}).get_json()
-    roles = by_role(payload)
+    listing = client.get("/api/admin/size-guides").get_json()
+    assert [entry["id"] for entry in listing["guides"]] == [guide["id"]]
+    assert "3:2" in listing["ratios"] and "2:3" in listing["ratios"]
 
-    hero = output_image(paths, roles["hero"])
-    closeup = output_image(paths, roles["closeup"])
-    assert hero.size == (200, 300)
-    assert closeup.width < hero.width and closeup.height < hero.height
-    crop = roles["closeup"]["crop"]
-    # The whole frame survives the crop, with scene left around it.
-    assert crop["x"] < 40 and crop["y"] < 60
-    assert crop["x"] + crop["width"] > 120
-    assert crop["y"] + crop["height"] > 180
-    assert (closeup.width, closeup.height) == (crop["width"], crop["height"])
+    refused = upload_guide(client, csrf, ratio="banana")
+    assert refused.status_code == 400
 
+    asset = client.get(f"/api/admin/size-guides/{guide['id']}/asset")
+    assert asset.status_code == 200
+    assert asset.data[:4] == b"\x89PNG"
+    # Windows will not delete a file the served response still holds open.
+    asset.close()
 
-def test_closeup_reuses_the_hero_render_instead_of_rendering_twice(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    payload = post_bundle(client, {"roles": ["hero", "closeup"]}).get_json()
-
-    # One render on disk plus the cropped file it produced -- not two renders.
-    assert len(list(paths["OUTPUT_FOLDER"].glob("mockup_*"))) == 2
-    roles = by_role(payload)
-    assert roles["closeup"]["template_id"] == roles["hero"]["template_id"]
-
-
-def test_size_guide_picks_the_family_the_artwork_actually_fits(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    portrait = by_role(post_bundle(client, {"roles": ["size_guide"]}, size=(400, 600)).get_json())
-    assert portrait["size_guide"]["size_family"] == "2:3"
-    assert portrait["size_guide"]["unit"] == "in"
-    assert [size["label"] for size in portrait["size_guide"]["sizes"]][:2] == ["4x6", "8x12"]
-
-    square = by_role(post_bundle(client, {"roles": ["size_guide"]}, size=(500, 500)).get_json())
-    assert square["size_guide"]["size_family"] == "1:1"
-
-    four_by_five = by_role(
-        post_bundle(client, {"roles": ["size_guide"]}, size=(800, 1000)).get_json()
+    removed = client.delete(
+        f"/api/admin/size-guides/{guide['id']}", headers={"X-CSRF-Token": csrf}
     )
-    assert four_by_five["size_guide"]["size_family"] == "4:5"
+    assert removed.status_code == 200
+    assert client.get("/api/admin/size-guides").get_json()["guides"] == []
+    assert not list(Path(client.application.config["SIZE_GUIDES_FOLDER"]).glob("guide_*"))
 
 
-def test_size_guide_turns_sizes_to_match_a_landscape_artwork(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
+def test_listing_sets_are_created_listed_renamed_and_deleted(tmp_path):
+    client, paths = studio(tmp_path)
+    _, plain = two_shelves(client, paths)
+    csrf = admin_login(client)
 
-    guide = by_role(
-        post_bundle(client, {"roles": ["size_guide"]}, size=(600, 400)).get_json()
-    )["size_guide"]
-
-    assert guide["size_family"] == "2:3"
-    first = guide["sizes"][0]
-    assert (first["width"], first["height"]) == (6, 4)
-    assert all(size["width"] > size["height"] for size in guide["sizes"])
-    with output_image(paths, guide) as image:
-        assert image.size == (2000, 2000)
-
-
-def test_seller_supplied_sizes_replace_the_standard_family(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    payload = post_bundle(
-        client,
-        {
-            "roles": ["size_guide"],
-            "sizes": [
-                {"label": "A3", "width": 29.7, "height": 42},
-                {"label": "A2", "width": 42, "height": 59.4},
-            ],
+    created = client.post(
+        "/api/admin/listing-sets",
+        json={
+            "name": "Portrait listing",
+            "orientation": "portrait",
+            "product_type": "Printable Wall Art",
+            "items": [{"kind": "mockup", "template_id": plain["template_id"]}],
         },
-    ).get_json()
-
-    guide = by_role(payload)["size_guide"]
-    assert guide["size_family"] == "custom"
-    assert [size["label"] for size in guide["sizes"]] == ["A3", "A2"]
-
-
-def test_one_failed_role_still_delivers_the_rest(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    response = post_bundle(client, {"templates": {"scale": "no_such_template"}})
-
-    assert response.status_code == 207
-    payload = response.get_json()
-    assert payload["success"] is False
-    roles = by_role(payload)
-    assert roles["scale"]["success"] is False
-    assert "not found" in roles["scale"]["error"].lower()
-    assert all(roles[role]["success"] for role in ("hero", "closeup", "size_guide"))
-
-
-def test_unknown_role_and_missing_artwork_are_refused(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    unknown = post_bundle(client, {"roles": ["hero", "poster"]})
-    assert unknown.status_code == 400
-    assert "poster" in unknown.get_json()["error"]
-
-    empty = client.post(
-        "/api/mockups/listing-bundle", data={}, content_type="multipart/form-data"
+        headers={"X-CSRF-Token": csrf},
     )
-    assert empty.status_code == 400
+    assert created.status_code == 201
+    set_id = created.get_json()["set"]["id"]
 
-
-def test_bundle_reports_no_template_instead_of_failing_the_request(tmp_path):
-    client, _ = build_client(tmp_path)
-
-    response = post_bundle(client, {"roles": ["hero", "size_guide"]})
-
-    assert response.status_code == 207
-    roles = by_role(response.get_json())
-    assert roles["hero"]["success"] is False
-    # The chart needs no template, so it is still delivered.
-    assert roles["size_guide"]["success"] is True
-
-
-def test_crop_box_falls_back_to_the_whole_canvas(tmp_path):
-    from services.listing_bundle_service import closeup_crop_box
-
-    assert closeup_crop_box([], (400, 300)) == (0, 0, 400, 300)
-    tiny = [{"x": 0, "y": 0, "width": 1, "height": 1}]
-    assert closeup_crop_box(tiny, (1, 1)) == (0, 0, 1, 1)
-    box = closeup_crop_box(
-        [
-            {"x": 10, "y": 10, "width": 20, "height": 20},
-            {"x": 100, "y": 100, "width": 80, "height": 80},
-        ],
-        (400, 400),
-        padding=0.25,
+    duplicate = client.post(
+        "/api/admin/listing-sets",
+        json={"name": "Portrait listing", "items": []},
+        headers={"X-CSRF-Token": csrf},
     )
-    # The largest frame wins: it carries the most pixels for a close-up.
-    assert box == (80, 80, 200, 200)
+    assert duplicate.status_code == 409
+
+    listing = client.get("/api/admin/listing-sets?orientation=portrait").get_json()
+    assert len(listing["sets"]) == 1
+    # The product types are the shop's, not the shelves the mockups sit on.
+    assert "Printable Wall Art" in listing["product_types"]
+    assert "Lightroom Presets" in listing["product_types"]
+    assert client.get("/api/admin/listing-sets?orientation=landscape").get_json()["sets"] == []
+
+    renamed = client.patch(
+        f"/api/admin/listing-sets/{set_id}",
+        json={"name": "Renamed"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert renamed.get_json()["set"]["name"] == "Renamed"
+
+    assert client.delete(
+        f"/api/admin/listing-sets/{set_id}", headers={"X-CSRF-Token": csrf}
+    ).status_code == 200
+    assert client.get("/api/admin/listing-sets").get_json()["sets"] == []
+    assert client.patch(
+        f"/api/admin/listing-sets/{set_id}", json={"name": "x"}, headers={"X-CSRF-Token": csrf}
+    ).status_code == 404
+
+
+def test_size_family_follows_the_artwork_shape():
+    from services.listing_bundle_service import guide_ratio_key, size_family_for_ratio
+
+    assert size_family_for_ratio(400 / 600)[0] == "2:3"
+    assert size_family_for_ratio(800 / 1000)[0] == "4:5"
+    assert size_family_for_ratio(1.0)[0] == "1:1"
+    # A landscape piece belongs to the same family, turned round.
+    name, _, sizes = size_family_for_ratio(600 / 400)
+    assert name == "2:3"
+    assert all(size.width > size.height for size in sizes)
+    # ...and asks the library for the chart drawn that way round.
+    assert guide_ratio_key(400 / 600) == "2:3"
+    assert guide_ratio_key(600 / 400) == "3:2"
+    assert guide_ratio_key(1.0) == "1:1"
 
 
 @pytest.mark.skipif(not features.check("avif"), reason="Pillow build without AVIF")
@@ -245,36 +408,22 @@ def test_saved_avif_is_really_avif(tmp_path):
 
 
 def test_bundle_honours_the_requested_output_format(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
+    client, paths = studio(tmp_path)
+    two_shelves(client, paths)
 
-    payload = post_bundle(client, {"roles": ["hero", "closeup"], "format": "webp"}).get_json()
+    payload = post_bundle(client, {"format": "webp"}).get_json()
 
-    for item in payload["items"]:
+    for item in mockups_of(payload):
         assert item["output_url"].endswith(".webp")
         with Image.open(paths["OUTPUT_FOLDER"] / item["output_url"].rsplit("/", 1)[-1]) as saved:
             assert saved.format == "WEBP"
 
-    rejected = post_bundle(client, {"format": "tiff"})
-    assert rejected.status_code == 400
+    assert post_bundle(client, {"format": "tiff"}).status_code == 400
 
 
-def test_size_guide_image_is_drawn_at_full_resolution(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
-
-    guide = by_role(post_bundle(client, {"roles": ["size_guide"]}).get_json())["size_guide"]
-
-    assert (guide["width"], guide["height"]) == (2000, 2000)
-    with output_image(paths, guide) as image:
-        colours = {pixel for _, pixel in image.convert("RGB").getcolors(maxcolors=200000)}
-        # Background, outlines, labels and the ghosted artwork -- not a blank page.
-        assert len(colours) > 20
-
-
-def test_uploaded_artwork_is_not_left_in_the_response(tmp_path):
-    client, paths = build_client(tmp_path)
-    write_room_template(paths["TEMPLATES_FOLDER"], "room_a")
+def test_a_bundle_names_no_uploaded_file(tmp_path):
+    client, paths = studio(tmp_path)
+    two_shelves(client, paths)
 
     payload = post_bundle(client).get_json()
 
@@ -282,3 +431,13 @@ def test_uploaded_artwork_is_not_left_in_the_response(tmp_path):
     body = json.dumps(payload)
     assert str(paths["UPLOAD_FOLDER"]) not in body
     assert "art.png" not in body
+
+
+def test_missing_artwork_and_unknown_set_are_refused(tmp_path):
+    client, paths = studio(tmp_path)
+    two_shelves(client, paths)
+
+    assert client.post(
+        "/api/mockups/listing-bundle", data={}, content_type="multipart/form-data"
+    ).status_code == 400
+    assert post_bundle(client, {"set": 9999}).status_code == 404

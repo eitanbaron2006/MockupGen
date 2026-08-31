@@ -1313,3 +1313,48 @@ def test_both_blueprints_report_an_error_the_same_way(tmp_path: Path):
         assert set(body) == {"success", "error"}
         assert body["success"] is False
         assert isinstance(body["error"], str) and body["error"]
+
+
+def test_main_category_templates_are_named_so_the_category_shows(tmp_path):
+    """A mockup's name has to say which shelf it sits on.
+
+    The MAIN categories are the ones a listing set draws its main shots from,
+    and a name like "V1-3" gave no way to tell one from an ordinary frame
+    mockup -- so the prefix follows the category instead of being typed by
+    hand, in both directions.
+    """
+    from services.catalog_service import CatalogService
+
+    catalog = CatalogService(tmp_path / "catalog.sqlite3")
+    catalog.initialize(tmp_path / "templates_data")
+    main = catalog.create_category("Main Vertical")
+    other = catalog.create_category("Vertival Wall Art Frame")
+    base = {
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "orientation": "portrait",
+        "status": "active",
+    }
+
+    created = catalog.create_template(
+        {**base, "template_id": "t_main", "name": "V1-3", "category_id": main["id"]}
+    )
+    assert created["name"] == "MAIN-V1-3"
+
+    plain = catalog.create_template(
+        {**base, "template_id": "t_plain", "name": "V1-9", "category_id": other["id"]}
+    )
+    assert plain["name"] == "V1-9"
+
+    # Moved onto the MAIN shelf, the name follows it.
+    moved = catalog.update_template("t_plain", {"category_id": main["id"]})
+    assert moved["name"] == "MAIN-V1-9"
+
+    # ...and moved back off it, the name stops claiming otherwise.
+    returned = catalog.update_template("t_plain", {"category_id": other["id"]})
+    assert returned["name"] == "V1-9"
+
+    # Renaming inside a MAIN category keeps the prefix without doubling it.
+    renamed = catalog.update_template("t_main", {"name": "MAIN-V1-4"})
+    assert renamed["name"] == "MAIN-V1-4"
+    assert catalog.update_template("t_main", {"name": "V1-5"})["name"] == "MAIN-V1-5"

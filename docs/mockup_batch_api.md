@@ -190,10 +190,9 @@ multipart/form-data:
 
 ```json
 {
-  "roles": ["hero", "closeup", "scale", "size_guide"],
-  "selection": { "product_type": "wall-art", "orientation": "portrait", "keywords": ["living room"] },
+  "set": 3,
+  "selection": { "product_type": "wall-art", "orientation": "portrait" },
   "templates": { "hero": "room_042" },
-  "sizes": [{ "label": "A3", "width": 29.7, "height": 42 }],
   "format": "jpeg",
   "quality": 90,
   "realism": true,
@@ -201,40 +200,75 @@ multipart/form-data:
 }
 ```
 
-The four roles, all optional — ask for the ones the listing needs:
+### Listing sets
 
-| role | what it is |
+`spec.set` is the id of a set an admin saved in the studio, and it decides
+which mockups the listing gets. A set is three things, and their order is not
+one of them:
+
+| part | what it is |
 | :--- | :--- |
-| `hero` | the main shot: the best-matching template, chosen automatically unless `templates.hero` names one |
-| `closeup` | the hero image cropped around the frame, so the buyer sees the print itself. Not a second render — it is a crop of the hero, so it costs nothing and always matches it |
-| `scale` | the piece in a second room, using a different template from the hero so the listing does not show the same picture twice |
-| `size_guide` | a print-size chart: nested outlines from the smallest offered size to the largest, labelled, with the artwork ghosted inside |
+| the main image | one `mockup` item marked `hero`. **Only a MAIN template may be it**, because the MAIN categories hold the picture Etsy shows as the product's thumbnail in search |
+| the mockups | up to 18 more `mockup` items — each a template pinned by id, or `count` of them drawn from a category so the set keeps working as the catalog grows |
+| the size guide | one `size_guide` item, taken from the library of ready-made charts and matched to the artwork's ratio |
 
-`selection` takes the same hints as a batch item. `templates` pins any role to a
-specific template and skips selection for it. `sizes` replaces the standard
-chart with the seller's own list; left out, the sizes are the retail family the
-artwork's own ratio fits (2:3, 3:4, 4:5, 5:7, ISO A or 1:1), turned landscape
-when the artwork is.
+The MAIN rule is enforced when the set is saved, not left to whoever builds it:
+a MAIN template outside the hero, or a hero that is not MAIN, is refused with
+`400`. Each picture is named after the mockup it came from.
 
-Response — `200` when every requested image was produced, `207` when some were:
+Sets are managed at `/api/admin/listing-sets` (`GET`, `POST`, `PATCH /<id>`,
+`DELETE /<id>`); the `GET` also returns `product_types` — what the listing is
+for, as the shop-side app names it (Printable Wall Art, PNG Artwork Pack,
+Lightroom Presets, Digital Planners), which is not the same thing as the
+categories the mockups are filed on.
+
+### Without a set
+
+Left with no `set`, the endpoint chooses by aspect-ratio fit: the best-fitting
+MAIN template leads, and the next two non-MAIN templates follow, then the size
+guide. `selection` takes the same hints as a batch item, and `templates.hero`
+pins the main image.
+
+### Size guides
+
+The chart is the one picture a buyer measures a wall against, so it comes from
+a real file rather than being drawn per render. The library lives at
+`/api/admin/size-guides` (`GET`; `POST` multipart with `guide` and `ratio`;
+`DELETE /<id>`; `GET /<id>/asset`), and `POST /api/admin/size-guides/generate`
+with `{"ratio": "2:3"}` has Vertex draw one and keeps it.
+
+A guide is tagged with the ratio it is drawn for, **the way round it is drawn**
+— `2:3` and `3:2` are different charts — so the ratio is the only field there
+is: `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `5:7`, `7:5`, `ISO A portrait`,
+`ISO A landscape`, `1:1`. The artwork's own shape picks the match. Where the
+library has nothing for that shape and `ENABLE_AI_MODE` is on with a Vertex
+project configured, one is generated for that render and the item comes back
+with `"source": "ai"` — image models are unreliable at rendering exact numbers,
+so that is the fallback, never the default. With neither, that one item fails
+and the rest of the listing is still delivered.
+
+### Response
+
+`200` when every requested image was produced, `207` when some were:
 
 ```json
 {
   "success": true,
   "artwork_ratio": 0.6667,
   "items": [
-    { "role": "hero", "success": true, "template_id": "room_042", "output_url": "/outputs/mockup_a.png", "width": 3000, "height": 2000, "selection": "auto" },
-    { "role": "closeup", "success": true, "template_id": "room_042", "output_url": "/outputs/mockup_b.png", "width": 980, "height": 1310, "crop": { "x": 610, "y": 320, "width": 980, "height": 1310 } },
-    { "role": "scale", "success": true, "template_id": "room_101", "output_url": "/outputs/mockup_c.png", "width": 3000, "height": 2000, "selection": "auto" },
-    { "role": "size_guide", "success": true, "output_url": "/outputs/mockup_d.png", "width": 2000, "height": 2000, "size_family": "2:3", "unit": "in", "sizes": [{ "label": "4x6", "width": 4, "height": 6 }] }
+    { "item": 0, "kind": "mockup", "label": "MAIN-V1-3", "success": true, "template_id": "room_042", "output_url": "/outputs/mockup_a.jpg", "width": 3000, "height": 2000, "hero": true },
+    { "item": 1, "kind": "mockup", "label": "H1-5", "success": true, "template_id": "room_101", "output_url": "/outputs/mockup_b.jpg", "width": 3000, "height": 2000, "hero": false },
+    { "item": 2, "kind": "size_guide", "label": "Size guide", "success": true, "output_url": "/outputs/mockup_c.jpg", "width": 2000, "height": 2000, "size_family": "2:3", "guide_id": 4, "source": "upload" }
   ]
 }
 ```
 
-Roles fail one at a time, like batch items: a template that will not render
-costs the listing that one picture and the rest still come back, each failed
-role carrying `"success": false` and an `error`. Only a request that is wrong in
-itself — an unknown role, no artwork file, an unsupported format — is refused
-whole with `400`. The `output_url` values are ordinary outputs, so they can be
-fetched one by one or handed to `POST /api/mockups/outputs/archive` to come
-back as a single ZIP.
+`item` is the row of the set the picture came from — a row drawing several
+mockups from a category answers with several items carrying the same number.
+The main image always comes first. Pictures fail one at a time, like batch
+items: a template that will not render costs the listing that one picture and
+the rest still come back, each failed one carrying `"success": false` and an
+`error`. Only a request that is wrong in itself — no artwork file, an unknown
+set, an unsupported format — is refused whole with `400`. The `output_url`
+values are ordinary outputs, so they can be fetched one by one or handed to
+`POST /api/mockups/outputs/archive` to come back as a single ZIP.

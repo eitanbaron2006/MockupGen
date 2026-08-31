@@ -84,6 +84,25 @@ class CatalogService:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS listing_sets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    product_type TEXT,
+                    orientation TEXT NOT NULL DEFAULT 'any',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    items TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS size_guides (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    ratio TEXT NOT NULL,
+                    orientation TEXT NOT NULL DEFAULT 'portrait',
+                    file_name TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'upload',
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             try:
@@ -228,6 +247,10 @@ class CatalogService:
 
     def create_template(self, record: dict[str, Any]) -> dict[str, Any]:
         timestamp = utc_now()
+        record = {
+            **record,
+            "name": self._named_for_category(record.get("name"), record.get("category_id")),
+        }
         with self._connect() as connection:
             connection.execute(
                 """
@@ -307,6 +330,26 @@ class CatalogService:
             ).fetchall()
         return [self._row_to_template(row) for row in rows]
 
+    # A mockup's name has to say which shelf it sits on: the MAIN categories are
+    # the ones a listing set draws its main shots from, and a name like "V1-3"
+    # gave no way to tell one apart from an ordinary frame mockup. The prefix is
+    # kept in step with the category here, so importing a template or dragging
+    # one between categories cannot leave the two disagreeing.
+    MAIN_CATEGORY_PREFIX = "MAIN-"
+
+    @staticmethod
+    def _is_main_category(category_name: str | None) -> bool:
+        return str(category_name or "").strip().lower().startswith("main")
+
+    def _named_for_category(self, name: str | None, category_id: Any) -> str | None:
+        if not name:
+            return name
+        category = self.get_category(category_id) if category_id else None
+        bare = name[len(self.MAIN_CATEGORY_PREFIX):] if name.upper().startswith(self.MAIN_CATEGORY_PREFIX) else name
+        if self._is_main_category(category.get("name") if category else None):
+            return f"{self.MAIN_CATEGORY_PREFIX}{bare}"
+        return bare
+
     def update_template(self, template_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "name",
@@ -322,6 +365,12 @@ class CatalogService:
             "status",
             "effects",
         }
+        if "name" in changes or "category_id" in changes:
+            current = self.get_template(template_id) or {}
+            category_id = changes.get("category_id", current.get("category_id"))
+            renamed = self._named_for_category(changes.get("name", current.get("name")), category_id)
+            if renamed and renamed != current.get("name"):
+                changes = {**changes, "name": renamed}
         assignments: list[str] = []
         values: list[Any] = []
         for key, value in changes.items():
@@ -355,6 +404,166 @@ class CatalogService:
             if not cursor.rowcount:
                 raise CatalogError("Template not found")
         self._checkpoint()
+
+    # ------------------------------------------------------------------
+    # Listing sets: what a shop listing is made of, decided in advance.
+    #
+    # Automatic selection scores aspect-ratio fit and nothing else, so it can
+    # neither know that a MAIN mockup is the thumbnail Etsy shows in search nor
+    # keep one out of a filler slot. A set is the admin saying, once, exactly
+    # which mockups a listing gets and in what order.
+    # ------------------------------------------------------------------
+
+    def create_listing_set(self, record: dict[str, Any]) -> dict[str, Any]:
+        timestamp = utc_now()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO listing_sets(
+                    name, product_type, orientation, status, items, created_at, updated_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(record["name"]).strip(),
+                    record.get("product_type"),
+                    record.get("orientation", "any"),
+                    record.get("status", "active"),
+                    json.dumps(record.get("items") or []),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            set_id = cursor.lastrowid
+        self._checkpoint()
+        return self.get_listing_set(set_id)
+
+    def get_listing_set(self, set_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM listing_sets WHERE id = ?", (set_id,)
+            ).fetchone()
+        return self._row_to_listing_set(row)
+
+    def list_listing_sets(
+        self, *, product_type: str | None = None, orientation: str | None = None
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        values: list[Any] = []
+        if product_type:
+            clauses.append("product_type = ?")
+            values.append(product_type)
+        if orientation:
+            # A set for one orientation and a set for any both serve that artwork.
+            clauses.append("(orientation = ? OR orientation = 'any')")
+            values.append(orientation)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM listing_sets {where} ORDER BY name", values
+            ).fetchall()
+        return [self._row_to_listing_set(row) for row in rows]
+
+    def update_listing_set(self, set_id: int, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"name", "product_type", "orientation", "status", "items"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            assignments.append(f"{key} = ?")
+            values.append(json.dumps(value) if key == "items" else value)
+        if not assignments:
+            current = self.get_listing_set(set_id)
+            if not current:
+                raise CatalogError("Listing set not found")
+            return current
+        assignments.append("updated_at = ?")
+        values.extend([utc_now(), set_id])
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE listing_sets SET {', '.join(assignments)} WHERE id = ?", values
+            )
+            if not cursor.rowcount:
+                raise CatalogError("Listing set not found")
+        self._checkpoint()
+        return self.get_listing_set(set_id)
+
+    def delete_listing_set(self, set_id: int) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute("DELETE FROM listing_sets WHERE id = ?", (set_id,))
+            if not cursor.rowcount:
+                raise CatalogError("Listing set not found")
+        self._checkpoint()
+
+    @staticmethod
+    def _row_to_listing_set(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        record = dict(row)
+        try:
+            record["items"] = json.loads(record.get("items") or "[]")
+        except json.JSONDecodeError:
+            record["items"] = []
+        return record
+
+    # ------------------------------------------------------------------
+    # Size guides: the print-size charts a listing ships with, kept as ready
+    # made images instead of being drawn on every render.
+    # ------------------------------------------------------------------
+
+    def create_size_guide(self, record: dict[str, Any]) -> dict[str, Any]:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO size_guides(name, ratio, orientation, file_name, source, created_at)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(record["name"]).strip(),
+                    str(record["ratio"]).strip(),
+                    record.get("orientation", "portrait"),
+                    str(record["file_name"]).strip(),
+                    record.get("source", "upload"),
+                    utc_now(),
+                ),
+            )
+            guide_id = cursor.lastrowid
+        self._checkpoint()
+        return self.get_size_guide(guide_id)
+
+    def get_size_guide(self, guide_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM size_guides WHERE id = ?", (guide_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_size_guides(
+        self, *, ratio: str | None = None, orientation: str | None = None
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        values: list[Any] = []
+        if ratio:
+            clauses.append("ratio = ?")
+            values.append(ratio)
+        if orientation:
+            clauses.append("orientation = ?")
+            values.append(orientation)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM size_guides {where} ORDER BY ratio, name", values
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_size_guide(self, guide_id: int) -> dict[str, Any]:
+        guide = self.get_size_guide(guide_id)
+        if not guide:
+            raise CatalogError("Size guide not found")
+        with self._connect() as connection:
+            connection.execute("DELETE FROM size_guides WHERE id = ?", (guide_id,))
+        self._checkpoint()
+        return guide
 
     def set_settings(self, settings: dict[str, str]) -> None:
         with self._connect() as connection:

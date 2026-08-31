@@ -10,6 +10,7 @@ import { escapeAttr, escapeHtml } from "./helpers.js";
 import { $, toast } from "./dom.js";
 import { api, csrfHeaders } from "./api.js";
 import { state, testState } from "./state.js";
+import { availableListingSets } from "./listingSets.js";
 
 // Test Mockups Modal Logic
 $("openTestModal").onclick = () => {
@@ -17,6 +18,7 @@ $("openTestModal").onclick = () => {
   $("testModal").classList.add("open");
   renderTestGallery();
   renderMockupGallery();
+  loadListingSetChoices();
   if (testState.activeIndex === -1) {
     resetTestResult();
   }
@@ -886,16 +888,20 @@ if ($("testDownloadAll")) {
  * in the same grid as a batch, which means the lightbox and "Download all"
  * pick them up without knowing anything about listing sets.
  */
-const LISTING_ROLES = [
-  ["hero", "Hero"],
-  ["closeup", "Close-up"],
-  ["scale", "Second room"],
-  ["size_guide", "Size guide"],
-];
+// Four pictures is what the automatic listing comes to when no set is named.
+const AUTOMATIC_PICTURES = 4;
 
-function listingRoleLabel(role) {
-  const match = LISTING_ROLES.find(([key]) => key === role);
-  return match ? match[1] : role;
+/** The saved sets that suit the artwork on screen, offered beside the button. */
+async function loadListingSetChoices() {
+  const select = $("testListingSetSelect");
+  if (!select) return;
+  const activeFile = testState.files[testState.activeIndex];
+  const sets = await availableListingSets(activeFile?.orientation || "");
+  const current = select.value;
+  select.innerHTML = ['<option value="">Automatic set</option>']
+    .concat(sets.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}</option>`))
+    .join("");
+  select.value = sets.some((entry) => String(entry.id) === current) ? current : "";
 }
 
 function syncListingSetButton(busy) {
@@ -904,10 +910,22 @@ function syncListingSetButton(busy) {
   button.disabled = Boolean(busy) || !testState.files[testState.activeIndex];
 }
 
-function renderListingCard(item) {
-  const card = $(`listing-card-${item.role}`);
+function placeholderCards(titles) {
+  return titles.map((title, index) => `
+    <div class="batch-result-card" id="listing-card-${index}">
+      <div class="batch-card-header">
+        <span class="batch-card-title">${escapeHtml(title)}</span>
+        <span class="batch-card-status">Pending...</span>
+      </div>
+      <div class="batch-card-body"><div class="batch-card-spinner"></div></div>
+    </div>
+  `).join("");
+}
+
+function renderListingCard(item, position) {
+  const card = $(`listing-card-${position}`);
   if (!card) return;
-  const title = listingRoleLabel(item.role);
+  const title = item.label || item.kind;
   if (!item.success) {
     card.classList.add("error");
     card.innerHTML = `
@@ -922,11 +940,11 @@ function renderListingCard(item) {
     return;
   }
   // The status line carries what the picture is of: which template it used, or
-  // which size family the chart offers. The server answers with template ids;
-  // the name is what the user recognises, so it is used wherever it is known.
+  // which chart the library answered with. The server sends template ids; the
+  // name is what the user recognises, so it is used wherever it is known.
   const template = testState.templates.find((entry) => entry.template_id === item.template_id);
-  const status = item.role === "size_guide"
-    ? `${item.size_family || ""} ${item.unit || ""}`.trim() || "Ready"
+  const status = item.kind === "size_guide"
+    ? (item.guide_name || item.size_family || "Ready")
     : (template?.name || item.template_id || "Ready");
   card.classList.add("success");
   card.innerHTML = `
@@ -938,7 +956,7 @@ function renderListingCard(item) {
       <img class="batch-card-img" src="${escapeAttr(item.output_url)}" alt="${escapeAttr(title)}">
     </div>
     <div class="batch-card-actions">
-      <a class="btn primary" download="listing-${escapeAttr(item.role)}.jpg"
+      <a class="btn primary" download="listing-${position + 1}.jpg"
          href="${escapeAttr(item.output_url)}">Download</a>
     </div>
   `;
@@ -960,22 +978,27 @@ if ($("testListingSetButton")) {
     $("testResultLoading").classList.add("hidden");
     const container = $("testBatchResults");
     container.classList.remove("hidden");
-    container.innerHTML = LISTING_ROLES.map(([role, title]) => `
-      <div class="batch-result-card" id="listing-card-${role}">
-        <div class="batch-card-header">
-          <span class="batch-card-title">${escapeHtml(title)}</span>
-          <span class="batch-card-status">Pending...</span>
-        </div>
-        <div class="batch-card-body"><div class="batch-card-spinner"></div></div>
-      </div>
-    `).join("");
+    // A saved set decides how many pictures there are and what they are
+    // called; the automatic fallback is the four-picture listing.
+    const chosenSet = $("testListingSetSelect")?.value || "";
+    const planned = chosenSet
+      ? (await availableListingSets()).find((entry) => String(entry.id) === chosenSet)?.items || []
+      : [];
+    // Each picture is named after the mockup it comes from, which only the
+    // answer knows; until then the cards are numbered.
+    const pending = chosenSet ? Math.max(planned.length, 1) : AUTOMATIC_PICTURES;
+    container.innerHTML = placeholderCards(
+      Array.from({ length: pending }, (_value, index) => `Image ${index + 1}`)
+    );
     syncDownloadAllButton();
 
     const formData = new FormData();
     formData.append("artwork", activeFile.file);
     // JPEG at 92: these are photographs headed for a shop listing, where a
     // lossless copy only costs the seller upload time.
-    formData.append("spec", JSON.stringify({ format: "jpeg", quality: 92 }));
+    const spec = { format: "jpeg", quality: 92 };
+    if (chosenSet) spec.set = Number(chosenSet);
+    formData.append("spec", JSON.stringify(spec));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -993,7 +1016,14 @@ if ($("testListingSetButton")) {
         throw new Error(data.error || "The listing set could not be built");
       }
       const items = data.items || [];
-      items.forEach(renderListingCard);
+      // A set that draws several mockups from one category answers with more
+      // pictures than it has rows, so the cards follow the answer.
+      // A set that draws several mockups from one category answers with more
+      // pictures than it has rows, so the cards follow the answer.
+      if (items.length !== pending) {
+        container.innerHTML = placeholderCards(items.map((item, index) => item.label || `Image ${index + 1}`));
+      }
+      items.forEach((item, index) => renderListingCard(item, index));
       const failed = items.filter((item) => !item.success).length;
       if (failed) toast(`${failed} of ${items.length} images could not be built`);
       syncDownloadAllButton();

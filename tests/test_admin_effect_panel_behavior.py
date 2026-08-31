@@ -18,6 +18,8 @@ ADMIN_DOM = SERVER_ROOT / "static" / "admin" / "modules" / "dom.js"
 ADMIN_STATE = SERVER_ROOT / "static" / "admin" / "modules" / "state.js"
 # The Test mockups window, which writes names into markup of its own.
 ADMIN_TEST_MODAL = SERVER_ROOT / "static" / "admin" / "modules" / "testModal.js"
+# The Listing sets screen: which mockups a listing is built from.
+ADMIN_LISTING_SETS = SERVER_ROOT / "static" / "admin" / "modules" / "listingSets.js"
 # What an effect is, and how its panel behaves.
 ADMIN_EFFECTS = SERVER_ROOT / "static" / "admin" / "modules" / "effects.js"
 # Which engine finds the frames, and how it is set up.
@@ -1236,28 +1238,32 @@ def test_finished_mockups_can_be_taken_as_one_archive():
 def test_listing_set_button_builds_a_whole_listing_from_the_artwork_alone():
     """The set is offered on artwork, not on ticked templates.
 
-    Generate needs a template chosen by hand; a listing set chooses its own, so
-    gating it on the same selection would leave the button dead exactly when a
-    seller wants it. It also has to reuse the batch grid's markup, because the
-    lightbox and Download all find their images by those class names.
+    Generate needs a template chosen by hand; a listing set already knows which
+    mockups it uses, so gating it on the same selection would leave the button
+    dead exactly when a seller wants it. It also has to reuse the batch grid's
+    markup, because the lightbox and Download all find their images by those
+    class names.
     """
     html = ADMIN_HTML.read_text(encoding="utf-8")
     js = ADMIN_TEST_MODAL.read_text(encoding="utf-8")
 
     assert 'id="testListingSetButton"' in html
+    assert 'id="testListingSetSelect"' in html
     assert "/api/mockups/listing-bundle" in js
 
     handler = js.split('$("testListingSetButton").onclick', 1)[1]
     # Artwork is the only thing it waits for.
     assert "testState.files[testState.activeIndex]" in handler
     assert "testState.selectedTemplates" not in handler
+    # A saved set is built when one is chosen; otherwise the automatic listing.
+    assert 'spec.set = Number(chosenSet)' in handler
     # A partial set (207) is still shown rather than thrown away.
     assert "response.status !== 207" in handler
     # The window's own two features keep working over the results.
     assert "syncDownloadAllButton()" in handler
 
     card = js.split("function renderListingCard(", 1)[1].split(chr(10) + "}", 1)[0]
-    assert "batch-result-card" not in card or "batch-card-img" in card
+    assert "batch-card-img" in card
     assert 'card.classList.add("success")' in card
     assert 'card.classList.add("error")' in card
     # Everything the server sends is user data by the time it reaches markup.
@@ -1268,3 +1274,51 @@ def test_listing_set_button_builds_a_whole_listing_from_the_artwork_alone():
     gallery = js.split("export function renderTestGallery() {", 1)[1].split(chr(10) + "}", 1)[0]
     assert "syncListingSetButton(false)" in gallery
     assert gallery.index("syncListingSetButton") < gallery.index("testState.files.length === 0")
+
+
+def test_listing_sets_screen_offers_only_what_a_slot_may_hold():
+    """A set is three slots, not a table of rows.
+
+    A MAIN mockup is the image Etsy shows in search, so the main-image slot is
+    the only place it is offered and the mockups slot never sees one -- the
+    rule holds by construction instead of by refusing a click after the fact.
+    A chosen mockup is shown as its picture, because a name alone tells the
+    admin nothing about what the listing will look like.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    js = ADMIN_LISTING_SETS.read_text(encoding="utf-8")
+
+    assert 'id="openListingSets"' in html
+    for slot in ("listingSlotHero", "listingSlotMockups", "listingSlotGuide"):
+        assert f'id="{slot}"' in html
+    # No rows, no per-picture names, no "main image" tick beside the hero slot.
+    assert "listingItems" not in html
+    assert "listing-item-label" not in html
+    assert "listing-hero-toggle" not in html
+    assert "closeup" not in js.lower()
+
+    picker = js.split("function renderPicker(", 1)[1].split(chr(10) + "}" + chr(10), 1)[0]
+    assert 'const wantMain = slot === "hero"' in picker
+    assert "isMainCategoryName(template.category_name) !== wantMain" in picker
+
+    # The chosen mockups are pictures, and there are at most eighteen of them.
+    assert "const MAX_MOCKUPS = 18;" in js
+    assert "previewUrl(template)" in js
+    chosen = js.split("function chosenCard(", 1)[1].split(chr(10) + "}", 1)[0]
+    assert "<img" in chosen and "escapeAttr(" in chosen
+
+    # A redraw fills the fields from the draft, so typing has to reach the
+    # draft as it happens or choosing a mockup would wipe the set's name.
+    assert 'listingState.draft.name = $("listingSetName").value' in js
+
+
+def test_listing_sets_screen_is_a_module_of_its_own():
+    """The studio loads it the way it loads its other windows."""
+    admin = ADMIN_JS.read_text(encoding="utf-8")
+    js = ADMIN_LISTING_SETS.read_text(encoding="utf-8")
+
+    assert 'import "./modules/listingSets.js";' in admin
+    # It talks to the server through the one door every request goes through.
+    assert "localStorage" not in js
+    assert "fetch(" not in js or "csrfHeaders()" in js
+    assert 'from "./api.js"' in js

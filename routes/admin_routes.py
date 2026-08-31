@@ -1,6 +1,7 @@
 import hmac
 import io
 import secrets
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -31,7 +32,21 @@ from services.green_frame_mockup_service import (
     green_detection_raw,
     green_mask_image,
 )
+from services.listing_bundle_service import (
+    GUIDE_RATIOS,
+    guide_ratio_shape,
+    orientation_for_guide_ratio,
+    size_family_for_ratio,
+)
+from services.listing_set_service import PRODUCT_TYPES, ListingSetError, normalize_items
 from services.local_detection_service import discover_local_models
+from services.size_guide_service import (
+    SizeGuideError,
+    generate_size_guide,
+    guide_path,
+    store_guide_image,
+    store_guide_upload,
+)
 from services.template_import_service import (
     TemplateImportError,
     delete_template_assets,
@@ -352,6 +367,245 @@ def delete_admin_category(category_id: int):
         status = 404 if str(error) == "Category not found" else 400
         return json_error(str(error), status)
     return jsonify({"success": True, "category_id": category_id})
+
+
+# ----------------------------------------------------------------------
+# Listing sets: which mockups a shop listing is built from, decided here
+# instead of guessed at render time.
+# ----------------------------------------------------------------------
+
+
+def _main_category_ids() -> set[int]:
+    return {
+        int(category["id"])
+        for category in catalog().list_categories()
+        if str(category.get("name") or "").strip().lower().startswith("main")
+    }
+
+
+def _checked_items(raw: Any) -> list[dict]:
+    """The set's contents, with the MAIN rule applied before anything is saved.
+
+    A MAIN mockup is the image Etsy shows in search, so it belongs to the hero
+    slot alone. Catching that here means a saved set is one that can run, and
+    the rule cannot be worked around by editing a set through the API.
+    """
+    main_categories = _main_category_ids()
+
+    def is_main_template(template_id: str) -> bool:
+        record = catalog().get_template(template_id)
+        if not record:
+            raise ListingSetError(f"Unknown mockup: {template_id}")
+        return str(record.get("category_name") or "").strip().lower().startswith("main")
+
+    return normalize_items(
+        raw,
+        is_main_template=is_main_template,
+        is_main_category=lambda category_id: int(category_id) in main_categories,
+    )
+
+
+@admin_routes.get("/api/admin/listing-sets")
+@require_admin_json
+def get_admin_listing_sets():
+    return jsonify(
+        {
+            "sets": catalog().list_listing_sets(
+                product_type=request.args.get("product_type") or None,
+                orientation=request.args.get("orientation") or None,
+            ),
+            # What the listing is for, as the shop-side app names it -- not the
+            # shelves the mockups are filed on.
+            "product_types": list(PRODUCT_TYPES),
+        }
+    )
+
+
+@admin_routes.post("/api/admin/listing-sets")
+@require_admin_json
+@require_csrf
+def create_admin_listing_set():
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return json_error("A set needs a name", 400)
+    try:
+        listing_set = catalog().create_listing_set(
+            {
+                "name": name,
+                "product_type": payload.get("product_type") or None,
+                "orientation": payload.get("orientation") or "any",
+                "status": payload.get("status") or "active",
+                "items": _checked_items(payload.get("items")),
+            }
+        )
+    except ListingSetError as error:
+        return json_error(str(error), 400)
+    except CatalogError as error:
+        return json_error(str(error), 400)
+    except sqlite3.IntegrityError:
+        return json_error("A set with that name already exists", 409)
+    return jsonify({"success": True, "set": listing_set}), 201
+
+
+@admin_routes.patch("/api/admin/listing-sets/<int:set_id>")
+@require_admin_json
+@require_csrf
+def update_admin_listing_set(set_id: int):
+    payload = request.get_json(silent=True) or {}
+    changes: dict[str, Any] = {}
+    for field in ("name", "product_type", "orientation", "status"):
+        if field in payload:
+            changes[field] = payload[field]
+    try:
+        if "items" in payload:
+            changes["items"] = _checked_items(payload.get("items"))
+        listing_set = catalog().update_listing_set(set_id, changes)
+    except ListingSetError as error:
+        return json_error(str(error), 400)
+    except CatalogError as error:
+        return json_error(str(error), 404 if "not found" in str(error).lower() else 400)
+    except sqlite3.IntegrityError:
+        return json_error("A set with that name already exists", 409)
+    return jsonify({"success": True, "set": listing_set})
+
+
+@admin_routes.delete("/api/admin/listing-sets/<int:set_id>")
+@require_admin_json
+@require_csrf
+def delete_admin_listing_set(set_id: int):
+    try:
+        catalog().delete_listing_set(set_id)
+    except CatalogError as error:
+        return json_error(str(error), 404)
+    return jsonify({"success": True, "set_id": set_id})
+
+
+# ----------------------------------------------------------------------
+# The size guide library: ready-made print-size charts, one per ratio.
+# ----------------------------------------------------------------------
+
+
+def _guides_folder() -> Path:
+    return Path(current_app.config.get("SIZE_GUIDES_FOLDER", "data/size_guides"))
+
+
+@admin_routes.get("/api/admin/size-guides")
+@require_admin_json
+def get_admin_size_guides():
+    return jsonify(
+        {
+            "guides": catalog().list_size_guides(ratio=request.args.get("ratio") or None),
+            "ratios": list(GUIDE_RATIOS),
+        }
+    )
+
+
+def _checked_ratio() -> str:
+    ratio = str(request.form.get("ratio") or (request.get_json(silent=True) or {}).get("ratio") or "").strip()
+    if ratio not in GUIDE_RATIOS:
+        raise SizeGuideError(f"ratio must be one of: {', '.join(GUIDE_RATIOS)}")
+    return ratio
+
+
+@admin_routes.post("/api/admin/size-guides")
+@require_admin_json
+@require_csrf
+def create_admin_size_guide():
+    upload = request.files.get("guide")
+    if upload is None or not upload.filename:
+        return json_error("A guide image is required", 400)
+    try:
+        ratio = _checked_ratio()
+        file_name, width, height = store_guide_upload(upload, _guides_folder())
+    except SizeGuideError as error:
+        return json_error(str(error), 400)
+    guide = catalog().create_size_guide(
+        {
+            "name": str(request.form.get("name", "")).strip() or f"{ratio} chart",
+            "ratio": ratio,
+            # Read off the ratio rather than asked for twice: a 3:2 chart is a
+            # landscape chart, and two fields could only ever disagree.
+            "orientation": orientation_for_guide_ratio(ratio),
+            "file_name": file_name,
+            "source": "upload",
+        }
+    )
+    return jsonify({"success": True, "guide": {**guide, "width": width, "height": height}}), 201
+
+
+@admin_routes.post("/api/admin/size-guides/generate")
+@require_admin_json
+@require_csrf
+def generate_admin_size_guide():
+    """Draw a chart with Vertex and keep it, so it is drawn once and not per render."""
+    if not current_app.config.get("ENABLE_AI_MODE", False):
+        return json_error("AI generation is disabled on this server", 503)
+    project_id = str(current_app.config.get("VERTEX_PROJECT_ID", "") or "").strip()
+    if not project_id:
+        project_id = str(catalog().get_settings().get("VERTEX_PROJECT_ID", "") or "").strip()
+    if not project_id:
+        return json_error("Vertex AI is not configured (no project id)", 400)
+    try:
+        ratio = _checked_ratio()
+        orientation = orientation_for_guide_ratio(ratio)
+        # The sizes come from the family the ratio belongs to, so the chart
+        # lists the sizes the shop actually sells at that shape.
+        _, unit, sizes = size_family_for_ratio(guide_ratio_shape(ratio))
+        image = generate_size_guide(
+            family=ratio,
+            sizes=[size.label for size in sizes],
+            unit=unit,
+            orientation=orientation,
+            project_id=project_id,
+            location=str(current_app.config.get("VERTEX_LOCATION", "global") or "global"),
+        )
+        file_name, width, height = store_guide_image(image, _guides_folder())
+    except SizeGuideError as error:
+        return json_error(str(error), 400)
+    except Exception as error:  # a model that will not answer is not a crash
+        return json_error(str(error) or "The size guide could not be generated", 502)
+    guide = catalog().create_size_guide(
+        {
+            "name": str((request.get_json(silent=True) or {}).get("name", "")).strip()
+            or f"{ratio} chart (AI)",
+            "ratio": ratio,
+            "orientation": orientation,
+            "file_name": file_name,
+            "source": "ai",
+        }
+    )
+    return jsonify({"success": True, "guide": {**guide, "width": width, "height": height}}), 201
+
+
+@admin_routes.get("/api/admin/size-guides/<int:guide_id>/asset")
+@require_admin_json
+def get_admin_size_guide_asset(guide_id: int):
+    guide = catalog().get_size_guide(guide_id)
+    if not guide:
+        return json_error("Size guide not found", 404)
+    try:
+        path = guide_path(_guides_folder(), guide.get("file_name", ""))
+    except SizeGuideError as error:
+        return json_error(str(error), 400)
+    if not path.is_file():
+        return json_error("Size guide file is missing", 404)
+    return send_file(path)
+
+
+@admin_routes.delete("/api/admin/size-guides/<int:guide_id>")
+@require_admin_json
+@require_csrf
+def delete_admin_size_guide(guide_id: int):
+    try:
+        guide = catalog().delete_size_guide(guide_id)
+    except CatalogError as error:
+        return json_error(str(error), 404)
+    try:
+        guide_path(_guides_folder(), guide.get("file_name", "")).unlink(missing_ok=True)
+    except (SizeGuideError, OSError):
+        pass  # The record is gone; a stray file is not worth failing over.
+    return jsonify({"success": True, "guide_id": guide_id})
 
 
 @admin_routes.get("/api/admin/templates")

@@ -22,6 +22,9 @@ UPLOAD_FOLDER = _folder("UPLOAD_FOLDER", "uploads")
 OUTPUT_FOLDER = _folder("OUTPUT_FOLDER", "outputs")
 TEMPLATES_FOLDER = _folder("TEMPLATES_FOLDER", "templates_data")
 DRAFT_TEMPLATES_FOLDER = _folder("DRAFT_TEMPLATES_FOLDER", "draft_templates")
+# Ready-made print-size charts live beside the catalog rather than inside a
+# template: one chart serves every artwork of the same ratio.
+SIZE_GUIDES_FOLDER = _folder("SIZE_GUIDES_FOLDER", "data/size_guides")
 DATABASE_PATH = _folder("DATABASE_PATH", "data/mockup_catalog.sqlite3")
 # A request with no ceiling on it is read into memory whatever its size, so an
 # upload of a few hundred megabytes is all it takes to put the server out. 32MB
@@ -43,6 +46,7 @@ class Config:
     OUTPUT_FOLDER = OUTPUT_FOLDER
     TEMPLATES_FOLDER = TEMPLATES_FOLDER
     DRAFT_TEMPLATES_FOLDER = DRAFT_TEMPLATES_FOLDER
+    SIZE_GUIDES_FOLDER = SIZE_GUIDES_FOLDER
     DATABASE_PATH = DATABASE_PATH
     MAX_CONTENT_LENGTH = MAX_CONTENT_LENGTH
     ENABLE_SIMPLE_MODE = ENABLE_SIMPLE_MODE
