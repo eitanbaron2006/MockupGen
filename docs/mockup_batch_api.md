@@ -272,3 +272,22 @@ the rest still come back, each failed one carrying `"success": false` and an
 set, an unsupported format — is refused whole with `400`. The `output_url`
 values are ordinary outputs, so they can be fetched one by one or handed to
 `POST /api/mockups/outputs/archive` to come back as a single ZIP.
+
+### Drawing a chart
+
+`POST /api/admin/size-guides/generate` takes `ratio` and one of:
+
+- `preset` — one of the studio's styles (`room`, `outlined`, `gallery`, `iso`,
+  `figure`). The style's own example image, if one has been attached at
+  `POST /api/admin/size-guides/styles/<key>/example`, is sent with it.
+- `prompt` — wording of the admin's own, which is remembered and used for every
+  later chart. Nothing of the studio's is attached to it: it is their design.
+
+A `reference` image may be attached to either (multipart), and every prompt —
+including one written from scratch — carries a closing demand that each label
+be lettered exactly as given, because image models misspell what they draw.
+
+**Known limit, measured:** the model draws something that *looks* to scale
+rather than something that *is*. Frames against a sofa or a figure come out
+convincing but not proportionally exact, so a chart uploaded by hand always
+wins: the library is searched first, and generation is only the fallback.
