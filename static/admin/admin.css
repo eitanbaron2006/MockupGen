@@ -2909,6 +2909,15 @@ select,
   pointer-events: auto;
 }
 
+/* Every window is a .modal-backdrop at the same depth, so the one written last
+   in the page covers the others -- which buried the confirmation asked for
+   from a window that happens to come after it, leaving a dialog on screen with
+   both its buttons unclickable. A question about what a window is doing has to
+   sit above that window. */
+#systemDialog {
+  z-index: 300;
+}
+
 .test-modal {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -4712,20 +4721,60 @@ input[type="checkbox"]:disabled {
 }
 
 .listing-set-row {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  text-align: left;
-  padding: 9px 11px;
+  position: relative;
   border: 1px solid var(--line-soft);
   border-radius: 9px;
   background: var(--panel);
-  cursor: pointer;
 }
 
 .listing-set-row.active {
   border-color: var(--ink);
   background: var(--page);
+}
+
+.listing-set-open {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+/* The bin waits for the pointer to be on the set it would delete. */
+.listing-set-drop {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.listing-set-row:hover .listing-set-drop,
+.listing-set-drop:focus-visible {
+  opacity: 1;
+}
+
+.listing-set-drop:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.listing-set-drop svg {
+  width: 100%;
+  height: 100%;
 }
 
 .listing-set-name {

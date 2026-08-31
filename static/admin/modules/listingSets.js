@@ -109,15 +109,34 @@ function renderSetList() {
     const shape = entry.orientation === "any" ? "any shape" : entry.orientation;
     const pictures = (entry.items || []).filter((item) => item.kind === "mockup").length;
     return `
-      <button class="listing-set-row${active}" type="button" data-set="${entry.id}"
-              title="${escapeAttr(`${entry.name} -- ${entry.product_type || "all product types"}, ${shape}`)}">
-        <span class="listing-set-name">${escapeHtml(entry.name)}</span>
-        <span class="listing-set-meta">${pictures} mockups</span>
-      </button>
+      <div class="listing-set-row${active}">
+        <button class="listing-set-open" type="button" data-set="${entry.id}"
+                title="${escapeAttr(`${entry.name} -- ${entry.product_type || "all product types"}, ${shape}`)}">
+          <span class="listing-set-name">${escapeHtml(entry.name)}</span>
+          <span class="listing-set-meta">${pictures} mockups</span>
+        </button>
+        <button class="listing-set-drop" type="button" data-drop-set="${entry.id}"
+                title="Delete this set" aria-label="Delete ${escapeAttr(entry.name)}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4h8v2"></path>
+            <path d="M19 6l-1 14H6L5 6"></path>
+            <path d="M10 11v6M14 11v6"></path>
+          </svg>
+        </button>
+      </div>
     `;
   }).join("");
-  list.querySelectorAll(".listing-set-row").forEach((row) => {
+  list.querySelectorAll("[data-set]").forEach((row) => {
     row.onclick = () => editSet(Number(row.dataset.set));
+  });
+  list.querySelectorAll("[data-drop-set]").forEach((button) => {
+    button.onclick = (event) => {
+      // The row underneath opens the set; the bin must not open it as well.
+      event.stopPropagation();
+      deleteSet(Number(button.dataset.dropSet));
+    };
   });
 }
 
@@ -211,7 +230,6 @@ function renderEditor() {
   $("listingSetName").value = draft.name || "";
   $("listingSetProduct").value = draft.product_type || "";
   $("listingSetOrientation").value = draft.orientation || "any";
-  $("listingDeleteSet").classList.toggle("hidden", !draft.id);
 
   $("listingHeroBody").innerHTML = draft.hero
     ? chosenCard(draft.hero, "drop-hero")
@@ -416,16 +434,23 @@ async function saveSet() {
   }
 }
 
-async function deleteSet() {
-  const draft = listingState.draft;
-  if (!draft?.id) return;
-  if (!(await systemConfirm("Delete this set?", draft.name))) return;
+async function deleteSet(setId) {
+  const entry = listingState.sets.find((saved) => saved.id === setId);
+  if (!entry) return;
+  // A set is a decision the admin made once and builds every listing from, so
+  // it is never deleted on one click.
+  const confirmed = await systemConfirm(
+    `Delete "${entry.name}"?`,
+    "The listings already built from it are not affected, but the set itself cannot be brought back."
+  );
+  if (!confirmed) return;
   try {
-    await api(`/api/admin/listing-sets/${draft.id}`, { method: "DELETE" });
-    listingState.sets = listingState.sets.filter((entry) => entry.id !== draft.id);
-    listingState.draft = null;
+    await api(`/api/admin/listing-sets/${setId}`, { method: "DELETE" });
+    listingState.sets = listingState.sets.filter((saved) => saved.id !== setId);
+    if (listingState.draft?.id === setId) listingState.draft = null;
     renderSetList();
     renderEditor();
+    toast("Set deleted");
   } catch (error) {
     toast(error.message);
   }
@@ -582,7 +607,6 @@ if ($("listingTabSets")) $("listingTabSets").onclick = () => showTab("sets");
 if ($("listingTabGuides")) $("listingTabGuides").onclick = () => showTab("guides");
 if ($("listingNewSet")) $("listingNewSet").onclick = newSet;
 if ($("listingSaveSet")) $("listingSaveSet").onclick = saveSet;
-if ($("listingDeleteSet")) $("listingDeleteSet").onclick = deleteSet;
 if ($("listingGuideUpload")) $("listingGuideUpload").onclick = uploadGuide;
 if ($("listingGuideFile")) $("listingGuideFile").onchange = uploadGuide;
 if ($("listingGuideGenerate")) $("listingGuideGenerate").onclick = generateGuide;

@@ -1322,3 +1322,26 @@ def test_listing_sets_screen_is_a_module_of_its_own():
     assert "localStorage" not in js
     assert "fetch(" not in js or "csrfHeaders()" in js
     assert 'from "./api.js"' in js
+
+
+def test_a_confirmation_sits_above_the_window_that_asked_for_it():
+    """Every window shares one stacking depth, so the dialog needs its own.
+
+    The windows are all `.modal-backdrop` at the same z-index, which means the
+    one written last in the page covers the rest. A confirmation opened from
+    such a window was drawn behind it: the question was visible, and both of
+    its buttons were unclickable.
+    """
+    css = ADMIN_CSS.read_text(encoding="utf-8")
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+
+    backdrop = css.split(".modal-backdrop {", 1)[1].split("}", 1)[0]
+    backdrop_depth = int(backdrop.split("z-index:", 1)[1].split(";", 1)[0].strip())
+    dialog = css.split("#systemDialog {", 1)[1].split("}", 1)[0]
+    dialog_depth = int(dialog.split("z-index:", 1)[1].split(";", 1)[0].strip())
+
+    assert dialog_depth > backdrop_depth
+
+    # The rule only matters because the dialog is declared before the windows
+    # that ask it questions; if that ever stops being true, so does the bug.
+    assert html.index('id="systemDialog"') < html.index('id="listingSetsModal"')
