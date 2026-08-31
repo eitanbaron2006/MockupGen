@@ -237,6 +237,9 @@ function handleTestArtworkUpload(filesList) {
 
 export function renderTestGallery() {
   const gallery = $("testGallery");
+  // A listing set needs artwork and nothing else, so its button follows the
+  // gallery rather than the template ticks that gate Generate.
+  syncListingSetButton(false);
   if (testState.files.length === 0) {
     gallery.innerHTML = `<div class="gallery-empty">No artworks uploaded</div>`;
     return;
@@ -869,6 +872,141 @@ if ($("testDownloadAll")) {
     } finally {
       button.disabled = false;
       button.textContent = label;
+    }
+  };
+}
+
+
+/** A whole listing's worth of images, from the artwork already on screen.
+ *
+ * Everything else in this window renders templates the user ticked by hand.
+ * This asks the server for the set a shop listing needs -- the hero shot, a
+ * close-up of it, the piece in a second room, and a size chart -- and lets it
+ * choose the templates, so nothing has to be ticked at all. The results land
+ * in the same grid as a batch, which means the lightbox and "Download all"
+ * pick them up without knowing anything about listing sets.
+ */
+const LISTING_ROLES = [
+  ["hero", "Hero"],
+  ["closeup", "Close-up"],
+  ["scale", "Second room"],
+  ["size_guide", "Size guide"],
+];
+
+function listingRoleLabel(role) {
+  const match = LISTING_ROLES.find(([key]) => key === role);
+  return match ? match[1] : role;
+}
+
+function syncListingSetButton(busy) {
+  const button = $("testListingSetButton");
+  if (!button) return;
+  button.disabled = Boolean(busy) || !testState.files[testState.activeIndex];
+}
+
+function renderListingCard(item) {
+  const card = $(`listing-card-${item.role}`);
+  if (!card) return;
+  const title = listingRoleLabel(item.role);
+  if (!item.success) {
+    card.classList.add("error");
+    card.innerHTML = `
+      <div class="batch-card-header">
+        <span class="batch-card-title">${escapeHtml(title)}</span>
+        <span class="batch-card-status">Failed</span>
+      </div>
+      <div class="batch-card-body">
+        <div class="batch-error-message">${escapeHtml(item.error || "Could not be built")}</div>
+      </div>
+    `;
+    return;
+  }
+  // The status line carries what the picture is of: which template it used, or
+  // which size family the chart offers. The server answers with template ids;
+  // the name is what the user recognises, so it is used wherever it is known.
+  const template = testState.templates.find((entry) => entry.template_id === item.template_id);
+  const status = item.role === "size_guide"
+    ? `${item.size_family || ""} ${item.unit || ""}`.trim() || "Ready"
+    : (template?.name || item.template_id || "Ready");
+  card.classList.add("success");
+  card.innerHTML = `
+    <div class="batch-card-header">
+      <span class="batch-card-title">${escapeHtml(title)}</span>
+      <span class="batch-card-status" title="${escapeAttr(status)}">${escapeHtml(status)}</span>
+    </div>
+    <div class="batch-card-body">
+      <img class="batch-card-img" src="${escapeAttr(item.output_url)}" alt="${escapeAttr(title)}">
+    </div>
+    <div class="batch-card-actions">
+      <a class="btn primary" download="listing-${escapeAttr(item.role)}.jpg"
+         href="${escapeAttr(item.output_url)}">Download</a>
+    </div>
+  `;
+}
+
+if ($("testListingSetButton")) {
+  $("testListingSetButton").onclick = async () => {
+    const activeFile = testState.files[testState.activeIndex];
+    if (!activeFile) return;
+    const button = $("testListingSetButton");
+    const label = button.textContent;
+    syncListingSetButton(true);
+    button.textContent = "Building set...";
+
+    // The set takes over the result column the way a batch does.
+    $("testResultPlaceholder").classList.add("hidden");
+    $("testResultWrapper").classList.add("hidden");
+    $("testResultActions").classList.add("hidden");
+    $("testResultLoading").classList.add("hidden");
+    const container = $("testBatchResults");
+    container.classList.remove("hidden");
+    container.innerHTML = LISTING_ROLES.map(([role, title]) => `
+      <div class="batch-result-card" id="listing-card-${role}">
+        <div class="batch-card-header">
+          <span class="batch-card-title">${escapeHtml(title)}</span>
+          <span class="batch-card-status">Pending...</span>
+        </div>
+        <div class="batch-card-body"><div class="batch-card-spinner"></div></div>
+      </div>
+    `).join("");
+    syncDownloadAllButton();
+
+    const formData = new FormData();
+    formData.append("artwork", activeFile.file);
+    // JPEG at 92: these are photographs headed for a shop listing, where a
+    // lossless copy only costs the seller upload time.
+    formData.append("spec", JSON.stringify({ format: "jpeg", quality: 92 }));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+      const response = await fetch("/api/mockups/listing-bundle", {
+        method: "POST",
+        headers: csrfHeaders(),
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await response.json();
+      // 207 means some of the set came back, which is still worth showing.
+      if (!response.ok && response.status !== 207) {
+        throw new Error(data.error || "The listing set could not be built");
+      }
+      const items = data.items || [];
+      items.forEach(renderListingCard);
+      const failed = items.filter((item) => !item.success).length;
+      if (failed) toast(`${failed} of ${items.length} images could not be built`);
+      syncDownloadAllButton();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      toast(error.name === "AbortError" ? "Request timed out (120s limit)" : error.message);
+      container.classList.add("hidden");
+      container.innerHTML = "";
+      $("testResultPlaceholder").classList.remove("hidden");
+      syncDownloadAllButton();
+    } finally {
+      button.textContent = label;
+      syncListingSetButton(false);
     }
   };
 }

@@ -1231,3 +1231,40 @@ def test_finished_mockups_can_be_taken_as_one_archive():
     names = modal.split("function readyRenderNames()", 1)[1].split(chr(10) + "}", 1)[0]
     assert 'startsWith("data:")' in names
     assert modal.count("syncDownloadAllButton();") >= 3
+
+
+def test_listing_set_button_builds_a_whole_listing_from_the_artwork_alone():
+    """The set is offered on artwork, not on ticked templates.
+
+    Generate needs a template chosen by hand; a listing set chooses its own, so
+    gating it on the same selection would leave the button dead exactly when a
+    seller wants it. It also has to reuse the batch grid's markup, because the
+    lightbox and Download all find their images by those class names.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    js = ADMIN_TEST_MODAL.read_text(encoding="utf-8")
+
+    assert 'id="testListingSetButton"' in html
+    assert "/api/mockups/listing-bundle" in js
+
+    handler = js.split('$("testListingSetButton").onclick', 1)[1]
+    # Artwork is the only thing it waits for.
+    assert "testState.files[testState.activeIndex]" in handler
+    assert "testState.selectedTemplates" not in handler
+    # A partial set (207) is still shown rather than thrown away.
+    assert "response.status !== 207" in handler
+    # The window's own two features keep working over the results.
+    assert "syncDownloadAllButton()" in handler
+
+    card = js.split("function renderListingCard(", 1)[1].split(chr(10) + "}", 1)[0]
+    assert "batch-result-card" not in card or "batch-card-img" in card
+    assert 'card.classList.add("success")' in card
+    assert 'card.classList.add("error")' in card
+    # Everything the server sends is user data by the time it reaches markup.
+    assert "escapeAttr(item.output_url)" in card
+    assert "${item.output_url}" not in card
+
+    # The button follows the gallery, so deleting the last artwork disables it.
+    gallery = js.split("export function renderTestGallery() {", 1)[1].split(chr(10) + "}", 1)[0]
+    assert "syncListingSetButton(false)" in gallery
+    assert gallery.index("syncListingSetButton") < gallery.index("testState.files.length === 0")
