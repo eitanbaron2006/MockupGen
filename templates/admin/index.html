@@ -1441,6 +1441,11 @@
               <section class="listing-slot" id="listingSlotGuide">
                 <h3>Size guide</h3>
                 <div class="listing-slot-body" id="listingGuideBody"></div>
+                <div class="listing-slot-tools">
+                  <select id="listingSlotRatio" title="Which ratio to draw"></select>
+                  <button class="btn compact" id="listingSlotGenerate" type="button"
+                    title="Draw a chart for this set with AI and use it">Generate</button>
+                </div>
               </section>
               <p class="listing-slot-hint" id="listingSlotHint"></p>
             </div>
@@ -1489,6 +1494,16 @@
             <input type="file" id="listingGuideFile" accept="image/png, image/jpeg, image/webp" class="hidden-input">
             <button class="btn" id="listingGuideUpload" type="button">Upload chart</button>
             <button class="btn primary" id="listingGuideGenerate" type="button">Generate with AI</button>
+          </div>
+          <div class="listing-prompt">
+            <div class="listing-prompt-head">
+              <label for="listingGuidePrompt">Prompt sent to the model</label>
+              <button class="btn compact" id="listingPromptReset" type="button">Restore default</button>
+            </div>
+            <textarea id="listingGuidePrompt" rows="7" spellcheck="false"></textarea>
+            <p class="listing-hint">Edited wording is kept and used for every chart from then on.
+              <code>{ratio}</code>, <code>{sizes}</code>, <code>{unit}</code>, <code>{orientation}</code> and
+              <code>{count}</code> are filled in by the studio.</p>
           </div>
         </div>
         <div class="listing-guide-grid" id="listingGuideGrid">

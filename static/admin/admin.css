@@ -5152,6 +5152,77 @@ input[type="checkbox"]:disabled {
   color: var(--muted);
 }
 
+.listing-slot-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.listing-slot-tools select {
+  height: 28px;
+  max-width: 132px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.listing-slot-tools .btn {
+  height: 28px;
+}
+
+.listing-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listing-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.listing-prompt-head label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.listing-prompt-head .btn {
+  height: 26px;
+  margin-left: auto;
+}
+
+.listing-prompt textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.listing-prompt textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.listing-prompt code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+
 .listing-guide-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

@@ -34,6 +34,7 @@ from services.green_frame_mockup_service import (
 )
 from services.listing_bundle_service import (
     GUIDE_RATIOS,
+    dual_unit_labels,
     guide_ratio_shape,
     orientation_for_guide_ratio,
     size_family_for_ratio,
@@ -41,6 +42,7 @@ from services.listing_bundle_service import (
 from services.listing_set_service import PRODUCT_TYPES, ListingSetError, normalize_items
 from services.local_detection_service import discover_local_models
 from services.size_guide_service import (
+    DEFAULT_GUIDE_PROMPT,
     SizeGuideError,
     generate_size_guide,
     guide_path,
@@ -490,6 +492,15 @@ def _guides_folder() -> Path:
     return Path(current_app.config.get("SIZE_GUIDES_FOLDER", "data/size_guides"))
 
 
+SIZE_GUIDE_PROMPT_KEY = "SIZE_GUIDE_PROMPT"
+
+
+def _guide_prompt_template() -> str:
+    """The wording the studio will send, which the admin may have rewritten."""
+    stored = str(catalog().get_settings().get(SIZE_GUIDE_PROMPT_KEY, "") or "").strip()
+    return stored or DEFAULT_GUIDE_PROMPT
+
+
 @admin_routes.get("/api/admin/size-guides")
 @require_admin_json
 def get_admin_size_guides():
@@ -497,6 +508,8 @@ def get_admin_size_guides():
         {
             "guides": catalog().list_size_guides(ratio=request.args.get("ratio") or None),
             "ratios": list(GUIDE_RATIOS),
+            "prompt": _guide_prompt_template(),
+            "default_prompt": DEFAULT_GUIDE_PROMPT,
         }
     )
 
@@ -546,29 +559,34 @@ def generate_admin_size_guide():
         project_id = str(catalog().get_settings().get("VERTEX_PROJECT_ID", "") or "").strip()
     if not project_id:
         return json_error("Vertex AI is not configured (no project id)", 400)
+    payload = request.get_json(silent=True) or {}
+    template = str(payload.get("prompt") or "").strip()
     try:
         ratio = _checked_ratio()
         orientation = orientation_for_guide_ratio(ratio)
-        # The sizes come from the family the ratio belongs to, so the chart
-        # lists the sizes the shop actually sells at that shape.
+        # The sizes come from the family the ratio belongs to, in both units,
+        # so the chart lists what the shop actually sells at that shape.
         _, unit, sizes = size_family_for_ratio(guide_ratio_shape(ratio))
         image = generate_size_guide(
             family=ratio,
-            sizes=[size.label for size in sizes],
+            sizes=dual_unit_labels(sizes, unit),
             unit=unit,
             orientation=orientation,
             project_id=project_id,
             location=str(current_app.config.get("VERTEX_LOCATION", "global") or "global"),
+            template=template or _guide_prompt_template(),
         )
         file_name, width, height = store_guide_image(image, _guides_folder())
     except SizeGuideError as error:
         return json_error(str(error), 400)
     except Exception as error:  # a model that will not answer is not a crash
         return json_error(str(error) or "The size guide could not be generated", 502)
+    # Wording the admin edited is kept, so the next chart is drawn the same way.
+    if template and template != _guide_prompt_template():
+        catalog().set_settings({SIZE_GUIDE_PROMPT_KEY: template})
     guide = catalog().create_size_guide(
         {
-            "name": str((request.get_json(silent=True) or {}).get("name", "")).strip()
-            or f"{ratio} chart (AI)",
+            "name": str(payload.get("name", "")).strip() or f"{ratio} chart (AI)",
             "ratio": ratio,
             "orientation": orientation,
             "file_name": file_name,

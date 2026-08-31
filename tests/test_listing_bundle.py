@@ -441,3 +441,78 @@ def test_missing_artwork_and_unknown_set_are_refused(tmp_path):
         "/api/mockups/listing-bundle", data={}, content_type="multipart/form-data"
     ).status_code == 400
     assert post_bundle(client, {"set": 9999}).status_code == 404
+
+
+def test_the_generation_prompt_can_be_read_edited_and_is_remembered(tmp_path, monkeypatch):
+    """The wording is the difference between a diagram and a shop's size guide.
+
+    The studio ships one, the admin can rewrite it, and what they wrote is what
+    the next chart is drawn from -- otherwise every generation starts over from
+    a default they already rejected.
+    """
+    import routes.admin_routes as admin_routes
+    from services.size_guide_service import DEFAULT_GUIDE_PROMPT
+
+    client, paths = build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
+    csrf = admin_login(client)
+
+    offered = client.get("/api/admin/size-guides").get_json()
+    assert offered["prompt"] == DEFAULT_GUIDE_PROMPT
+    assert "size guide" in offered["default_prompt"].lower()
+
+    seen = {}
+
+    def fake_generate(**kwargs):
+        seen.update(kwargs)
+        return Image.new("RGB", (64, 96), (250, 249, 246))
+
+    monkeypatch.setattr(admin_routes, "generate_size_guide", fake_generate)
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", True)
+    monkeypatch.setitem(client.application.config, "VERTEX_PROJECT_ID", "test-project")
+
+    made = client.post(
+        "/api/admin/size-guides/generate",
+        json={"ratio": "3:2", "prompt": "Draw a {ratio} chart my way."},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert made.status_code == 201
+    guide = made.get_json()["guide"]
+    assert guide["ratio"] == "3:2"
+    assert guide["orientation"] == "landscape"
+    assert guide["source"] == "ai"
+    assert seen["template"] == "Draw a {ratio} chart my way."
+    # Both units reach the model, because a buyer measures in one or the other.
+    assert any("cm" in size and "in" in size for size in seen["sizes"])
+
+    # ...and the wording is what the next chart starts from.
+    assert client.get("/api/admin/size-guides").get_json()["prompt"] == "Draw a {ratio} chart my way."
+
+
+def test_a_rewritten_prompt_still_carries_the_sizes():
+    from services.size_guide_service import guide_prompt
+
+    filled = guide_prompt("2:3", ["12x18 in", "24x36 in"], "in", "portrait", "My own wording.")
+
+    assert filled.startswith("My own wording.")
+    assert "12x18 in, 24x36 in" in filled
+
+    placed = guide_prompt("2:3", ["12x18 in"], "in", "portrait", "A {orientation} {ratio} chart: {sizes}.")
+    assert placed == "A portrait 2:3 chart: 12x18 in."
+
+
+def test_generation_is_refused_rather_than_pretended(tmp_path, monkeypatch):
+    client, _ = build_client(tmp_path, ADMIN_PASSWORD="test-admin", SECRET_KEY="test-secret")
+    csrf = admin_login(client)
+
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", False)
+    off = client.post(
+        "/api/admin/size-guides/generate", json={"ratio": "2:3"}, headers={"X-CSRF-Token": csrf}
+    )
+    assert off.status_code == 503
+
+    monkeypatch.setitem(client.application.config, "ENABLE_AI_MODE", True)
+    monkeypatch.setitem(client.application.config, "VERTEX_PROJECT_ID", "")
+    unconfigured = client.post(
+        "/api/admin/size-guides/generate", json={"ratio": "2:3"}, headers={"X-CSRF-Token": csrf}
+    )
+    assert unconfigured.status_code == 400

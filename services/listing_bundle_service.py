@@ -203,6 +203,25 @@ def size_family_for_ratio(ratio: float) -> tuple[str, str, list[PrintSize]]:
     return name, unit, list(sizes)
 
 
+def dual_unit_labels(sizes: list[PrintSize], unit: str) -> list[str]:
+    """Sizes as a shop writes them: the sold unit first, the other in brackets.
+
+    A buyer measuring a wall works in whichever unit their country uses, so a
+    chart that gives only one of them is half a chart.
+    """
+    labels: list[str] = []
+    for size in sizes:
+        if unit == "cm":
+            labels.append(
+                f"{size.label} ({size.width / 2.54:.0f}x{size.height / 2.54:.0f} in)"
+            )
+        else:
+            labels.append(
+                f"{size.label} in ({size.width * 2.54:.0f}x{size.height * 2.54:.0f} cm)"
+            )
+    return labels
+
+
 def artwork_ratio(path: Path) -> float:
     with Image.open(path) as image:
         return image.width / image.height if image.height else 1.0

@@ -23,6 +23,8 @@ const listingState = {
   categories: [],
   guides: [],
   ratios: [],
+  prompt: "",
+  defaultPrompt: "",
   productTypes: [],
   draft: null,
   slot: "hero",
@@ -60,6 +62,8 @@ async function loadEverything() {
   listingState.categories = categories.categories || [];
   listingState.guides = guides.guides || [];
   listingState.ratios = guides.ratios || [];
+  listingState.prompt = guides.prompt || "";
+  listingState.defaultPrompt = guides.default_prompt || "";
   listingState.loaded = true;
   renderChoices();
   renderSetList();
@@ -85,14 +89,23 @@ function renderChoices() {
       .join("");
     picker.value = current;
   }
-  const ratio = $("listingGuideRatio");
-  if (ratio) {
+  [$("listingGuideRatio"), $("listingSlotRatio")].forEach((ratio) => {
+    if (!ratio) return;
     const current = ratio.value;
     ratio.innerHTML = listingState.ratios
       .map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
       .join("");
     if (current) ratio.value = current;
-  }
+  });
+  const prompt = $("listingGuidePrompt");
+  if (prompt && !prompt.value) prompt.value = listingState.prompt;
+}
+
+/** The ratio a set's own shape implies, as the slot's starting point. */
+function ratioForShape(orientation) {
+  if (orientation === "landscape") return "3:2";
+  if (orientation === "square") return "1:1";
+  return "2:3";
 }
 
 // ------------------------------------------------------------- the set list
@@ -297,6 +310,10 @@ function renderEditor() {
         renderEditor();
       };
     });
+  const slotRatio = $("listingSlotRatio");
+  if (slotRatio && !slotRatio.dataset.touched) {
+    slotRatio.value = ratioForShape(draft.orientation);
+  }
   const slotHint = $("listingSlotHint");
   if (slotHint) slotHint.textContent = SLOT_HINTS[listingState.slot] || "";
   renderPicker();
@@ -530,24 +547,26 @@ async function uploadGuide() {
   }
 }
 
-async function generateGuide() {
-  const button = $("listingGuideGenerate");
+async function generateGuide(button, ratio, { pin = false } = {}) {
+  const label = button.textContent;
   button.disabled = true;
   button.textContent = "Drawing...";
   try {
     // Drawn once and kept, instead of again on every render that needs it.
     const answer = await api("/api/admin/size-guides/generate", {
       method: "POST",
-      body: JSON.stringify({ ratio: $("listingGuideRatio").value }),
-      timeout: 120000,
+      body: JSON.stringify({ ratio, prompt: $("listingGuidePrompt")?.value || "" }),
+      timeout: 180000,
     });
+    listingState.prompt = $("listingGuidePrompt")?.value || listingState.prompt;
+    if (pin && listingState.draft) listingState.draft.guide = answer.guide.id;
     guideAdded(answer.guide);
-    toast("Size guide generated");
+    toast(pin ? "Size guide generated and set" : "Size guide generated");
   } catch (error) {
     toast(error.message);
   } finally {
     button.disabled = false;
-    button.textContent = "Generate with AI";
+    button.textContent = label;
   }
 }
 
@@ -609,7 +628,28 @@ if ($("listingNewSet")) $("listingNewSet").onclick = newSet;
 if ($("listingSaveSet")) $("listingSaveSet").onclick = saveSet;
 if ($("listingGuideUpload")) $("listingGuideUpload").onclick = uploadGuide;
 if ($("listingGuideFile")) $("listingGuideFile").onchange = uploadGuide;
-if ($("listingGuideGenerate")) $("listingGuideGenerate").onclick = generateGuide;
+if ($("listingGuideGenerate")) {
+  $("listingGuideGenerate").onclick = () =>
+    generateGuide($("listingGuideGenerate"), $("listingGuideRatio").value);
+}
+if ($("listingSlotGenerate")) {
+  // Generated from the set, the chart is pinned to it in the same step.
+  $("listingSlotGenerate").onclick = (event) => {
+    event.stopPropagation();
+    generateGuide($("listingSlotGenerate"), $("listingSlotRatio").value, { pin: true });
+  };
+}
+if ($("listingSlotRatio")) {
+  $("listingSlotRatio").onclick = (event) => event.stopPropagation();
+  $("listingSlotRatio").onchange = () => {
+    $("listingSlotRatio").dataset.touched = "1";
+  };
+}
+if ($("listingPromptReset")) {
+  $("listingPromptReset").onclick = () => {
+    $("listingGuidePrompt").value = listingState.defaultPrompt;
+  };
+}
 if ($("listingPickerCategory")) $("listingPickerCategory").onchange = renderPicker;
 if ($("listingPickerOrientation")) $("listingPickerOrientation").onchange = renderPicker;
 

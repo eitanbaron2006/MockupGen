@@ -1345,3 +1345,26 @@ def test_a_confirmation_sits_above_the_window_that_asked_for_it():
     # The rule only matters because the dialog is declared before the windows
     # that ask it questions; if that ever stops being true, so does the bug.
     assert html.index('id="systemDialog"') < html.index('id="listingSetsModal"')
+
+
+def test_the_size_guide_prompt_is_shown_and_editable():
+    """The wording is what separates a diagram from a shop's size guide.
+
+    It is on the page to be read and rewritten, the studio's own version can be
+    brought back, and a set can draw its chart without leaving the set.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    js = ADMIN_LISTING_SETS.read_text(encoding="utf-8")
+
+    assert 'id="listingGuidePrompt"' in html
+    assert 'id="listingPromptReset"' in html
+    # The chart for a set is generated from the set itself, and pinned to it.
+    assert 'id="listingSlotGenerate"' in html
+    assert 'id="listingSlotRatio"' in html
+
+    generate = js.split("async function generateGuide(", 1)[1].split(chr(10) + "}", 1)[0]
+    assert '$("listingGuidePrompt")?.value' in generate
+    assert "listingState.draft.guide = answer.guide.id" in generate
+
+    # Restoring means the studio's wording, not an empty box.
+    assert "listingState.defaultPrompt" in js

@@ -78,16 +78,56 @@ def store_guide_image(image: Image.Image, guides_folder: Path) -> tuple[str, int
     return stored_name, image.width, image.height
 
 
-def guide_prompt(family: str, sizes: list[str], unit: str, orientation: str) -> str:
-    listed = ", ".join(sizes)
-    return (
-        "Draw a clean, minimal print size guide for a wall art listing. "
-        f"Show {orientation} rectangles nested from the same bottom-left corner, one per size, "
-        f"drawn to scale with each other, for these {family} sizes in {unit}: {listed}. "
-        "Label each rectangle with its size at its own top-right corner, in a plain sans-serif face. "
-        "Title it PRINT SIZES. Off-white background, thin dark outlines, no photographs, no frames, "
-        "no decoration, and no text other than the title and the size labels. Square image."
-    )
+# What a shop's size guide actually looks like: the print hanging in a room,
+# drawn to scale against furniture a buyer can judge a wall by -- not a bare
+# diagram. The admin can rewrite this; the placeholders are what the studio
+# fills in, and any that are left out simply are not substituted.
+DEFAULT_GUIDE_PROMPT = (
+    "A photorealistic wall art size guide for a print shop listing.\n"
+    "Scene: a calm, minimal interior. A plain warm off-white wall fills most of the frame. "
+    "Along the bottom sits a low beige linen sofa seen straight on, with a potted plant to one "
+    "side and a light oak floor. Soft natural daylight, no harsh shadows.\n"
+    "On the wall above the sofa, hang {count} empty picture frames of the SAME {orientation} "
+    "{ratio} proportion, in ascending size, arranged in a tidy row that steps upward. Thin dark "
+    "wood frames with white mattes and blank white centres -- no artwork inside them.\n"
+    "The frames must be drawn to scale with each other and with the sofa: a 90 inch (229 cm) sofa "
+    "is the reference, so the largest frame is roughly two thirds of the sofa's width.\n"
+    "Label each frame with its size in a small clean sans-serif, both units, placed just inside "
+    "the top of that frame: {sizes} (measurements in {unit}).\n"
+    "Add the heading WALL ART SIZE GUIDE in an elegant serif at the top of the wall, and the words "
+    "{ratio} RATIO under it in small letters.\n"
+    "No other text, no watermarks, no people, no clutter. Editorial, neutral, high resolution."
+)
+
+PROMPT_FIELDS = ("ratio", "sizes", "unit", "orientation", "count")
+
+
+def guide_prompt(
+    ratio: str,
+    sizes: list[str],
+    unit: str,
+    orientation: str,
+    template: str | None = None,
+) -> str:
+    """The instruction sent to the model, with the studio's own values in it.
+
+    A template the admin edited is honoured as written -- the placeholders are
+    optional. The sizes are the one thing that cannot be left to the wording,
+    so when the template never mentions them they are stated at the end.
+    """
+    text = (template or "").strip() or DEFAULT_GUIDE_PROMPT
+    values = {
+        "ratio": ratio,
+        "sizes": ", ".join(sizes),
+        "unit": unit,
+        "orientation": orientation,
+        "count": len(sizes),
+    }
+    for field in PROMPT_FIELDS:
+        text = text.replace("{" + field + "}", str(values[field]))
+    if "{sizes}" not in (template or DEFAULT_GUIDE_PROMPT) and values["sizes"] not in text:
+        text = f"{text}\nThe sizes to show, in {unit}: {values['sizes']}."
+    return text
 
 
 def generate_size_guide(
@@ -99,8 +139,9 @@ def generate_size_guide(
     project_id: str,
     location: str = "global",
     model: str = "gemini-3.1-flash-image",
+    template: str | None = None,
 ) -> Image.Image:
-    """Ask Vertex for a chart when the library has none for this shape."""
+    """Ask Vertex for a chart, from the studio's prompt or the admin's own."""
     try:
         from google import genai
         from google.genai import types
@@ -118,7 +159,7 @@ def generate_size_guide(
     )
     response = client.models.generate_content(
         model=model,
-        contents=[guide_prompt(family, sizes, unit, orientation)],
+        contents=[guide_prompt(family, sizes, unit, orientation, template)],
         config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
     )
     for candidate in response.candidates or []:
