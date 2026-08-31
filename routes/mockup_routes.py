@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from flask import Blueprint, current_app, jsonify, request
 
+from routes.responses import json_error
 from services.ai_mockup_service import render_ai_mockup
 from services.image_utils import ImageProcessingError, store_uploaded_artwork
 from services.mockup_request_service import RequestValidationError, execute_batch_render
@@ -18,12 +19,13 @@ from services.simple_mockup_service import (
     render_simple_mockup,
     select_template_for_artwork,
 )
+from services.template_manifest import build_manifest, write_manifest
 
 mockup_routes = Blueprint("mockup_routes", __name__)
 
 
-def error_response(message: str, status_code: int):
-    return jsonify({"success": False, "error": message}), status_code
+# The blueprint's own name for it, kept so the routes below read as they did.
+error_response = json_error
 
 
 def prepare_draft_render_manifest(drafts_folder: Path, template: dict) -> Path | None:
@@ -33,30 +35,7 @@ def prepare_draft_render_manifest(drafts_folder: Path, template: dict) -> Path |
     template_folder = drafts_folder / template_id
     if not template_folder.is_dir() or not template.get("artwork_area"):
         return None
-    manifest = {
-        "template_id": template_id,
-        "name": template.get("name") or template_id,
-        "product_type": template.get("product_type"),
-        "canvas_width": template["canvas_width"],
-        "canvas_height": template["canvas_height"],
-        "artwork_area": template["artwork_area"],
-        "fit_mode": template.get("fit_mode") or "cover",
-        "orientation": template.get("orientation"),
-        "background": template.get("background_name") or "background.png",
-        "foreground": template.get("foreground_name"),
-        "mask": template.get("mask_name"),
-        "preview": template.get("preview_name") or "preview.png",
-        "supported_modes": ["simple"],
-        "output_format": "png",
-        "effects": template.get("effects"),
-        "raw_artwork_area": template.get("raw_artwork_area"),
-        "detection_provider": template.get("detection_provider"),
-        "detection_confidence": template.get("detection_confidence"),
-    }
-    (template_folder / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_manifest(template_folder, build_manifest({**template, "template_id": template_id}))
     return drafts_folder
 
 

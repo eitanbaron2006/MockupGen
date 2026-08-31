@@ -1246,3 +1246,70 @@ def test_the_dockerfile_has_no_broken_line_continuations():
         if line.rstrip().endswith("\\"):
             assert index + 1 < len(lines), line
             assert lines[index + 1].strip(), line
+
+
+def test_a_published_manifest_is_built_in_one_place(tmp_path: Path):
+    """The same eighteen fields were written out in two files.
+
+    Publishing a template wrote one, rendering a draft wrote another, and the
+    two had already drifted -- a missing fallback here, a hard-coded asset name
+    there. They are one builder now, and this is what says the published file
+    still carries everything the renderer reads.
+    """
+    import json
+
+    from services.template_manifest import build_manifest
+
+    client = build_app(tmp_path).test_client()
+    csrf = login(client)
+    headers = {"X-CSRF-Token": csrf}
+    category = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers=headers
+    ).get_json()["category"]
+    template = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "wall.png")]},
+        content_type="multipart/form-data",
+        headers=headers,
+    ).get_json()["templates"][0]
+    client.patch(
+        f"/api/admin/templates/{template['template_id']}",
+        json={"artwork_area": {"x": 10, "y": 10, "width": 100, "height": 120}},
+        headers=headers,
+    )
+    published = client.post(
+        f"/api/admin/templates/{template['template_id']}/activate", json={}, headers=headers
+    )
+    assert published.status_code == 200
+
+    folder = Path(client.application.config["TEMPLATES_FOLDER"]) / template["template_id"]
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    for field in ("template_id", "name", "product_type", "canvas_width", "canvas_height",
+                  "artwork_area", "fit_mode", "orientation", "background", "foreground",
+                  "mask", "preview", "supported_modes", "output_format", "effects",
+                  "raw_artwork_area", "detection_provider", "detection_confidence"):
+        assert field in manifest, field
+    assert manifest["background"] == "background.png"
+    assert manifest["supported_modes"] == ["simple"]
+
+    # The builder answers the same for a draft render, given the same template.
+    assert set(build_manifest({**template, "artwork_area": manifest["artwork_area"]})) == set(manifest)
+
+
+def test_both_blueprints_report_an_error_the_same_way(tmp_path: Path):
+    """One shape for a failed request, not two spellings of it."""
+    from routes import admin_routes, mockup_routes
+    from routes.responses import json_error
+
+    assert admin_routes.json_error is json_error
+    assert mockup_routes.error_response is json_error
+
+    client = build_app(tmp_path).test_client()
+    from_admin = client.get("/api/admin/categories")            # not logged in
+    from_public = client.get("/api/mockups/templates/nope")     # no such template
+    assert from_admin.status_code == 401 and from_public.status_code == 404
+    for response in (from_admin, from_public):
+        body = response.get_json()
+        assert set(body) == {"success", "error"}
+        assert body["success"] is False
+        assert isinstance(body["error"], str) and body["error"]

@@ -20,6 +20,7 @@ from flask import (
     url_for,
 )
 
+from routes.responses import json_error
 from services.catalog_service import CatalogError, CatalogService, orientation_for_size
 from services.classic_detection_service import ClassicDetectionProvider
 from services.detection_service import DetectionError, build_provider, validate_proposal
@@ -204,8 +205,7 @@ def _setting_int(settings, config, key: str, fallback: int) -> int:
     return read_int(settings, config, key, fallback)
 
 
-def json_error(message: str, status: int):
-    return jsonify({"success": False, "error": message}), status
+
 
 
 def is_admin() -> bool:

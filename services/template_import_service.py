@@ -1,4 +1,3 @@
-import json
 import shutil
 from pathlib import Path
 from typing import Any, Iterable
@@ -10,6 +9,7 @@ from werkzeug.utils import secure_filename
 
 from services.catalog_service import CatalogService, orientation_for_size
 from services.image_utils import ALLOWED_ARTWORK_EXTENSIONS
+from services.template_manifest import build_manifest, write_manifest
 
 
 class TemplateImportError(ValueError):
@@ -154,28 +154,15 @@ def publish_template(
             shutil.copy2(source, published_folder / name)
     foreground = "foreground.png" if (published_folder / "foreground.png").is_file() else None
     mask = ("mask.png" if (published_folder / "mask.png").is_file() else None) if not is_non_green_provider else None
-    manifest = {
-        "template_id": template_id,
-        "name": template["name"],
-        "product_type": template["product_type"],
-        "canvas_width": template["canvas_width"],
-        "canvas_height": template["canvas_height"],
-        "artwork_area": template["artwork_area"],
-        "fit_mode": template["fit_mode"],
-        "orientation": template["orientation"],
-        "background": "background.png",
-        "foreground": foreground,
-        "mask": mask,
-        "preview": "preview.png",
-        "supported_modes": ["simple"],
-        "output_format": "png",
-        "effects": template.get("effects"),
-        "raw_artwork_area": template.get("raw_artwork_area"),
-        "detection_provider": template.get("detection_provider"),
-        "detection_confidence": template.get("detection_confidence"),
-    }
-    (published_folder / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    write_manifest(
+        published_folder,
+        build_manifest(
+            {**template, "template_id": template_id},
+            background="background.png",
+            preview="preview.png",
+            foreground=foreground,
+            mask=mask,
+        ),
     )
     return catalog.update_template(
         template_id,
