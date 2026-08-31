@@ -1210,3 +1210,24 @@ def test_choosing_an_engine_is_its_own_module():
     # ...and nothing else in the module reaches for the editor directly.
     assert "editor.exitAllDetectionModes();" in engine
     assert "editor.renderEditor();" in engine
+
+
+def test_finished_mockups_can_be_taken_as_one_archive():
+    """A button that appears once there is more than one thing to take.
+
+    The server holds the renders already, so the page asks it to bundle them
+    rather than fetching each back and zipping in the browser. Only renders it
+    can name are sent -- an inline preview never reached disk and has no file
+    to archive.
+    """
+    html = ADMIN_HTML.read_text(encoding="utf-8")
+    modal = ADMIN_TEST_MODAL.read_text(encoding="utf-8")
+
+    assert 'id="testDownloadAll"' in html
+    assert "/api/mockups/outputs/archive" in modal
+    assert 'body: JSON.stringify({ outputs, name: "mockups.zip" })' in modal
+
+    # Inline previews are skipped; the offer follows the finished renders.
+    names = modal.split("function readyRenderNames()", 1)[1].split(chr(10) + "}", 1)[0]
+    assert 'startsWith("data:")' in names
+    assert modal.count("syncDownloadAllButton();") >= 3

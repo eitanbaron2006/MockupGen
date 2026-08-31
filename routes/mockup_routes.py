@@ -1,8 +1,10 @@
 import json
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file
 
 from routes.responses import json_error
 from services.ai_mockup_service import render_ai_mockup
@@ -290,3 +292,77 @@ def render_mockup():
             scratch_dir.cleanup()
 
     return error_response("Rendering did not produce an output", 500)
+
+
+def _rendered_output_path(outputs_folder: Path, reference: str) -> Path | None:
+    """One rendered file, named the way a render result names it.
+
+    The reference is whatever `/api/mockups/render...` handed back --
+    "/outputs/mockup_x.png" or just the file name. Both the id and the name
+    arrive from the caller, so the resolved file has to sit inside the outputs
+    folder: a name that climbs out of it would archive anything the server can
+    read.
+    """
+    name = str(reference or "").strip().rsplit("/", 1)[-1]
+    if not name or name in (".", "..") or Path(name).name != name:
+        return None
+    root = outputs_folder.resolve()
+    path = (root / name).resolve()
+    if root not in path.parents or not path.is_file():
+        return None
+    return path
+
+
+@mockup_routes.post("/api/mockups/outputs/archive")
+def archive_rendered_outputs():
+    """Several finished renders, as one .zip to save.
+
+    Additive on purpose: the batch endpoint's JSON answer is unchanged, and a
+    client that wants the images one by one keeps fetching them from /outputs
+    exactly as before. This is for the moment someone wants the lot in a single
+    file.
+
+    JSON body:
+      - outputs: the output_url values from a render response (or file names)
+      - name: what to call the archive (optional)
+    """
+    payload = request.get_json(silent=True) or {}
+    references = payload.get("outputs")
+    if not isinstance(references, list) or not references:
+        return error_response("Provide 'outputs': a list of rendered output URLs", 400)
+    if len(references) > 200:
+        return error_response("Too many outputs in one archive (200 at most)", 400)
+
+    outputs_folder = Path(current_app.config["OUTPUT_FOLDER"])
+    files: list[Path] = []
+    for reference in references:
+        path = _rendered_output_path(outputs_folder, reference)
+        if path is None:
+            # Half an archive is worse than none: the caller would not know
+            # which mockup is missing from the folder they just downloaded.
+            return error_response(f"No such rendered output: {reference}", 404)
+        files.append(path)
+
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+        used: set[str] = set()
+        for path in files:
+            name = path.name
+            # Two renders of the same template land on the same name; keep both.
+            if name in used:
+                stem, suffix = path.stem, path.suffix
+                index = 2
+                while f"{stem}-{index}{suffix}" in used:
+                    index += 1
+                name = f"{stem}-{index}{suffix}"
+            used.add(name)
+            bundle.write(path, arcname=name)
+    archive.seek(0)
+
+    requested_name = str(payload.get("name") or "mockups.zip").strip()
+    download_name = Path(requested_name).name or "mockups.zip"
+    if not download_name.lower().endswith(".zip"):
+        download_name += ".zip"
+    return send_file(
+        archive, mimetype="application/zip", as_attachment=True, download_name=download_name
+    )

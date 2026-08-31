@@ -252,6 +252,7 @@ def execute_batch_render(
 
     stored_paths: dict[str, Path] = {}
     results: list[dict[str, Any]] = []
+    invalid_items: list[str] = []
 
     for index, raw_item in enumerate(items):
         item_id = ""
@@ -343,8 +344,18 @@ def execute_batch_render(
                     "selection": selection_meta,
                 }
             )
-        except RequestValidationError:
-            raise
+        except RequestValidationError as error:
+            # An item the request got wrong -- a file it named but did not
+            # send, a frame number that is not a number -- used to refuse the
+            # whole batch, discarding every mockup that had already rendered
+            # beside it. It fails on its own now, like a render that fails, and
+            # the rest of the batch is still delivered. What is wrong with the
+            # *request* -- no items at all, too many -- is still refused whole,
+            # above this loop.
+            results.append(
+                {"id": item_id or f"item_{index + 1}", "success": False, "error": str(error)}
+            )
+            invalid_items.append(str(error))
         except (
             TemplateNotFoundError,
             InvalidTemplateError,
@@ -359,6 +370,12 @@ def execute_batch_render(
             results.append(
                 {"id": item_id or f"item_{index + 1}", "success": False, "error": str(error) or "Rendering failed"}
             )
+
+    # Nothing rendered and every item was malformed: the request as a whole is
+    # what is wrong, and it is refused the way a malformed spec always was. A
+    # batch where anything at all could be done answers per item instead.
+    if invalid_items and len(invalid_items) == len(results):
+        raise RequestValidationError(invalid_items[0])
 
     return {
         "success": all(item["success"] for item in results),

@@ -4610,3 +4610,17 @@ input[type="checkbox"]:disabled {
   transform: scale(0.94);
 }
 
+
+/* The Result column's own heading row: the word, and the way to take all of
+   what is under it at once. */
+.test-result-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.test-result-head label {
+  margin: 0;
+}

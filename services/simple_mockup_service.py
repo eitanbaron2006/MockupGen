@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps, features
 
 from services.green_frame_mockup_service import (
     detect_green_frames,
@@ -1589,6 +1589,18 @@ _OUTPUT_FORMATS = {
     "jpg": ("JPEG", "jpg"),
 }
 
+# AVIF only where the installed Pillow can actually write it: support arrived in
+# Pillow 11.3, and this project still runs on 10. Offering a format that then
+# fails at save time is worse than not offering it, so the list a caller is
+# refused against is the list that really works here.
+if features.check("avif"):
+    _OUTPUT_FORMATS["avif"] = ("AVIF", "avif")
+
+
+def supported_output_formats() -> list[str]:
+    """The formats a render can be asked for, on this installation."""
+    return sorted({extension for _, extension in _OUTPUT_FORMATS.values()} | set(_OUTPUT_FORMATS))
+
 
 # Legacy name for preview files written by earlier builds, kept so the cleanup
 # below can still find and remove them. Previews are no longer written to disk.
@@ -1623,6 +1635,9 @@ def _encode_output(composed: Image.Image, output_format: str, quality: int | Non
         composed.save(buffer, format="PNG", compress_level=2)
     elif pil_format == "WEBP":
         composed.save(buffer, format="WEBP", quality=resolved_quality, method=4)
+    elif pil_format == "AVIF":
+        # Keeps its transparency, unlike the JPEG branch below.
+        composed.save(buffer, format="AVIF", quality=resolved_quality)
     else:
         composed.convert("RGB").save(buffer, format=pil_format, quality=resolved_quality)
     mime = "jpeg" if extension in {"jpg", "jpeg"} else extension
@@ -1746,7 +1761,8 @@ def render_simple_mockup(
 ) -> RenderResult:
     if (output_format or "png").lower() not in _OUTPUT_FORMATS:
         raise RenderValidationError(
-            f"Unsupported output format: {output_format}. Supported: png, webp, jpeg"
+            f"Unsupported output format: {output_format}. "
+            f"Supported: {', '.join(sorted(_OUTPUT_FORMATS))}"
         )
 
     template_folder, manifest = load_manifest(templates_folder, template_id)

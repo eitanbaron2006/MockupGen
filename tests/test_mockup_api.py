@@ -1795,3 +1795,126 @@ def test_a_template_renders_from_its_frames_when_its_mask_file_is_missing(tmp_pa
     # The artwork fills the frame the region describes, and stays inside it.
     assert np.abs(pixels[120, 120] - np.array([255, 0, 255])).sum() < 90
     assert np.abs(pixels[30, 30] - np.array([240, 240, 240])).sum() < 30
+
+
+def test_rendered_outputs_can_be_downloaded_as_one_archive(tmp_path):
+    """Several finished renders, in one file, without changing the old answer.
+
+    The batch endpoint still replies with JSON and URLs -- clients that fetch
+    the images one by one are untouched -- and this is the extra door for
+    someone who wants the lot at once.
+    """
+    import io
+    import zipfile
+
+    client, folders = build_client(tmp_path)
+    outputs = Path(folders["OUTPUT_FOLDER"])
+    outputs.mkdir(parents=True, exist_ok=True)
+    for name in ("mockup_one.png", "mockup_two.png"):
+        Image.new("RGBA", (8, 8), (200, 20, 20, 255)).save(outputs / name)
+    (tmp_path / "secret.txt").write_text("not for the archive", encoding="utf-8")
+
+    response = client.post(
+        "/api/mockups/outputs/archive",
+        json={"outputs": ["/outputs/mockup_one.png", "mockup_two.png"], "name": "set"},
+    )
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    assert "set.zip" in response.headers["Content-Disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.data)) as bundle:
+        assert sorted(bundle.namelist()) == ["mockup_one.png", "mockup_two.png"]
+        assert bundle.read("mockup_one.png")[:4] == b"\x89PNG"
+
+    # The same file twice comes back twice, under names that do not collide.
+    twice = client.post(
+        "/api/mockups/outputs/archive",
+        json={"outputs": ["mockup_one.png", "mockup_one.png"]},
+    )
+    with zipfile.ZipFile(io.BytesIO(twice.data)) as bundle:
+        assert sorted(bundle.namelist()) == ["mockup_one-2.png", "mockup_one.png"]
+
+    # A name that climbs out of the outputs folder archives nothing.
+    for attempt in ("../secret.txt", "/outputs/../secret.txt", "..", ""):
+        refused = client.post("/api/mockups/outputs/archive", json={"outputs": [attempt]})
+        assert refused.status_code in (400, 404), attempt
+        assert b"not for the archive" not in refused.data
+
+    assert client.post("/api/mockups/outputs/archive", json={}).status_code == 400
+    assert client.post(
+        "/api/mockups/outputs/archive", json={"outputs": ["gone.png"]}
+    ).status_code == 404
+
+
+def test_the_batch_response_shape_the_client_reads_is_unchanged(tmp_path):
+    """A contract another application is already reading.
+
+    EtsyAutoLister posts a spec and parses JSON: {"success", "items"}, each item
+    carrying its own success flag and the URL of the render. Adding an archive
+    endpoint or a new output format must not move any of that.
+    """
+    client, folders = build_client(tmp_path)
+    write_template(folders["TEMPLATES_FOLDER"])
+
+    response = client.post(
+        "/api/mockups/render/batch",
+        data={
+            "spec": json.dumps({"items": [{"id": "one", "template_id": "template_001", "artwork": "art"}]}),
+            "art": (image_bytes((120, 120), (40, 90, 200, 255)), "art.png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code in (200, 207)
+    payload = response.get_json()
+    assert set(payload) == {"success", "items"}
+    assert isinstance(payload["success"], bool)
+    item = payload["items"][0]
+    assert item["id"] == "one"
+    assert isinstance(item["success"], bool)
+    if item["success"]:
+        assert item["output_url"].startswith("/outputs/")
+
+
+def test_one_bad_item_does_not_cost_the_whole_batch(tmp_path):
+    """A batch is a list of jobs, not one job with many parts.
+
+    A render that fails was always isolated, but an item the *request* got
+    wrong -- a file it named but did not send, a frame number that is not a
+    number -- used to refuse the entire batch: 400, no items, and every mockup
+    that had already rendered beside it thrown away. Those now fail on their
+    own. What is wrong with the request itself is still refused whole.
+    """
+    client, folders = build_client(tmp_path)
+    write_template(folders["TEMPLATES_FOLDER"])
+
+    def batch(items, files=("art0",)):
+        data = {"spec": json.dumps({"items": items})}
+        for name in files:
+            data[name] = (image_bytes((120, 120), (40, 90, 200, 255)), f"{name}.png")
+        return client.post("/api/mockups/render/batch", data=data, content_type="multipart/form-data")
+
+    good = {"id": "good", "template_id": "template_001", "artwork": "art0"}
+
+    for label, bad in (
+        ("a template that is not there", {"id": "bad", "template_id": "nope", "artwork": "art0"}),
+        ("a file that was never sent", {"id": "bad", "template_id": "template_001", "artwork": "absent"}),
+        ("a frame that is not a number",
+         {"id": "bad", "template_id": "template_001", "artworks": [{"file": "art0", "frame": "x"}]}),
+    ):
+        response = batch([good, bad])
+        assert response.status_code == 207, label
+        payload = response.get_json()
+        items = {item["id"]: item for item in payload["items"]}
+        assert set(items) == {"good", "bad"}, label
+        assert items["good"]["success"] is True, label
+        assert items["good"]["output_url"].startswith("/outputs/"), label
+        assert items["bad"]["success"] is False, label
+        assert items["bad"]["error"], label
+
+    # The request itself being wrong is still one refusal for the whole thing.
+    empty = client.post(
+        "/api/mockups/render/batch",
+        data={"spec": json.dumps({"items": []})},
+        content_type="multipart/form-data",
+    )
+    assert empty.status_code == 400
+    assert empty.get_json()["success"] is False

@@ -569,6 +569,7 @@ $("testGenerateButton").onclick = async () => {
 
     const batchContainer = $("testBatchResults");
     batchContainer.classList.remove("hidden");
+    syncDownloadAllButton();
 
     // Populate placeholder loader cards for each selected mockup
     batchContainer.innerHTML = selectedIds.map(templateId => {
@@ -609,6 +610,8 @@ $("testGenerateButton").onclick = async () => {
         actionsElement.innerHTML = `<a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="${outputUrl}">Download</a>`;
         actionsElement.classList.remove("hidden");
       }
+      // A batch made entirely of renders already in hand still gets the offer.
+      syncDownloadAllButton();
     };
 
     // Reuse results that were already generated for this artwork+settings;
@@ -722,6 +725,8 @@ $("testGenerateButton").onclick = async () => {
           // Dynamically inject the Download button
           actionsElement.innerHTML = `<a class="btn primary" id="batch-download-${templateId}" download="mockup_${templateId}.png" href="${data.output_url}">Download</a>`;
           actionsElement.classList.remove("hidden");
+          // One more finished render: offer to take them all.
+          syncDownloadAllButton();
         } catch (err) {
           clearTimeout(timeoutId);
           cardElement.classList.add("error");
@@ -807,6 +812,63 @@ if (testRenderMode) {
     const aiModelContainer = $("testAiModelContainer");
     if (aiModelContainer) {
       aiModelContainer.classList.toggle("hidden", !isAI);
+    }
+  };
+}
+
+
+/** Every finished mockup in the result column, as one .zip.
+ *
+ * The server holds the renders already, so the browser asks it to bundle them
+ * rather than fetching each one back and zipping them here. Only the renders
+ * it can name are sent: a preview that never reached disk has no file to
+ * archive.
+ */
+function readyRenderNames() {
+  return [...document.querySelectorAll("#testBatchResults .batch-card-img")]
+    .map((image) => image.getAttribute("src") || "")
+    .filter((source) => source && !source.startsWith("data:"))
+    .map((source) => source.split("?")[0]);
+}
+
+export function syncDownloadAllButton() {
+  const button = $("testDownloadAll");
+  if (!button) return;
+  button.classList.toggle("hidden", readyRenderNames().length < 2);
+}
+
+if ($("testDownloadAll")) {
+  $("testDownloadAll").onclick = async () => {
+    const outputs = readyRenderNames();
+    if (!outputs.length) return;
+    const button = $("testDownloadAll");
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "Preparing...";
+    try {
+      const response = await fetch("/api/mockups/outputs/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outputs, name: "mockups.zip" }),
+      });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({}));
+        throw new Error(problem.error || "The archive could not be built");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "mockups.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // The browser has the bytes now; the object URL has nothing left to hold.
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
     }
   };
 }

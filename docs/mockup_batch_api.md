@@ -94,8 +94,15 @@ expose one slot per detected frame; classic templates expose a single slot.
 
 ## Response
 
-`200` when every item succeeded, `207` when some failed, `400` for a malformed
-spec. Item failures never abort sibling items.
+`200` when every item succeeded, `207` when some failed, `400` when the request
+as a whole cannot be acted on.
+
+**Item failures never abort sibling items** — and that now includes items the
+request got wrong, not only renders that failed. An item naming a file that was
+not uploaded, or a frame number that is not a number, comes back as that item
+with `"success": false` and its own message, while every other item still
+renders. `400` is reserved for a request where nothing could be done at all: no
+`items`, more than the limit, unreadable JSON, or every single item malformed.
 
 ```json
 {
@@ -148,4 +155,24 @@ matching exactly where the renderer places each artwork.
 ## Single render endpoint
 
 `POST /api/mockups/render` (existing) also accepts `output_format`
-(`png`/`webp`/`jpeg`) and `quality` form fields now.
+(`png`/`webp`/`jpeg`, and `avif` where the server's Pillow can write it) and
+`quality` form fields now.
+
+`GET /api/mockups/formats` is not a route; if you need to know what a particular
+server supports, ask for a format and read the error, which lists them.
+
+## Downloading a batch as one file
+
+`POST /api/mockups/outputs/archive` — optional, and additive: the batch
+endpoint's JSON answer is unchanged, and fetching each `output_url` in turn
+works exactly as before. This is for when the lot is wanted as a single file.
+
+```json
+{ "outputs": ["/outputs/mockup_a.png", "/outputs/mockup_b.png"], "name": "wall-art" }
+```
+
+Answers `application/zip` as an attachment. `outputs` takes the `output_url`
+values straight from a render response (bare file names work too); at most 200
+per archive. A name that is not a file in the outputs folder is refused with
+`404` rather than quietly leaving a hole in the archive, and two renders with
+the same name are both kept (`mockup_a.png`, `mockup_a-2.png`).
