@@ -5395,6 +5395,43 @@ input[type="checkbox"]:disabled {
   border-color: var(--accent);
 }
 
+/* ---- generated mockups ----
+   The screen shares the guide library's shape and classes: results, the rooms
+   that make more, and the wording last. What it adds is the verdict, because a
+   generated mockup is only useful if its green can be read. */
+
+.gen-card-report {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.gen-verdict {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gen-verdict.ok {
+  color: var(--success);
+}
+
+.gen-verdict.bad {
+  color: var(--accent);
+}
+
+.gen-problem {
+  color: var(--muted);
+}
+
+.listing-guide-card .btn.compact {
+  height: 26px;
+  width: 100%;
+}
+
 /* The set controls live with the result they produce, not among the render
    settings they used to squeeze into nothing. */
 .test-result-tools {

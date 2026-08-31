@@ -49,28 +49,54 @@ def import_backgrounds(
             image = Image.open(upload.stream).convert("RGBA")
         except (UnidentifiedImageError, OSError) as error:
             raise TemplateImportError(f"Unable to read mockup image: {safe_name}") from error
-        template_id = f"template_{uuid4().hex[:12]}"
-        draft_folder = drafts_folder / template_id
-        draft_folder.mkdir(parents=True, exist_ok=False)
-        image.save(draft_folder / "background.png", format="PNG")
-        preview = image.copy()
-        preview.thumbnail((420, 420), Image.Resampling.LANCZOS)
-        preview.save(draft_folder / "preview.png", format="PNG")
         imported.append(
-            catalog.create_template(
-                {
-                    "template_id": template_id,
-                    "name": Path(safe_name).stem.replace("_", " ").strip(),
-                    "category_id": category_id,
-                    "status": "draft",
-                    "canvas_width": image.width,
-                    "canvas_height": image.height,
-                    "orientation": orientation_for_size(image.width, image.height),
-                    "source_filename": safe_name,
-                }
+            store_background(
+                image,
+                name=Path(safe_name).stem.replace("_", " ").strip(),
+                source_filename=safe_name,
+                category_id=category_id,
+                drafts_folder=drafts_folder,
+                catalog=catalog,
             )
         )
     return imported
+
+
+def store_background(
+    image: Image.Image,
+    *,
+    name: str,
+    source_filename: str,
+    category_id: int,
+    drafts_folder: Path,
+    catalog: CatalogService,
+) -> dict[str, Any]:
+    """One mockup image becomes one draft template, wherever it came from.
+
+    An uploaded file and a generated photograph land on the same shelf in the
+    same shape, so everything downstream -- detection, editing, publishing --
+    cannot tell them apart and does not have to.
+    """
+    image = image.convert("RGBA")
+    template_id = f"template_{uuid4().hex[:12]}"
+    draft_folder = drafts_folder / template_id
+    draft_folder.mkdir(parents=True, exist_ok=False)
+    image.save(draft_folder / "background.png", format="PNG")
+    preview = image.copy()
+    preview.thumbnail((420, 420), Image.Resampling.LANCZOS)
+    preview.save(draft_folder / "preview.png", format="PNG")
+    return catalog.create_template(
+        {
+            "template_id": template_id,
+            "name": name,
+            "category_id": category_id,
+            "status": "draft",
+            "canvas_width": image.width,
+            "canvas_height": image.height,
+            "orientation": orientation_for_size(image.width, image.height),
+            "source_filename": source_filename,
+        }
+    )
 
 
 def draft_asset_path(drafts_folder: Path, template_id: str, asset_name: str) -> Path:

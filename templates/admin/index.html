@@ -45,6 +45,8 @@
         mockups</button>
       <button class="nav-item nav-button" id="openListingSets"><span class="nav-icon">&#9776;</span>Listing
         sets</button>
+      <button class="nav-item nav-button" id="openMockupStudio"><span class="nav-icon">&#10022;</span>Generate
+        mockups</button>
       <button class="nav-item nav-button" id="openEngine"><span class="nav-icon">&#9881;</span>API settings</button>
       <a href="/server-pulse" target="_blank" class="nav-item nav-button" style="text-decoration:none;"><span class="nav-icon">&#9889;</span>Server Pulse &#8599;</a>
       <div class="category-head">
@@ -1518,6 +1520,68 @@
             <button class="btn primary compact" id="listingGuideGenerate" type="button">Generate</button>
           </div>
           <textarea id="listingGuidePrompt" rows="4" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mockups drawn to order: a room, and one flat green rectangle in it -->
+  <div class="modal-backdrop" id="mockupStudioModal">
+    <div class="modal listing-modal">
+      <div class="modal-head">
+        <h2>Generate mockups</h2>
+        <button class="icon-button" id="closeMockupStudio">&times;</button>
+      </div>
+
+      <div class="modal-body listing-guides" id="mockupStudioPane">
+        <div class="listing-guide-bar">
+          <select id="genCategory" title="Which category the mockup is filed under"></select>
+          <select id="genFrames" title="How many frames on the wall">
+            <option value="1">1 frame</option>
+            <option value="2">2 frames</option>
+            <option value="3">3 frames</option>
+            <option value="4">4 frames</option>
+          </select>
+          <select id="genOrientation" title="The shape of the opening">
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+            <option value="square">Square</option>
+          </select>
+          <select id="genRatio" title="The proportion of the opening">
+            <option value="2:3">2:3</option>
+            <option value="3:4">3:4</option>
+            <option value="4:5">4:5</option>
+            <option value="1:1">1:1</option>
+          </select>
+          <span class="listing-hint" id="genHint">A mockup is a room with a flat green rectangle in
+            it. Every one drawn here is measured by the studio's own detector before it is kept.</span>
+        </div>
+
+        <div class="listing-guide-grid" id="genResults">
+          <div class="gallery-empty">Nothing drawn yet &mdash; pick a room below</div>
+        </div>
+
+        <div class="listing-styles">
+          <div class="listing-styles-head">
+            <label>Rooms</label>
+            <span class="listing-hint">A click draws one. The pencil opens its wording below to
+              change first.</span>
+          </div>
+          <div class="listing-style-row" id="genSceneRow"></div>
+        </div>
+
+        <div class="listing-prompt">
+          <div class="listing-prompt-head">
+            <label for="genPrompt">Prompt</label>
+            <button class="btn compact" id="genReferenceButton" type="button"
+              title="Send an example room for the model to imitate">Reference image</button>
+            <input type="file" id="genReferenceFile" accept="image/png, image/jpeg, image/webp"
+              class="hidden-input">
+            <span class="listing-reference-name" id="genReferenceName"></span>
+            <button class="btn compact" id="genPromptReset" type="button">Restore default</button>
+            <button class="btn primary compact" id="genGenerate" type="button">Generate</button>
+          </div>
+          <textarea id="genPrompt" rows="4" spellcheck="false"></textarea>
         </div>
       </div>
     </div>

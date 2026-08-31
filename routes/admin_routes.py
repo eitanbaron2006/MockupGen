@@ -4,10 +4,12 @@ import secrets
 import sqlite3
 import threading
 import time
+from base64 import b64encode
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from flask import (
     Blueprint,
@@ -41,6 +43,15 @@ from services.listing_bundle_service import (
 )
 from services.listing_set_service import PRODUCT_TYPES, ListingSetError, normalize_items
 from services.local_detection_service import discover_local_models
+from services.mockup_generation_service import (
+    DEFAULT_MOCKUP_PROMPT,
+    SCENE_PRESETS,
+    MockupGenerationError,
+    generate_mockup,
+    inspect_green,
+    mockup_prompt,
+    scene_preset,
+)
 from services.size_guide_service import (
     DEFAULT_GUIDE_PROMPT,
     GUIDE_PROMPT_PRESETS,
@@ -59,6 +70,7 @@ from services.template_import_service import (
     draft_asset_path,
     import_backgrounds,
     publish_template,
+    store_background,
 )
 from services.vertex_model_service import (
     FALLBACK_VERTEX_DETECTION_MODELS,
@@ -373,6 +385,145 @@ def delete_admin_category(category_id: int):
         status = 404 if str(error) == "Category not found" else 400
         return json_error(str(error), status)
     return jsonify({"success": True, "category_id": category_id})
+
+
+# ----------------------------------------------------------------------
+# Mockups drawn to order. A mockup here is a room with a flat green rectangle
+# in it, so a generated one needs nothing a model is bad at -- and everything
+# it produces is measured by the studio's own detector before it is kept.
+# ----------------------------------------------------------------------
+
+MOCKUP_PROMPT_KEY = "MOCKUP_PROMPT"
+
+
+def _mockup_prompt_template() -> str:
+    stored = str(catalog().get_settings().get(MOCKUP_PROMPT_KEY, "") or "").strip()
+    return stored or DEFAULT_MOCKUP_PROMPT
+
+
+def _vertex_project() -> str:
+    project_id = str(current_app.config.get("VERTEX_PROJECT_ID", "") or "").strip()
+    if not project_id:
+        project_id = str(catalog().get_settings().get("VERTEX_PROJECT_ID", "") or "").strip()
+    return project_id
+
+
+@admin_routes.get("/api/admin/mockups/scenes")
+@require_admin_json
+def get_admin_mockup_scenes():
+    return jsonify(
+        {
+            "scenes": [dict(preset) for preset in SCENE_PRESETS],
+            "prompt": _mockup_prompt_template(),
+            "default_prompt": DEFAULT_MOCKUP_PROMPT,
+            "enabled": bool(current_app.config.get("ENABLE_AI_MODE", False)) and bool(_vertex_project()),
+        }
+    )
+
+
+@admin_routes.post("/api/admin/mockups/generate")
+@require_admin_json
+@require_csrf
+def generate_admin_mockup():
+    """Draw a mockup, measure its green, and keep it only if it can be used.
+
+    A generated image that the detector cannot read is not a mockup, so it is
+    handed back with its numbers instead of being filed away as one -- unless
+    the admin says to keep it anyway, which is their call to make.
+    """
+    if not current_app.config.get("ENABLE_AI_MODE", False):
+        return json_error("AI generation is disabled on this server", 503)
+    project_id = _vertex_project()
+    if not project_id:
+        return json_error("Vertex AI is not configured (no project id)", 400)
+
+    payload = request.get_json(silent=True) or {}
+    if request.form:
+        payload = {**payload, **request.form.to_dict()}
+
+    category_id = payload.get("category_id")
+    try:
+        category_id = int(category_id) if category_id not in (None, "") else None
+    except (TypeError, ValueError):
+        return json_error("category_id must be a number", 400)
+    if category_id is None or not catalog().get_category(category_id):
+        return json_error("A category is required for a generated mockup", 400)
+
+    try:
+        frames = max(1, min(6, int(payload.get("frames", 1) or 1)))
+    except (TypeError, ValueError):
+        return json_error("frames must be a number", 400)
+    orientation = str(payload.get("orientation") or "portrait").strip().lower()
+    if orientation not in {"portrait", "landscape", "square"}:
+        return json_error("orientation must be portrait, landscape or square", 400)
+    ratio = str(payload.get("ratio") or "2:3").strip()
+
+    scene_key = str(payload.get("scene") or "").strip()
+    scene = scene_preset(scene_key)
+    if scene_key and not scene:
+        return json_error(f"Unknown scene: {scene_key}", 404)
+    template = str(payload.get("prompt") or "").strip()
+
+    reference = None
+    upload = request.files.get("reference")
+    if upload is not None and upload.filename:
+        data = upload.read()
+        if len(data) > 8 * 1024 * 1024:
+            return json_error("A reference image must be 8MB or smaller", 400)
+        reference = (data, upload.mimetype or "image/png")
+
+    prompt = mockup_prompt(
+        scene=(scene or SCENE_PRESETS[0])["scene"],
+        frames=frames,
+        orientation=orientation,
+        ratio=ratio,
+        template=template or _mockup_prompt_template(),
+    )
+    try:
+        image = generate_mockup(
+            prompt=prompt,
+            project_id=project_id,
+            location=str(current_app.config.get("VERTEX_LOCATION", "global") or "global"),
+            reference=reference,
+        )
+    except MockupGenerationError as error:
+        return json_error(str(error), 400)
+    except Exception as error:  # a model that will not answer is not a crash
+        return json_error(str(error) or "The mockup could not be generated", 502)
+
+    report = inspect_green(image, expected_frames=frames)
+    # Wording the admin rewrote is kept; a scene they merely picked is not.
+    if template and not scene_key and template != _mockup_prompt_template():
+        catalog().set_settings({MOCKUP_PROMPT_KEY: template})
+
+    keep = bool(payload.get("keep", True)) and (report["usable"] or bool(payload.get("force")))
+    draft = None
+    if keep:
+        name = str(payload.get("name", "")).strip() or f"AI {(scene or SCENE_PRESETS[0])['name']}"
+        draft = store_background(
+            image,
+            name=name,
+            source_filename=f"generated_{uuid4().hex[:12]}.png",
+            category_id=category_id,
+            drafts_folder=Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
+            catalog=catalog(),
+        )
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return jsonify(
+        {
+            "success": True,
+            "kept": bool(draft),
+            "template": draft,
+            "report": report,
+            "width": image.width,
+            "height": image.height,
+            # Shown to the admin whether it was kept or not: a mockup that
+            # failed is worth looking at before deciding what to change.
+            "image": "data:image/png;base64," + b64encode(buffer.getvalue()).decode("ascii"),
+        }
+    ), 201
 
 
 # ----------------------------------------------------------------------

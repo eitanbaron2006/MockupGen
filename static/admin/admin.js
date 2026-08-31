@@ -30,6 +30,7 @@ import {
 // The Listing sets screen wires itself up on import, the way the other
 // windows do; nothing here calls into it.
 import "./modules/listingSets.js";
+import "./modules/mockupStudio.js";
 import { renderMockupGallery, renderTestGallery } from "./modules/testModal.js";
 import {
   DEFAULT_SELECTION_STYLE,
