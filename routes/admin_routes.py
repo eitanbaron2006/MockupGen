@@ -64,6 +64,7 @@ from services.size_guide_service import (
     store_style_example,
     style_example_path,
 )
+from services.template_filing_service import classify, next_name
 from services.template_import_service import (
     TemplateImportError,
     delete_template_assets,
@@ -927,6 +928,29 @@ def get_admin_templates():
     return jsonify({"templates": templates})
 
 
+def _filing_for(
+    template: dict, proposal: Any, *, shelves: dict[str, dict], taken_names: list[str]
+) -> dict[str, Any]:
+    """The shelf and the name a freshly detected mockup earns.
+
+    Both are read off the detection: the shapes of the openings and how many
+    there are. A mockup imported onto a MAIN shelf stays there -- MAIN is a
+    role the admin chose, not a shape anything can measure -- but it is still
+    named by the same rule, and the MAIN- prefix is added by the catalog.
+    """
+    filing = classify(proposal.artwork_area, proposal.raw_artwork_area)
+    changes: dict[str, Any] = {
+        "name": next_name(taken_names, filing["letter"], filing["frames"])
+    }
+    current = str(template.get("category_name") or "")
+    if current.strip().lower().startswith("main"):
+        return changes
+    shelf = shelves.get(filing["shelf"])
+    if shelf and shelf["id"] != template.get("category_id"):
+        changes["category_id"] = shelf["id"]
+    return changes
+
+
 @admin_routes.post("/api/admin/templates/import")
 @require_admin_json
 @require_csrf
@@ -955,6 +979,16 @@ def import_admin_templates():
             green_tolerance=_setting_int(engine, current_app.config, "CLASSIC_GREEN_TOLERANCE", 130),
             default_mode="green_frames_mockups" if import_mode == "green_frames" else "auto",
         )
+        # Filing happens among the shelves beside the one the admin imported
+        # into, so an import never leaves the product it was aimed at.
+        chosen = catalog().get_category(category_id) or {}
+        parent_id = chosen.get("parent_id") or chosen.get("id")
+        shelves = {
+            shelf["name"]: shelf
+            for shelf in catalog().list_categories()
+            if shelf.get("parent_id") == parent_id
+        }
+        taken_names = [record["name"] for record in catalog().list_templates()]
         detected_templates = []
         for template in templates:
             if template["status"] == "active":
@@ -967,20 +1001,24 @@ def import_admin_templates():
                     "background.png",
                 )
             )
-            detected_templates.append(
-                catalog().update_template(
-                    template["template_id"],
-                    {
-                        "artwork_area": proposal.artwork_area,
-                        "orientation": orientation_for_size(
-                            proposal.artwork_area["width"],
-                            proposal.artwork_area["height"],
-                        ),
-                        "detection_provider": proposal.provider,
-                        "detection_confidence": proposal.confidence,
-                    },
-                )
+            changes = {
+                "artwork_area": proposal.artwork_area,
+                "orientation": orientation_for_size(
+                    proposal.artwork_area["width"],
+                    proposal.artwork_area["height"],
+                ),
+                "detection_provider": proposal.provider,
+                "detection_confidence": proposal.confidence,
+                # Kept, so the frames the detector found are not thrown away
+                # here and asked for again by the next screen that needs them.
+                "raw_artwork_area": proposal.raw_artwork_area,
+            }
+            changes.update(
+                _filing_for(template, proposal, shelves=shelves, taken_names=taken_names)
             )
+            filed = catalog().update_template(template["template_id"], changes)
+            taken_names.append(filed["name"])
+            detected_templates.append(filed)
         templates = detected_templates
     except (ValueError, TemplateImportError) as error:
         return json_error(str(error) or "Category is required", 400)

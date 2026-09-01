@@ -14,6 +14,7 @@ export const KEYS = {
   queueCompact: "mockupStudio.queueCompact",
   greenPanelCollapsed: "mockupStudio.greenPanelCollapsed",
   toolbarPositions: "mockupStudio.canvasToolbarPositions",
+  collapsedCategories: "mockupStudio.collapsedCategories",
 };
 
 function read(key) {

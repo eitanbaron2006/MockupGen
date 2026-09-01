@@ -415,11 +415,33 @@ import {
     renderCategories();
   }
 
+  /** Which parents the studio is keeping folded, remembered per browser. */
+  function collapsedCategories() {
+    return new Set(readJson(KEYS.collapsedCategories, []));
+  }
+
+  function toggleCategoryCollapsed(categoryId) {
+    const collapsed = collapsedCategories();
+    if (collapsed.has(categoryId)) collapsed.delete(categoryId);
+    else collapsed.add(categoryId);
+    writeJson(KEYS.collapsedCategories, [...collapsed]);
+    renderCategories();
+  }
+
   function renderCategories() {
     // The list arrives in tree order -- a parent, then its shelves -- so it is
     // drawn straight through, with the children stepped in.
-    $("categories").innerHTML = state.categories.map((category) => `
+    const collapsed = collapsedCategories();
+    const visible = state.categories.filter(
+      (category) => !category.parent_id || !collapsed.has(category.parent_id)
+    );
+    $("categories").innerHTML = visible.map((category) => `
       <div class="category-row ${category.parent_id ? "is-child" : ""} ${category.child_count ? "is-parent" : ""} ${state.selectedCategory && state.selectedCategory.id === category.id ? "selected" : ""}">
+        ${category.child_count ? `
+        <button class="category-fold${collapsed.has(category.id) ? " is-collapsed" : ""}" type="button"
+                data-fold="${category.id}" aria-expanded="${!collapsed.has(category.id)}"
+                aria-label="${collapsed.has(category.id) ? "Show" : "Hide"} the categories under ${escapeAttr(category.name)}"
+                title="${collapsed.has(category.id) ? "Show" : "Hide"} its sub-categories">&#9662;</button>` : ""}
         <button class="category category-select" data-category="${category.id}">
           <span class="category-name">${escapeHtml(category.name)}</span><span class="count">${category.template_count}</span>
         </button>
@@ -438,6 +460,13 @@ import {
         state.queueFilter = "all";
         renderCategories();
         await loadTemplates();
+      };
+    });
+    document.querySelectorAll("[data-fold]").forEach((button) => {
+      button.onclick = (event) => {
+        // Folding a parent is not choosing it: the click stops here.
+        event.stopPropagation();
+        toggleCategoryCollapsed(Number(button.dataset.fold));
       };
     });
     document.querySelectorAll(".category-rename").forEach((button) => {

@@ -4633,6 +4633,32 @@ input[type="checkbox"]:disabled {
   margin: 0;
 }
 
+/* A parent can be folded away. The chevron sits before the name rather than
+   on it, so folding a shelf away and choosing it stay two different clicks. */
+.category-fold {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  width: 16px;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.category-fold:hover {
+  color: var(--accent);
+}
+
+.category-fold.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.category-row.is-parent .category {
+  padding-left: 4px;
+}
+
 /* Categories group one level deep: a parent names the product, the shelves
    under it name the shape. The step-in is what tells them apart at a glance. */
 .category-row.is-child .category {

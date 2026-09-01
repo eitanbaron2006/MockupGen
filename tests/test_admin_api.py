@@ -1613,3 +1613,111 @@ def test_categories_group_one_level_under_a_parent(tmp_path: Path):
     # ...and it can be lifted out deliberately.
     lifted = catalog.update_category(portrait["id"], "Tall", parent_id=None)
     assert lifted["parent_id"] is None
+
+
+def green_room(frames: int = 1, *, tall: bool = True, mixed: bool = False) -> io.BytesIO:
+    """A mockup the classic detector can read: flat green openings on a wall."""
+    from PIL import ImageDraw
+
+    image = Image.new("RGB", (1200, 800), (214, 209, 200))
+    draw = ImageDraw.Draw(image)
+    width, height = (200, 320) if tall else (320, 200)
+    left = 80
+    for index in range(frames):
+        w, h = (height, width) if (mixed and index == 1) else (width, height)
+        draw.rectangle((left - 10, 190, left + w + 10, 210 + h), fill=(90, 66, 44))
+        draw.rectangle((left, 200, left + w, 200 + h), fill=(0, 255, 0))
+        left += w + 60
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    stream.seek(0)
+    return stream
+
+
+def test_an_imported_mockup_files_and_names_itself(tmp_path: Path):
+    """Detection already knows the shape and the count; filing follows from it.
+
+    The admin picks a product, not a shelf: the mockup lands on the shelf its
+    own openings describe, beside the one they aimed at, and takes the name
+    that says the same thing -- P1-1 for one portrait opening, P3-1 for three.
+    """
+    app = build_app(tmp_path)
+    app.config["CLASSIC_IMPORT_MODE"] = "green_frames"
+    client = app.test_client()
+    csrf = login(client)
+
+    def category(name, parent=None):
+        return client.post(
+            "/api/admin/categories",
+            json={"name": name, "parent_id": parent},
+            headers={"X-CSRF-Token": csrf},
+        ).get_json()["category"]
+
+    wall_art = category("Wall Art")
+    portrait = category("Portrait", wall_art["id"])
+    category("Wide", wall_art["id"])
+    category("Portrait Sets", wall_art["id"])
+    category("Mixed Sets", wall_art["id"])
+
+    def imported(stream, name, into):
+        return client.post(
+            "/api/admin/templates/import",
+            data={"category_id": str(into["id"]), "mockups": [(stream, name)]},
+            headers={"X-CSRF-Token": csrf},
+            content_type="multipart/form-data",
+        ).get_json()["templates"][0]
+
+    # One tall opening: the Portrait shelf, named P1-1.
+    tall = imported(green_room(1, tall=True), "whatever_the_file_was_called.png", portrait)
+    assert tall["name"] == "P1-1"
+    assert tall["category_name"] == "Portrait"
+
+    # One wide opening imported into Portrait: it moves to the shelf it belongs on.
+    wide = imported(green_room(1, tall=False), "another.png", portrait)
+    assert wide["name"] == "W1-1"
+    assert wide["category_name"] == "Wide"
+
+    # Three tall openings: a portrait set, and the count is in the name.
+    trio = imported(green_room(3, tall=True), "set.png", portrait)
+    assert trio["name"] == "P3-1"
+    assert trio["category_name"] == "Portrait Sets"
+
+    # A second single portrait counts on from the first rather than colliding.
+    assert imported(green_room(1, tall=True), "again.png", portrait)["name"] == "P1-2"
+
+
+def test_filing_never_moves_a_mockup_off_a_main_shelf(tmp_path: Path):
+    """MAIN is a role the admin chose, and no measurement can tell it.
+
+    So an import onto a MAIN shelf stays there and only takes the name -- with
+    the MAIN- prefix the catalog adds to everything filed there.
+    """
+    app = build_app(tmp_path)
+    app.config["CLASSIC_IMPORT_MODE"] = "green_frames"
+    client = app.test_client()
+    csrf = login(client)
+
+    wall_art = client.post(
+        "/api/admin/categories", json={"name": "Wall Art"}, headers={"X-CSRF-Token": csrf}
+    ).get_json()["category"]
+    for name in ("MAIN Portrait", "Wide"):
+        client.post(
+            "/api/admin/categories",
+            json={"name": name, "parent_id": wall_art["id"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+    main_shelf = next(
+        row for row in client.get("/api/admin/categories").get_json()["categories"]
+        if row["name"] == "MAIN Portrait"
+    )
+
+    # A wide opening imported onto the MAIN shelf: it stays put.
+    filed = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(main_shelf["id"]), "mockups": [(green_room(1, tall=False), "hero.png")]},
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    ).get_json()["templates"][0]
+
+    assert filed["category_name"] == "MAIN Portrait"
+    assert filed["name"] == "MAIN-W1-1"
