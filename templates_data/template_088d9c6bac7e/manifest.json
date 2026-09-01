@@ -1,0 +1,323 @@
+{
+  "template_id": "template_088d9c6bac7e",
+  "name": "ChatGPT Image Sep 1 2026 05 06 53 PM 5",
+  "product_type": "horizontal-wall-art",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 399,
+    "y": 186,
+    "width": 211,
+    "height": 486,
+    "corners": [
+      {
+        "x": 399,
+        "y": 186
+      },
+      {
+        "x": 610,
+        "y": 186
+      },
+      {
+        "x": 610,
+        "y": 672
+      },
+      {
+        "x": 399,
+        "y": 672
+      }
+    ]
+  },
+  "fit_mode": "stretch",
+  "orientation": "portrait",
+  "background": "background.png",
+  "foreground": null,
+  "mask": "mask.png",
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png",
+  "effects": {
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.2,
+      "target": "artwork",
+      "temperature": 25
+    },
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "target": "artwork",
+      "type": "diagonal"
+    },
+    "global_png_overlay": {
+      "anchor": "center",
+      "blend_mode": "normal",
+      "blur": 0,
+      "enabled": false,
+      "flip_x": false,
+      "flip_y": false,
+      "image": "",
+      "opacity": 0.5,
+      "position_x": 0,
+      "position_y": 0,
+      "repeat": false,
+      "rotation": 0,
+      "scale": 1,
+      "target": "all",
+      "tint_color": "#ffffff",
+      "tint_strength": 0
+    },
+    "global_reflections": {
+      "enabled": false,
+      "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": false,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": -0.15,
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0,
+      "color_filter": "none",
+      "contrast": 0,
+      "enabled": false,
+      "saturation": 0,
+      "target": "all"
+    }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 2,
+    "green_pixels": 299900,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 399,
+        "y": 186
+      },
+      {
+        "x": 610,
+        "y": 186
+      },
+      {
+        "x": 610,
+        "y": 672
+      },
+      {
+        "x": 399,
+        "y": 672
+      }
+    ],
+    "regions": [
+      {
+        "area": 102080,
+        "corners": [
+          {
+            "x": 399,
+            "y": 186
+          },
+          {
+            "x": 610,
+            "y": 186
+          },
+          {
+            "x": 610,
+            "y": 672
+          },
+          {
+            "x": 399,
+            "y": 672
+          }
+        ],
+        "height": 487,
+        "inner_corners": [
+          {
+            "x": 401,
+            "y": 188
+          },
+          {
+            "x": 607,
+            "y": 187
+          },
+          {
+            "x": 608,
+            "y": 670
+          },
+          {
+            "x": 400,
+            "y": 669
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 400,
+            "y": 187
+          },
+          {
+            "x": 608,
+            "y": 186
+          },
+          {
+            "x": 609,
+            "y": 671
+          },
+          {
+            "x": 399,
+            "y": 670
+          }
+        ],
+        "width": 212,
+        "x": 399,
+        "y": 186
+      },
+      {
+        "area": 103259,
+        "corners": [
+          {
+            "x": 646,
+            "y": 185
+          },
+          {
+            "x": 858,
+            "y": 183
+          },
+          {
+            "x": 857,
+            "y": 672
+          },
+          {
+            "x": 646,
+            "y": 672
+          }
+        ],
+        "height": 488,
+        "inner_corners": [
+          {
+            "x": 648,
+            "y": 186
+          },
+          {
+            "x": 857,
+            "y": 186
+          },
+          {
+            "x": 856,
+            "y": 670
+          },
+          {
+            "x": 647,
+            "y": 670
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 647,
+            "y": 185
+          },
+          {
+            "x": 858,
+            "y": 185
+          },
+          {
+            "x": 857,
+            "y": 671
+          },
+          {
+            "x": 646,
+            "y": 671
+          }
+        ],
+        "width": 213,
+        "x": 646,
+        "y": 185
+      },
+      {
+        "area": 102975,
+        "corners": [
+          {
+            "x": 898,
+            "y": 184
+          },
+          {
+            "x": 1109,
+            "y": 184
+          },
+          {
+            "x": 1109,
+            "y": 671
+          },
+          {
+            "x": 898,
+            "y": 671
+          }
+        ],
+        "height": 488,
+        "inner_corners": [
+          {
+            "x": 900,
+            "y": 185
+          },
+          {
+            "x": 1107,
+            "y": 185
+          },
+          {
+            "x": 1107,
+            "y": 670
+          },
+          {
+            "x": 899,
+            "y": 669
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 899,
+            "y": 184
+          },
+          {
+            "x": 1108,
+            "y": 184
+          },
+          {
+            "x": 1108,
+            "y": 671
+          },
+          {
+            "x": 898,
+            "y": 670
+          }
+        ],
+        "width": 212,
+        "x": 898,
+        "y": 184
+      }
+    ]
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.92
+}

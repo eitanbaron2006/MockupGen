@@ -1,7 +1,7 @@
 {
   "template_id": "template_447f9867f9e8",
   "name": "MAIN-H1-1",
-  "product_type": "vertival-wall-art-frame",
+  "product_type": "main-horizontal",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
@@ -28,7 +28,7 @@
       }
     ]
   },
-  "fit_mode": "auto",
+  "fit_mode": "stretch",
   "orientation": "landscape",
   "background": "background.png",
   "foreground": null,

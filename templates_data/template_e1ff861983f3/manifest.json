@@ -1,35 +1,35 @@
 {
-  "template_id": "template_dd235df910f6",
-  "name": "MAIN-H1-15",
-  "product_type": "main-horizontal",
+  "template_id": "template_e1ff861983f3",
+  "name": "ChatGPT Image Sep 1 2026 04 51 00 PM 1",
+  "product_type": "horizontal-wall-art",
   "canvas_width": 1254,
   "canvas_height": 1254,
   "artwork_area": {
-    "x": 283,
-    "y": 287,
-    "width": 693,
-    "height": 511,
+    "x": 506,
+    "y": 144,
+    "width": 360,
+    "height": 577,
     "corners": [
       {
-        "x": 283,
-        "y": 287
+        "x": 506,
+        "y": 149
       },
       {
-        "x": 971,
-        "y": 294
+        "x": 866,
+        "y": 144
       },
       {
-        "x": 976,
-        "y": 791
+        "x": 866,
+        "y": 721
       },
       {
-        "x": 286,
-        "y": 798
+        "x": 507,
+        "y": 721
       }
     ]
   },
   "fit_mode": "stretch",
-  "orientation": "landscape",
+  "orientation": "portrait",
   "background": "background.png",
   "foreground": null,
   "mask": null,
@@ -88,7 +88,7 @@
     "inner_shadow": {
       "blur": 15,
       "bottom": 10,
-      "enabled": true,
+      "enabled": false,
       "left": 10,
       "opacity": 0.4,
       "right": 10,
@@ -96,7 +96,7 @@
       "top": 10
     },
     "matte_finish": {
-      "contrast": -0.14,
+      "contrast": -0.15,
       "enabled": false,
       "shadow_lift": 0.08,
       "target": "artwork"
@@ -111,6 +111,6 @@
     }
   },
   "raw_artwork_area": null,
-  "detection_provider": "vertex",
-  "detection_confidence": 0.75
+  "detection_provider": "classic",
+  "detection_confidence": 0.85
 }

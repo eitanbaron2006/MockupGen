@@ -1,0 +1,201 @@
+{
+  "template_id": "template_00bb1a0240f7",
+  "name": "ChatGPT Image Sep 1 2026 05 06 52 PM 2",
+  "product_type": "horizontal-wall-art",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 513,
+    "y": 233,
+    "width": 474,
+    "height": 314,
+    "corners": [
+      {
+        "x": 514,
+        "y": 257
+      },
+      {
+        "x": 987,
+        "y": 233
+      },
+      {
+        "x": 986,
+        "y": 547
+      },
+      {
+        "x": 513,
+        "y": 542
+      }
+    ]
+  },
+  "fit_mode": "stretch",
+  "orientation": "landscape",
+  "background": "background.png",
+  "foreground": null,
+  "mask": "mask.png",
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png",
+  "effects": {
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.2,
+      "target": "artwork",
+      "temperature": 25
+    },
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "target": "artwork",
+      "type": "diagonal"
+    },
+    "global_png_overlay": {
+      "anchor": "center",
+      "blend_mode": "normal",
+      "blur": 0,
+      "enabled": false,
+      "flip_x": false,
+      "flip_y": false,
+      "image": "",
+      "opacity": 0.5,
+      "position_x": 0,
+      "position_y": 0,
+      "repeat": false,
+      "rotation": 0,
+      "scale": 1,
+      "target": "all",
+      "tint_color": "#ffffff",
+      "tint_strength": 0
+    },
+    "global_reflections": {
+      "enabled": false,
+      "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": false,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": -0.15,
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0,
+      "color_filter": "none",
+      "contrast": 0,
+      "enabled": false,
+      "saturation": 0,
+      "target": "all"
+    }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 2,
+    "green_pixels": 138012,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 514,
+        "y": 257
+      },
+      {
+        "x": 987,
+        "y": 233
+      },
+      {
+        "x": 986,
+        "y": 547
+      },
+      {
+        "x": 513,
+        "y": 542
+      }
+    ],
+    "regions": [
+      {
+        "area": 141159,
+        "corners": [
+          {
+            "x": 514,
+            "y": 257
+          },
+          {
+            "x": 987,
+            "y": 233
+          },
+          {
+            "x": 986,
+            "y": 547
+          },
+          {
+            "x": 513,
+            "y": 542
+          }
+        ],
+        "height": 312,
+        "inner_corners": [
+          {
+            "x": 515,
+            "y": 259
+          },
+          {
+            "x": 985,
+            "y": 235
+          },
+          {
+            "x": 984,
+            "y": 544
+          },
+          {
+            "x": 514,
+            "y": 539
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 514,
+            "y": 258
+          },
+          {
+            "x": 986,
+            "y": 234
+          },
+          {
+            "x": 985,
+            "y": 545
+          },
+          {
+            "x": 513,
+            "y": 540
+          }
+        ],
+        "width": 474,
+        "x": 513,
+        "y": 234
+      }
+    ]
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.92
+}

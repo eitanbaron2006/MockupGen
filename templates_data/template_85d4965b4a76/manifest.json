@@ -1,0 +1,262 @@
+{
+  "template_id": "template_85d4965b4a76",
+  "name": "ChatGPT Image Sep 1 2026 05 06 51 PM 1",
+  "product_type": "horizontal-wall-art",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 833,
+    "y": 91,
+    "width": 313,
+    "height": 619,
+    "corners": [
+      {
+        "x": 833,
+        "y": 113
+      },
+      {
+        "x": 1145,
+        "y": 91
+      },
+      {
+        "x": 1146,
+        "y": 710
+      },
+      {
+        "x": 833,
+        "y": 688
+      }
+    ]
+  },
+  "fit_mode": "stretch",
+  "orientation": "portrait",
+  "background": "background.png",
+  "foreground": null,
+  "mask": "mask.png",
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png",
+  "effects": {
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.2,
+      "target": "artwork",
+      "temperature": 25
+    },
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "target": "artwork",
+      "type": "diagonal"
+    },
+    "global_png_overlay": {
+      "anchor": "center",
+      "blend_mode": "normal",
+      "blur": 0,
+      "enabled": false,
+      "flip_x": false,
+      "flip_y": false,
+      "image": "",
+      "opacity": 0.5,
+      "position_x": 0,
+      "position_y": 0,
+      "repeat": false,
+      "rotation": 0,
+      "scale": 1,
+      "target": "all",
+      "tint_color": "#ffffff",
+      "tint_strength": 0
+    },
+    "global_reflections": {
+      "enabled": false,
+      "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": false,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": -0.15,
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0,
+      "color_filter": "none",
+      "contrast": 0,
+      "enabled": false,
+      "saturation": 0,
+      "target": "all"
+    }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 2,
+    "green_pixels": 320647,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 833,
+        "y": 113
+      },
+      {
+        "x": 1145,
+        "y": 91
+      },
+      {
+        "x": 1146,
+        "y": 710
+      },
+      {
+        "x": 833,
+        "y": 688
+      }
+    ],
+    "regions": [
+      {
+        "area": 186404,
+        "corners": [
+          {
+            "x": 833,
+            "y": 113
+          },
+          {
+            "x": 1145,
+            "y": 91
+          },
+          {
+            "x": 1146,
+            "y": 710
+          },
+          {
+            "x": 833,
+            "y": 688
+          }
+        ],
+        "height": 618,
+        "inner_corners": [
+          {
+            "x": 835,
+            "y": 115
+          },
+          {
+            "x": 1143,
+            "y": 93
+          },
+          {
+            "x": 1144,
+            "y": 707
+          },
+          {
+            "x": 835,
+            "y": 685
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 834,
+            "y": 114
+          },
+          {
+            "x": 1144,
+            "y": 92
+          },
+          {
+            "x": 1145,
+            "y": 708
+          },
+          {
+            "x": 834,
+            "y": 686
+          }
+        ],
+        "width": 313,
+        "x": 833,
+        "y": 92
+      },
+      {
+        "area": 141270,
+        "corners": [
+          {
+            "x": 435,
+            "y": 144
+          },
+          {
+            "x": 701,
+            "y": 124
+          },
+          {
+            "x": 702,
+            "y": 677
+          },
+          {
+            "x": 437,
+            "y": 657
+          }
+        ],
+        "height": 552,
+        "inner_corners": [
+          {
+            "x": 437,
+            "y": 146
+          },
+          {
+            "x": 699,
+            "y": 126
+          },
+          {
+            "x": 700,
+            "y": 675
+          },
+          {
+            "x": 438,
+            "y": 654
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 436,
+            "y": 145
+          },
+          {
+            "x": 700,
+            "y": 125
+          },
+          {
+            "x": 701,
+            "y": 676
+          },
+          {
+            "x": 437,
+            "y": 655
+          }
+        ],
+        "width": 266,
+        "x": 436,
+        "y": 125
+      }
+    ]
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.92
+}

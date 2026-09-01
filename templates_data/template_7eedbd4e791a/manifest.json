@@ -1,0 +1,323 @@
+{
+  "template_id": "template_7eedbd4e791a",
+  "name": "ChatGPT Image Sep 1 2026 05 06 56 PM 10",
+  "product_type": "horizontal-wall-art",
+  "canvas_width": 1254,
+  "canvas_height": 1254,
+  "artwork_area": {
+    "x": 933,
+    "y": 157,
+    "width": 200,
+    "height": 435,
+    "corners": [
+      {
+        "x": 933,
+        "y": 163
+      },
+      {
+        "x": 1133,
+        "y": 157
+      },
+      {
+        "x": 1133,
+        "y": 591
+      },
+      {
+        "x": 933,
+        "y": 592
+      }
+    ]
+  },
+  "fit_mode": "stretch",
+  "orientation": "portrait",
+  "background": "background.png",
+  "foreground": null,
+  "mask": "mask.png",
+  "preview": "preview.png",
+  "supported_modes": [
+    "simple"
+  ],
+  "output_format": "png",
+  "effects": {
+    "color_tint": {
+      "enabled": false,
+      "intensity": 0.2,
+      "target": "artwork",
+      "temperature": 25
+    },
+    "glass_reflection": {
+      "enabled": false,
+      "opacity": 0.15,
+      "target": "artwork",
+      "type": "diagonal"
+    },
+    "global_png_overlay": {
+      "anchor": "center",
+      "blend_mode": "normal",
+      "blur": 0,
+      "enabled": false,
+      "flip_x": false,
+      "flip_y": false,
+      "image": "",
+      "opacity": 0.5,
+      "position_x": 0,
+      "position_y": 0,
+      "repeat": false,
+      "rotation": 0,
+      "scale": 1,
+      "target": "all",
+      "tint_color": "#ffffff",
+      "tint_strength": 0
+    },
+    "global_reflections": {
+      "enabled": false,
+      "rays_angle": 0,
+      "rays_opacity": 0.2,
+      "rays_type": "none",
+      "target": "all",
+      "window_blur": 20,
+      "window_opacity": 0.2,
+      "window_type": "none"
+    },
+    "gobo_shadow": {
+      "enabled": false,
+      "opacity": 0.3,
+      "scale": 1,
+      "target": "artwork"
+    },
+    "inner_shadow": {
+      "blur": 15,
+      "bottom": 10,
+      "enabled": false,
+      "left": 10,
+      "opacity": 0.4,
+      "right": 10,
+      "target": "artwork",
+      "top": 10
+    },
+    "matte_finish": {
+      "contrast": -0.15,
+      "enabled": false,
+      "shadow_lift": 0.08,
+      "target": "artwork"
+    },
+    "photoshop_adjustments": {
+      "brightness": 0,
+      "color_filter": "none",
+      "contrast": 0,
+      "enabled": false,
+      "saturation": 0,
+      "target": "all"
+    }
+  },
+  "raw_artwork_area": {
+    "edge_expand": 2,
+    "green_pixels": 238380,
+    "mode": "green_frames_mockups",
+    "original_corners": [
+      {
+        "x": 933,
+        "y": 163
+      },
+      {
+        "x": 1133,
+        "y": 157
+      },
+      {
+        "x": 1133,
+        "y": 591
+      },
+      {
+        "x": 933,
+        "y": 592
+      }
+    ],
+    "regions": [
+      {
+        "area": 86665,
+        "corners": [
+          {
+            "x": 933,
+            "y": 163
+          },
+          {
+            "x": 1133,
+            "y": 157
+          },
+          {
+            "x": 1133,
+            "y": 591
+          },
+          {
+            "x": 933,
+            "y": 592
+          }
+        ],
+        "height": 434,
+        "inner_corners": [
+          {
+            "x": 934,
+            "y": 165
+          },
+          {
+            "x": 1132,
+            "y": 159
+          },
+          {
+            "x": 1132,
+            "y": 589
+          },
+          {
+            "x": 934,
+            "y": 590
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 933,
+            "y": 164
+          },
+          {
+            "x": 1133,
+            "y": 158
+          },
+          {
+            "x": 1133,
+            "y": 590
+          },
+          {
+            "x": 933,
+            "y": 591
+          }
+        ],
+        "width": 201,
+        "x": 933,
+        "y": 158
+      },
+      {
+        "area": 78173,
+        "corners": [
+          {
+            "x": 378,
+            "y": 183
+          },
+          {
+            "x": 566,
+            "y": 177
+          },
+          {
+            "x": 566,
+            "y": 594
+          },
+          {
+            "x": 378,
+            "y": 594
+          }
+        ],
+        "height": 417,
+        "inner_corners": [
+          {
+            "x": 380,
+            "y": 184
+          },
+          {
+            "x": 565,
+            "y": 179
+          },
+          {
+            "x": 565,
+            "y": 592
+          },
+          {
+            "x": 379,
+            "y": 592
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 379,
+            "y": 183
+          },
+          {
+            "x": 566,
+            "y": 178
+          },
+          {
+            "x": 566,
+            "y": 593
+          },
+          {
+            "x": 378,
+            "y": 593
+          }
+        ],
+        "width": 189,
+        "x": 378,
+        "y": 178
+      },
+      {
+        "area": 81000,
+        "corners": [
+          {
+            "x": 652,
+            "y": 174
+          },
+          {
+            "x": 844,
+            "y": 168
+          },
+          {
+            "x": 843,
+            "y": 592
+          },
+          {
+            "x": 652,
+            "y": 593
+          }
+        ],
+        "height": 424,
+        "inner_corners": [
+          {
+            "x": 653,
+            "y": 176
+          },
+          {
+            "x": 843,
+            "y": 170
+          },
+          {
+            "x": 842,
+            "y": 590
+          },
+          {
+            "x": 653,
+            "y": 591
+          }
+        ],
+        "outer_corners": [
+          {
+            "x": 652,
+            "y": 175
+          },
+          {
+            "x": 844,
+            "y": 169
+          },
+          {
+            "x": 843,
+            "y": 591
+          },
+          {
+            "x": 652,
+            "y": 592
+          }
+        ],
+        "width": 193,
+        "x": 652,
+        "y": 169
+      }
+    ]
+  },
+  "detection_provider": "classic",
+  "detection_confidence": 0.92
+}
