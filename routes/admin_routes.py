@@ -406,9 +406,10 @@ def get_admin_categories():
 @require_admin_json
 @require_csrf
 def create_admin_category():
+    payload = request.get_json(silent=True) or {}
     try:
         category = catalog().create_category(
-            str((request.get_json(silent=True) or {}).get("name", ""))
+            str(payload.get("name", "")), parent_id=payload.get("parent_id")
         )
     except CatalogError as error:
         return json_error(str(error), 400)
@@ -419,10 +420,16 @@ def create_admin_category():
 @require_admin_json
 @require_csrf
 def update_admin_category(category_id: int):
+    payload = request.get_json(silent=True) or {}
     try:
-        category = catalog().update_category(
-            category_id,
-            str((request.get_json(silent=True) or {}).get("name", "")),
+        # Left out, the parent stays where it is: renaming a shelf must not
+        # quietly move it to the top level.
+        category = (
+            catalog().update_category(
+                category_id, str(payload.get("name", "")), parent_id=payload.get("parent_id")
+            )
+            if "parent_id" in payload
+            else catalog().update_category(category_id, str(payload.get("name", "")))
         )
     except CatalogError as error:
         status = 404 if str(error) == "Category not found" else 400

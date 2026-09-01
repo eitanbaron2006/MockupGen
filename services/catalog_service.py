@@ -7,6 +7,8 @@ from typing import Any
 
 from services.simple_mockup_service import InvalidTemplateError, TemplateNotFoundError, load_manifest
 
+_UNCHANGED = object()
+
 
 class CatalogError(ValueError):
     pass
@@ -56,6 +58,7 @@ class CatalogService:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     slug TEXT NOT NULL UNIQUE,
+                    parent_id INTEGER REFERENCES categories(id),
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS templates (
@@ -105,6 +108,15 @@ class CatalogService:
                 );
                 """
             )
+            try:
+                # Categories group under one parent, so a name says what the
+                # shelf holds and the parent says what it is for -- "Vertical"
+                # under "Wall Art" rather than "Vertical Wall Art Frame".
+                connection.execute(
+                    "ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id)"
+                )
+            except sqlite3.OperationalError:
+                pass
             try:
                 connection.execute("ALTER TABLE templates ADD COLUMN raw_artwork_area TEXT")
             except sqlite3.OperationalError:
@@ -160,29 +172,72 @@ class CatalogService:
         existing = self.get_category_by_slug(slugify(name))
         return existing or self.create_category(name)
 
-    def create_category(self, name: str) -> dict[str, Any]:
-        cleaned = name.strip()
+    def create_category(self, name: str, parent_id: int | None = None) -> dict[str, Any]:
+        cleaned = " ".join(name.split())
         if not cleaned:
             raise CatalogError("Category name is required")
         base_slug = slugify(cleaned)
         slug = base_slug
         suffix = 2
         with self._connect() as connection:
+            # The name column is unique, but SQLite compares text case
+            # sensitively -- so "Wall Art" and "wall art" both fitted, the slug
+            # collision was quietly resolved with a -2 suffix, and the sidebar
+            # ended up with two categories the eye reads as one. Renaming
+            # already refused that; creating has to refuse it too.
+            twin = connection.execute(
+                "SELECT name FROM categories WHERE lower(name) = lower(?)", (cleaned,)
+            ).fetchone()
+            if twin:
+                raise CatalogError(f'A category named "{twin["name"]}" already exists')
             while connection.execute(
                 "SELECT 1 FROM categories WHERE slug = ?", (slug,)
             ).fetchone():
                 slug = f"{base_slug}-{suffix}"
                 suffix += 1
+            parent = self._checked_parent(connection, parent_id)
             try:
                 cursor = connection.execute(
-                    "INSERT INTO categories(name, slug, created_at) VALUES(?, ?, ?)",
-                    (cleaned, slug, utc_now()),
+                    "INSERT INTO categories(name, slug, parent_id, created_at) VALUES(?, ?, ?, ?)",
+                    (cleaned, slug, parent, utc_now()),
                 )
             except sqlite3.IntegrityError as error:
                 raise CatalogError("Category already exists") from error
             category_id = cursor.lastrowid
         self._checkpoint()
         return self.get_category(category_id)
+
+    @staticmethod
+    def _checked_parent(connection, parent_id: Any, moving: int | None = None) -> int | None:
+        """The parent a category may sit under, or nothing.
+
+        Grouping is one level deep on purpose: a shelf holds mockups and a
+        parent holds shelves. Anything deeper is a folder tree nobody asked
+        for, and it would leave the sidebar guessing how far to indent.
+        """
+        if parent_id in (None, "", 0):
+            return None
+        try:
+            parent_id = int(parent_id)
+        except (TypeError, ValueError) as error:
+            raise CatalogError("Parent category must be a number") from error
+        if moving is not None and parent_id == moving:
+            raise CatalogError("A category cannot be its own parent")
+        row = connection.execute(
+            "SELECT id, parent_id FROM categories WHERE id = ?", (parent_id,)
+        ).fetchone()
+        if not row:
+            raise CatalogError("Parent category not found")
+        if row["parent_id"] is not None:
+            raise CatalogError("Categories group one level deep")
+        if moving is not None:
+            has_children = connection.execute(
+                "SELECT 1 FROM categories WHERE parent_id = ?", (moving,)
+            ).fetchone()
+            if has_children:
+                raise CatalogError("A category with sub-categories cannot become one")
+        return parent_id
+
     def get_category(self, category_id: int) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -197,11 +252,13 @@ class CatalogService:
             ).fetchone()
         return dict(row) if row else None
 
-    def update_category(self, category_id: int, name: str) -> dict[str, Any]:
+    def update_category(
+        self, category_id: int, name: str, parent_id: Any = _UNCHANGED
+    ) -> dict[str, Any]:
         current = self.get_category(category_id)
         if not current:
             raise CatalogError("Category not found")
-        cleaned = name.strip()
+        cleaned = " ".join(name.split())
         if not cleaned:
             raise CatalogError("Category name is required")
         slug = slugify(cleaned)
@@ -215,10 +272,17 @@ class CatalogService:
             ).fetchone()
             if conflict:
                 raise CatalogError("Category already exists")
-            cursor = connection.execute(
-                "UPDATE categories SET name = ?, slug = ? WHERE id = ?",
-                (cleaned, slug, category_id),
-            )
+            if parent_id is _UNCHANGED:
+                cursor = connection.execute(
+                    "UPDATE categories SET name = ?, slug = ? WHERE id = ?",
+                    (cleaned, slug, category_id),
+                )
+            else:
+                parent = self._checked_parent(connection, parent_id, moving=category_id)
+                cursor = connection.execute(
+                    "UPDATE categories SET name = ?, slug = ?, parent_id = ? WHERE id = ?",
+                    (cleaned, slug, parent, category_id),
+                )
             if not cursor.rowcount:
                 raise CatalogError("Category not found")
         self._checkpoint()
@@ -230,20 +294,53 @@ class CatalogService:
             ).fetchone()[0]
             if template_count:
                 raise CatalogError("Only empty categories can be deleted")
+            # A parent looks empty -- it never holds mockups itself -- so
+            # without this the shelves under it would be orphaned by a click.
+            children = connection.execute(
+                "SELECT COUNT(*) FROM categories WHERE parent_id = ?", (category_id,)
+            ).fetchone()[0]
+            if children:
+                raise CatalogError(
+                    f"This category still holds {children} sub-categories. "
+                    "Move or delete them first."
+                )
             cursor = connection.execute("DELETE FROM categories WHERE id = ?", (category_id,))
             if not cursor.rowcount:
                 raise CatalogError("Category not found")
         self._checkpoint()
+
     def list_categories(self, *, active_only: bool = False) -> list[dict[str, Any]]:
+        """Every shelf, each knowing its parent and what sits under it.
+
+        The order is the order the sidebar draws: a parent, then its children,
+        then the next parent -- so the list can be rendered straight through
+        without the browser having to rebuild the tree.
+        """
         condition = "WHERE t.status = 'active'" if active_only else ""
         query = f"""
-            SELECT c.id, c.name, c.slug, COUNT(t.template_id) AS template_count
+            SELECT c.id, c.name, c.slug, c.parent_id, COUNT(t.template_id) AS template_count
             FROM categories c LEFT JOIN templates t ON t.category_id = c.id
             {condition}
             GROUP BY c.id ORDER BY c.name COLLATE NOCASE
         """
         with self._connect() as connection:
-            return [dict(row) for row in connection.execute(query).fetchall()]
+            rows = [dict(row) for row in connection.execute(query).fetchall()]
+
+        by_parent: dict[Any, list[dict[str, Any]]] = {}
+        for row in rows:
+            by_parent.setdefault(row["parent_id"], []).append(row)
+        ordered: list[dict[str, Any]] = []
+        for row in by_parent.get(None, []):
+            children = by_parent.get(row["id"], [])
+            row["child_count"] = len(children)
+            # A parent holds shelves, not mockups: what it is worth is the sum
+            # of what is under it, which is the number the sidebar shows.
+            row["template_count"] += sum(child["template_count"] for child in children)
+            ordered.append(row)
+            for child in children:
+                child["child_count"] = 0
+                ordered.append(child)
+        return ordered
 
     def create_template(self, record: dict[str, Any]) -> dict[str, Any]:
         timestamp = utc_now()
@@ -313,8 +410,11 @@ class CatalogService:
         clauses: list[str] = []
         values: list[Any] = []
         if category_slug:
-            clauses.append("c.slug = ?")
-            values.append(category_slug)
+            # A parent holds shelves rather than mockups, so asking for one
+            # means asking for everything on the shelves under it -- otherwise
+            # clicking "Wall Art" would show an empty studio.
+            clauses.append("(c.slug = ? OR p.slug = ?)")
+            values.extend([category_slug, category_slug])
         if status:
             clauses.append("t.status = ?")
             values.append(status)
@@ -323,7 +423,9 @@ class CatalogService:
             rows = connection.execute(
                 f"""
                 SELECT t.*, c.name AS category_name, c.slug AS product_type
-                FROM templates t LEFT JOIN categories c ON c.id = t.category_id
+                FROM templates t
+                LEFT JOIN categories c ON c.id = t.category_id
+                LEFT JOIN categories p ON p.id = c.parent_id
                 {where} ORDER BY t.updated_at DESC
                 """,
                 values,

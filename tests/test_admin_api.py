@@ -4,6 +4,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
@@ -1517,3 +1518,98 @@ def test_batch_detection_runs_the_mode_the_admin_is_working_in(tmp_path: Path, m
     )
     assert refused.status_code == 400
     assert "cannot run over a batch" in refused.get_json()["error"]
+
+
+def test_two_categories_cannot_read_as_one(tmp_path: Path):
+    """A name that differs only in case or spacing is the same name to the eye.
+
+    SQLite compares text case sensitively, so "Wall Art" and "wall art" both
+    fitted the unique column; the slug collision was quietly resolved with a
+    -2 suffix, and the sidebar ended up with two entries nobody could tell
+    apart. Renaming already refused that -- creating has to as well.
+    """
+    from services.catalog_service import CatalogError, CatalogService
+
+    catalog = CatalogService(tmp_path / "catalog.sqlite3")
+    catalog.initialize(tmp_path / "templates")
+    original = catalog.create_category("Vertical Wall Art")
+
+    for twin in ("vertical wall art", "VERTICAL WALL ART", "  Vertical   Wall Art  "):
+        with pytest.raises(CatalogError, match="already exists"):
+            catalog.create_category(twin)
+
+    # A name that is genuinely different is still allowed.
+    other = catalog.create_category("Variant Wall Art")
+    assert other["slug"] == "variant-wall-art"
+    assert len(catalog.list_categories()) == 2
+
+    # ...and renaming onto an existing name is refused the same way.
+    with pytest.raises(CatalogError, match="already exists"):
+        catalog.update_category(other["id"], "vertical wall art")
+
+    # Spacing is normalised rather than preserved, so no invisible twins.
+    spaced = catalog.create_category("  Square   Wall  Art ")
+    assert spaced["name"] == "Square Wall Art"
+    assert catalog.get_category(original["id"])["name"] == "Vertical Wall Art"
+
+
+def test_categories_group_one_level_under_a_parent(tmp_path: Path):
+    """A parent names the product, the shelves under it name the shape.
+
+    That is what lets a shelf be called "Portrait" instead of "Vertical Wall
+    Art Frame". A parent holds no mockups itself, so asking for one means
+    asking for everything on the shelves beneath it -- and it cannot be deleted
+    out from under them.
+    """
+    from services.catalog_service import CatalogError, CatalogService
+
+    catalog = CatalogService(tmp_path / "catalog.sqlite3")
+    catalog.initialize(tmp_path / "templates")
+    parent = catalog.create_category("Wall Art")
+    portrait = catalog.create_category("Portrait", parent_id=parent["id"])
+    catalog.create_category("Wide", parent_id=parent["id"])
+    loose = catalog.create_category("Uncategorised")
+
+    base = {
+        "canvas_width": 10,
+        "canvas_height": 10,
+        "orientation": "portrait",
+        "status": "active",
+    }
+    for index in range(3):
+        catalog.create_template(
+            {**base, "template_id": f"t{index}", "name": f"m{index}", "category_id": portrait["id"]}
+        )
+
+    # The listing reads in the order the sidebar draws, and a parent counts
+    # what is under it.
+    listing = catalog.list_categories()
+    assert [row["name"] for row in listing] == ["Uncategorised", "Wall Art", "Portrait", "Wide"]
+    wall_art = next(row for row in listing if row["name"] == "Wall Art")
+    assert wall_art["template_count"] == 3
+    assert wall_art["child_count"] == 2
+    assert next(row for row in listing if row["name"] == "Portrait")["parent_id"] == parent["id"]
+
+    # Asking for the parent asks for its shelves.
+    assert len(catalog.list_templates(category_slug="wall-art")) == 3
+    assert len(catalog.list_templates(category_slug="portrait")) == 3
+    assert catalog.list_templates(category_slug="uncategorised") == []
+
+    # One level only, and never itself.
+    with pytest.raises(CatalogError, match="one level deep"):
+        catalog.create_category("Deeper", parent_id=portrait["id"])
+    with pytest.raises(CatalogError, match="its own parent"):
+        catalog.update_category(parent["id"], "Wall Art", parent_id=parent["id"])
+    with pytest.raises(CatalogError, match="sub-categories"):
+        catalog.update_category(parent["id"], "Wall Art", parent_id=loose["id"])
+
+    # A parent looks empty but is not: deleting it would orphan its shelves.
+    with pytest.raises(CatalogError, match="sub-categories"):
+        catalog.delete_empty_category(parent["id"])
+
+    # Renaming a shelf leaves it where it is.
+    renamed = catalog.update_category(portrait["id"], "Tall")
+    assert renamed["parent_id"] == parent["id"]
+    # ...and it can be lifted out deliberately.
+    lifted = catalog.update_category(portrait["id"], "Tall", parent_id=None)
+    assert lifted["parent_id"] is None

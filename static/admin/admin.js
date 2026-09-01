@@ -416,14 +416,16 @@ import {
   }
 
   function renderCategories() {
+    // The list arrives in tree order -- a parent, then its shelves -- so it is
+    // drawn straight through, with the children stepped in.
     $("categories").innerHTML = state.categories.map((category) => `
-      <div class="category-row ${state.selectedCategory && state.selectedCategory.id === category.id ? "selected" : ""}">
+      <div class="category-row ${category.parent_id ? "is-child" : ""} ${category.child_count ? "is-parent" : ""} ${state.selectedCategory && state.selectedCategory.id === category.id ? "selected" : ""}">
         <button class="category category-select" data-category="${category.id}">
           <span class="category-name">${escapeHtml(category.name)}</span><span class="count">${category.template_count}</span>
         </button>
         <div class="category-actions">
           <button class="category-action category-rename" type="button" data-category="${category.id}" aria-label="Rename ${escapeAttr(category.name)}" title="Rename category">✎</button>
-          <button class="category-action category-delete" type="button" data-category="${category.id}" aria-label="Delete ${escapeAttr(category.name)}" title="${category.template_count > 0 ? "Only empty categories can be deleted" : "Delete empty category"}" ${category.template_count > 0 ? "disabled" : ""}>×</button>
+          <button class="category-action category-delete" type="button" data-category="${category.id}" aria-label="Delete ${escapeAttr(category.name)}" title="${category.child_count > 0 ? "Move or delete its sub-categories first" : category.template_count > 0 ? "Only empty categories can be deleted" : "Delete empty category"}" ${category.template_count > 0 || category.child_count > 0 ? "disabled" : ""}>×</button>
         </div>
       </div>
     `).join("") || '<div class="empty">Create a product category to begin.</div>';
@@ -3783,6 +3785,15 @@ import {
   });
   $("openCategory").onclick = () => {
     if (state.busy) return;
+    const parents = state.categories.filter((category) => !category.parent_id);
+    $("newCategoryParent").innerHTML = ['<option value="">Nothing — a top-level category</option>']
+      .concat(parents.map((parent) => `<option value="${parent.id}">${escapeHtml(parent.name)}</option>`))
+      .join("");
+    // Creating from inside a shelf almost always means another shelf beside it.
+    const selected = state.selectedCategory;
+    if (selected) {
+      $("newCategoryParent").value = String(selected.parent_id || selected.id);
+    }
     $("categoryModal").classList.add("open");
   };
   $("cancelCategory").onclick = () => $("categoryModal").classList.remove("open");
@@ -3796,7 +3807,10 @@ import {
     try {
       const payload = await api("/api/admin/categories", {
         method: "POST",
-        body: JSON.stringify({ name: $("newCategory").value })
+        body: JSON.stringify({
+          name: $("newCategory").value,
+          parent_id: Number($("newCategoryParent").value) || null,
+        })
       });
       $("newCategory").value = "";
       $("categoryModal").classList.remove("open");

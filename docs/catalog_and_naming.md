@@ -103,3 +103,44 @@ python -m scripts.sort_templates            # show what it would move
 python -m scripts.sort_templates --apply    # move them
 ```
 
+
+## Categories: one parent, one level of shelves
+
+A category groups one level deep. The parent names the product; the shelves
+under it name the shape and what they hold, which is what lets a shelf be
+called `Portrait` rather than `Vertical Wall Art Frame`:
+
+```
+Wall Art
+├── MAIN Portrait      the image Etsy shows in search, tall
+├── MAIN Square
+├── MAIN Wide
+├── Portrait           ordinary single-frame mockups
+├── Wide
+├── Square
+├── Portrait Sets      multi-frame mockups
+├── Wide Sets
+└── Mixed Sets         sets whose frames are not all one shape
+```
+
+The rules the catalog enforces:
+
+- **One level.** A shelf cannot itself become a parent, and nothing can be its
+  own parent. Deeper nesting is a folder tree nobody asked for, and the sidebar
+  would have to guess how far to indent.
+- **A parent holds shelves, not mockups.** Asking for `wall-art` returns
+  everything on the shelves beneath it, and the sidebar shows the sum.
+- **A parent cannot be deleted while shelves sit under it.** It looks empty —
+  it never holds mockups itself — so without that check one click would orphan
+  them.
+- **Names are unique across the whole catalog, case- and space-insensitively.**
+  SQLite compares text case sensitively, so `Wall Art` and `wall art` both fit
+  the unique column and the slug collision was quietly resolved with a `-2`
+  suffix; the sidebar ended up with two entries the eye reads as one.
+- **MAIN is still read from the name.** A category whose name starts with
+  `MAIN` holds the hero mockups, and templates filed there carry the `MAIN-`
+  prefix automatically — see the naming rule above.
+
+The slug follows the name, and the slug is the `product_type` the render API
+takes. Renaming a category changes it, so any caller that pins a product type
+by string needs updating with it.
