@@ -1358,3 +1358,61 @@ def test_main_category_templates_are_named_so_the_category_shows(tmp_path):
     renamed = catalog.update_template("t_main", {"name": "MAIN-V1-4"})
     assert renamed["name"] == "MAIN-V1-4"
     assert catalog.update_template("t_main", {"name": "V1-5"})["name"] == "MAIN-V1-5"
+
+
+def test_an_admin_import_is_not_held_to_the_public_api_limit(tmp_path: Path):
+    """Twenty mockups is ordinary admin work, and it does not fit in 32MB.
+
+    The application-wide ceiling exists for the public render API, where a
+    request is one artwork from anyone at all. Measured on this studio's own
+    catalog, twenty mockups come to 40MB typically and 73MB at their largest --
+    so the admin's own routes raise the ceiling for themselves, and the public
+    one keeps the limit it was given.
+    """
+    app = build_app(tmp_path)
+    app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
+    app.config["ADMIN_MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+    client = app.test_client()
+    csrf = login(client)
+
+    category = client.post(
+        "/api/admin/categories", json={"name": "Bulk"}, headers={"X-CSRF-Token": csrf}
+    ).get_json()["category"]
+
+    # Well over the public ceiling, well under the admin's.
+    files = [(image_bytes((900, 900)), f"bulk_{index}.png") for index in range(6)]
+    payload = {"category_id": str(category["id"]), "mockups": files}
+    imported = client.post(
+        "/api/admin/templates/import",
+        data=payload,
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 201, imported.get_json()
+    assert len(imported.get_json()["templates"]) == 6
+
+    # The public render endpoint still answers to the smaller limit. Noise,
+    # because a flat colour compresses to a few kilobytes however large it is.
+    import os
+
+    noisy = io.BytesIO()
+    Image.frombytes("RGB", (400, 400), os.urandom(400 * 400 * 3)).save(noisy, format="PNG")
+    noisy.seek(0)
+    too_big = client.post(
+        "/api/mockups/render",
+        data={
+            "mode": "simple",
+            "template_id": "whatever",
+            "artwork": (noisy, "artwork.png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert too_big.status_code == 413
+    problem = too_big.get_json()
+    # The refusal says how big it was and what the limit is, not just "too large".
+    assert problem["limit_bytes"] == 64 * 1024
+    assert problem["sent_bytes"] > problem["limit_bytes"]
+    assert "MB" in problem["error"]
+    # ...and points at the setting that actually governs this route.
+    assert problem["setting"] == "MAX_CONTENT_LENGTH"
+    assert "ADMIN_MAX_CONTENT_LENGTH" not in problem["error"]

@@ -36,6 +36,17 @@ if not _max_content:
     MAX_CONTENT_LENGTH = DEFAULT_MAX_CONTENT_LENGTH
 else:
     MAX_CONTENT_LENGTH = int(_max_content) or None
+# The ceiling above is aimed at the public render API, where a request is one
+# artwork and anyone can send one. The admin's own uploads are a different
+# thing: importing twenty mockups is normal work, and twenty of this studio's
+# mockups measured 40MB typically and 73MB at their largest -- so the admin
+# routes lift the ceiling for themselves, and only for themselves.
+DEFAULT_ADMIN_MAX_CONTENT_LENGTH = 512 * 1024 * 1024
+_admin_max_content = os.getenv("ADMIN_MAX_CONTENT_LENGTH", "").strip()
+if not _admin_max_content:
+    ADMIN_MAX_CONTENT_LENGTH = DEFAULT_ADMIN_MAX_CONTENT_LENGTH
+else:
+    ADMIN_MAX_CONTENT_LENGTH = int(_admin_max_content) or None
 ENABLE_SIMPLE_MODE = _enabled("ENABLE_SIMPLE_MODE", True)
 ENABLE_PSD_MODE = _enabled("ENABLE_PSD_MODE", False)
 ENABLE_AI_MODE = _enabled("ENABLE_AI_MODE", False)
@@ -49,6 +60,7 @@ class Config:
     SIZE_GUIDES_FOLDER = SIZE_GUIDES_FOLDER
     DATABASE_PATH = DATABASE_PATH
     MAX_CONTENT_LENGTH = MAX_CONTENT_LENGTH
+    ADMIN_MAX_CONTENT_LENGTH = ADMIN_MAX_CONTENT_LENGTH
     ENABLE_SIMPLE_MODE = ENABLE_SIMPLE_MODE
     ENABLE_PSD_MODE = ENABLE_PSD_MODE
     ENABLE_AI_MODE = ENABLE_AI_MODE

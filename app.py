@@ -5,7 +5,7 @@ from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -92,7 +92,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     import time
     import uuid
 
-    from flask import g, request
+    from flask import g
 
     @app.before_request
     def _start_telemetry():
@@ -196,7 +196,28 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_large_upload(_error: RequestEntityTooLarge):
-        return jsonify({"success": False, "error": "Upload exceeds size limit"}), 413
+        # Say what the limit is and which one was hit: "too large" alone leaves
+        # the admin guessing whether to send fewer files or change a setting.
+        public_limit = app.config.get("MAX_CONTENT_LENGTH") or 0
+        limit = request.max_content_length or public_limit
+        sent = request.content_length or 0
+        # Name the knob that actually applies: the admin routes raise their own
+        # ceiling, so pointing at the wrong variable sends the reader nowhere.
+        setting = "MAX_CONTENT_LENGTH" if limit == public_limit else "ADMIN_MAX_CONTENT_LENGTH"
+        return jsonify(
+            {
+                "success": False,
+                "error": (
+                    f"Upload is {sent / 1048576:.0f}MB, over the {limit / 1048576:.0f}MB limit "
+                    f"for this request. Send fewer files, or raise {setting}."
+                    if limit
+                    else "Upload exceeds size limit"
+                ),
+                "limit_bytes": limit,
+                "sent_bytes": sent,
+                "setting": setting,
+            }
+        ), 413
 
     return app
 

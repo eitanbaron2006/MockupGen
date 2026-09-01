@@ -255,6 +255,26 @@ def require_admin_json(handler: Callable):
     return wrapped
 
 
+def allow_large_upload(handler: Callable):
+    """Lift the request ceiling for one admin route, and no further.
+
+    The application-wide limit protects the public render API, where a request
+    is one artwork from anyone at all. It has no business standing between the
+    administrator and their own mockups: importing twenty of them is ordinary
+    work that runs to tens of megabytes. The allowance is raised per request,
+    so nothing outside these routes is affected.
+    """
+
+    @wraps(handler)
+    def wrapper(*args, **kwargs):
+        limit = current_app.config.get("ADMIN_MAX_CONTENT_LENGTH")
+        if limit:
+            request.max_content_length = int(limit)
+        return handler(*args, **kwargs)
+
+    return wrapper
+
+
 def require_csrf(handler: Callable):
     @wraps(handler)
     def wrapped(*args, **kwargs):
@@ -424,6 +444,7 @@ def get_admin_mockup_scenes():
 @admin_routes.post("/api/admin/mockups/generate")
 @require_admin_json
 @require_csrf
+@allow_large_upload
 def generate_admin_mockup():
     """Draw a mockup, measure its green, and keep it only if it can be used.
 
@@ -688,6 +709,7 @@ def _checked_ratio() -> str:
 @admin_routes.post("/api/admin/size-guides")
 @require_admin_json
 @require_csrf
+@allow_large_upload
 def create_admin_size_guide():
     upload = request.files.get("guide")
     if upload is None or not upload.filename:
@@ -714,6 +736,7 @@ def create_admin_size_guide():
 @admin_routes.post("/api/admin/size-guides/generate")
 @require_admin_json
 @require_csrf
+@allow_large_upload
 def generate_admin_size_guide():
     """Draw a chart with Vertex and keep it, so it is drawn once and not per render."""
     if not current_app.config.get("ENABLE_AI_MODE", False):
@@ -796,6 +819,7 @@ def get_admin_style_example(style_key: str):
 @admin_routes.post("/api/admin/size-guides/styles/<style_key>/example")
 @require_admin_json
 @require_csrf
+@allow_large_upload
 def set_admin_style_example(style_key: str):
     """The picture a style should be drawn in the manner of."""
     if not any(preset["key"] == style_key for preset in GUIDE_PROMPT_PRESETS):
@@ -864,6 +888,7 @@ def get_admin_templates():
 @admin_routes.post("/api/admin/templates/import")
 @require_admin_json
 @require_csrf
+@allow_large_upload
 def import_admin_templates():
     try:
         category_id = int(request.form.get("category_id", ""))
