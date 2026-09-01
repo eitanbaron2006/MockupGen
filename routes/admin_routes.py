@@ -177,6 +177,41 @@ def _centered_artwork_area(width: int, height: int) -> dict[str, int]:
     }
 
 
+# The studio's own submode names and the detector's mode names are not the same
+# words, and only one screen knew the translation. Batch detection did not, so
+# it silently ran the provider's default -- a different algorithm from the one
+# the button beside it ran, on the same mockup.
+_SUBMODE_TO_MODE = {
+    "auto": "auto",
+    "green_frames": "green_frames_mockups",
+    "color_pick": "color_pick",
+    "frame_points": "frame_points",
+    "none": "auto",
+}
+
+# Two of them are conversations, not settings: they need a colour sampled or
+# points clicked on that particular mockup, so there is nothing to run
+# unattended across twenty of them.
+INTERACTIVE_MODES = {"color_pick", "frame_points"}
+
+
+def detection_mode_in_use(explicit: str | None = None) -> str:
+    """The mode the admin is working in right now.
+
+    An explicit mode from the request wins -- that is the single Detect button
+    saying which flow it ran. Otherwise it is read from the live submode the
+    admin has selected in the app, which is what they expect every detection to
+    follow, and only then from the stored default.
+    """
+    if explicit:
+        return _SUBMODE_TO_MODE.get(explicit, explicit)
+    settings = catalog().get_settings()
+    submode = str(settings.get("CLASSIC_SUBMODE") or "").strip()
+    if submode:
+        return _SUBMODE_TO_MODE.get(submode, submode)
+    return str(settings.get("CLASSIC_INTERNAL_MODE") or "auto")
+
+
 def save_green_frame_mask_if_needed(
     provider: Any, background: Path, mode: str, proposal: Any = None
 ) -> str | None:
@@ -1218,7 +1253,7 @@ def detect_admin_template(template_id: str):
         background = Path(current_app.config["TEMPLATES_FOLDER"]) / template_id / "background.png"
     try:
         payload = request.get_json(silent=True) or {}
-        mode = payload.get("mode", "auto")
+        mode = detection_mode_in_use(str(payload.get("mode") or "").strip() or None)
         point = payload.get("point")
 
         if mode in ("color_pick", "frame_points"):
@@ -1299,6 +1334,14 @@ def batch_detect_admin_templates():
     if not isinstance(template_ids, list) or not template_ids:
         return json_error("Invalid or empty template_ids list", 400)
 
+    mode = detection_mode_in_use(str(data.get("mode") or "").strip() or None)
+    if mode in INTERACTIVE_MODES:
+        return json_error(
+            f"{mode.replace('_', ' ').title()} needs a colour or points picked on each mockup, "
+            "so it cannot run over a batch. Switch to Auto detect or Green frames first.",
+            400,
+        )
+
     try:
         provider = build_provider(catalog().get_settings(), current_app.config)
     except Exception as e:
@@ -1319,8 +1362,12 @@ def batch_detect_admin_templates():
             background = templates_folder / template_id / "background.png"
 
         try:
-            proposal = provider.detect(background)
-            mask_name = save_green_frame_mask_if_needed(provider, background, "auto", proposal)
+            # The same call the single Detect button makes, with the same mode.
+            if provider.__class__.__name__ == "ClassicDetectionProvider":
+                proposal = provider.detect(background, mode=mode)
+            else:
+                proposal = provider.detect(background)
+            mask_name = save_green_frame_mask_if_needed(provider, background, mode, proposal)
             changes = {
                 "artwork_area": proposal.artwork_area,
                 "orientation": orientation_for_size(

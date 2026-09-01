@@ -599,9 +599,14 @@ import {
     renderEditor();
 
     try {
+      // Batch runs whatever the studio is set to right now -- the same engine
+      // and the same classic submode the Detect button beside it would run.
       const response = await api("/api/admin/templates/batch-detect", {
         method: "POST",
-        body: JSON.stringify({ template_ids: ids })
+        body: JSON.stringify({
+          template_ids: ids,
+          mode: state.settings.CLASSIC_SUBMODE || "auto",
+        })
       });
       if (response.success && response.results) {
         let errorCount = 0;

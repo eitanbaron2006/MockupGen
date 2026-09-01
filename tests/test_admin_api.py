@@ -1416,3 +1416,104 @@ def test_an_admin_import_is_not_held_to_the_public_api_limit(tmp_path: Path):
     # ...and points at the setting that actually governs this route.
     assert problem["setting"] == "MAX_CONTENT_LENGTH"
     assert "ADMIN_MAX_CONTENT_LENGTH" not in problem["error"]
+
+
+def test_batch_detection_runs_the_mode_the_admin_is_working_in(tmp_path: Path, monkeypatch):
+    """Both buttons must detect the same way, or they disagree about a mockup.
+
+    Batch detection sent no mode at all, so the provider fell back to a stored
+    default read from a different setting than the one the studio writes when
+    the admin picks a submode. On one green-screen mockup that meant geometry
+    and five frames from the batch against green frames and nine from the
+    Detect button beside it.
+    """
+    import routes.admin_routes as admin_routes
+    from services.detection_service import DetectionProposal
+
+    app = build_app(tmp_path)
+    client = app.test_client()
+    csrf = login(client)
+    category = client.post(
+        "/api/admin/categories", json={"name": "Green"}, headers={"X-CSRF-Token": csrf}
+    ).get_json()["category"]
+    imported = client.post(
+        "/api/admin/templates/import",
+        data={"category_id": str(category["id"]), "mockups": [(image_bytes(), "green_one.png")]},
+        headers={"X-CSRF-Token": csrf},
+        content_type="multipart/form-data",
+    ).get_json()["templates"]
+    template_id = imported[0]["template_id"]
+
+    seen: list[str | None] = []
+
+    class RecordingProvider:
+        name = "classic"
+
+        def detect(self, _path, mode=None, point=None):
+            seen.append(mode)
+            return DetectionProposal(
+                artwork_area={"x": 1, "y": 1, "width": 10, "height": 10},
+                confidence=0.9,
+                reason="test",
+                provider="classic",
+                raw_artwork_area={"mode": mode or "auto", "regions": []},
+            )
+
+    RecordingProvider.__name__ = "ClassicDetectionProvider"
+    monkeypatch.setattr(admin_routes, "build_provider", lambda *_args, **_kwargs: RecordingProvider())
+
+    # The studio is set to green frames, so both routes must run green frames.
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "green_frames"},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    single = client.post(
+        f"/api/admin/templates/{template_id}/detect",
+        json={"mode": "green_frames_mockups"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert single.status_code == 200
+    batch = client.post(
+        "/api/admin/templates/batch-detect",
+        json={"template_ids": [template_id]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert batch.status_code == 200
+    assert seen == ["green_frames_mockups", "green_frames_mockups"]
+    assert (
+        single.get_json()["proposal"]["raw_artwork_area"]["mode"]
+        == batch.get_json()["results"][0]["proposal"]["raw_artwork_area"]["mode"]
+    )
+
+    # Switch the studio to auto, and both follow it there too.
+    seen.clear()
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "auto"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.post(
+        f"/api/admin/templates/{template_id}/detect", json={}, headers={"X-CSRF-Token": csrf}
+    )
+    client.post(
+        "/api/admin/templates/batch-detect",
+        json={"template_ids": [template_id]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert seen == ["auto", "auto"]
+
+    # A mode that needs a colour sampled on each mockup is refused, not guessed.
+    client.put(
+        "/api/admin/settings/detection",
+        json={"DETECTION_PROVIDER": "classic", "CLASSIC_SUBMODE": "color_pick"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    refused = client.post(
+        "/api/admin/templates/batch-detect",
+        json={"template_ids": [template_id]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert refused.status_code == 400
+    assert "cannot run over a batch" in refused.get_json()["error"]
