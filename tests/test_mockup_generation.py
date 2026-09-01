@@ -235,3 +235,41 @@ def test_the_green_inspector_reads_the_pixels_not_the_promise():
     empty = inspect_green(Image.new("RGB", (400, 300), (210, 205, 195)), expected_frames=1)
     assert empty["found_frames"] == 0
     assert empty["usable"] is False
+
+
+def test_a_generated_mockup_is_named_like_an_imported_one(tmp_path, monkeypatch):
+    """Drawn or uploaded, a mockup arrives the same way.
+
+    It was the one thing in the studio still called after where it came from
+    ("AI Living room"), while everything else carried a name that says its
+    shape and how many openings it has.
+    """
+    client, _ = studio(tmp_path)
+    client.application.config["CLASSIC_IMPORT_MODE"] = "green_frames"
+    csrf = login(client)
+    enable_vertex(client, monkeypatch, room_with_green(2))
+    category = a_category(client, "Portrait Sets")
+
+    made = client.post(
+        "/api/admin/mockups/generate",
+        json={"category_id": category, "scene": "living", "frames": 2},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()
+
+    # Two portrait openings: P2-1, exactly as an import of the same picture.
+    assert made["template"]["name"] == "P2-1"
+    # ...and the next one counts on rather than colliding.
+    again = client.post(
+        "/api/admin/mockups/generate",
+        json={"category_id": category, "scene": "bedroom", "frames": 2},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()
+    assert again["template"]["name"] == "P2-2"
+
+    # A name the admin typed is theirs, and nothing overwrites it.
+    named = client.post(
+        "/api/admin/mockups/generate",
+        json={"category_id": category, "scene": "living", "frames": 2, "name": "Studio hero"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()
+    assert named["template"]["name"] == "Studio hero"

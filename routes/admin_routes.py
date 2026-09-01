@@ -563,15 +563,20 @@ def generate_admin_mockup():
     keep = bool(payload.get("keep", True)) and (report["usable"] or bool(payload.get("force")))
     draft = None
     if keep:
-        name = str(payload.get("name", "")).strip() or f"AI {(scene or SCENE_PRESETS[0])['name']}"
         draft = store_background(
             image,
-            name=name,
+            # A placeholder only: the mockup is named the way an imported one
+            # is, from its own frames, a line below.
+            name=str(payload.get("name", "")).strip() or f"AI {(scene or SCENE_PRESETS[0])['name']}",
             source_filename=f"generated_{uuid4().hex[:12]}.png",
             category_id=category_id,
             drafts_folder=Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
             catalog=catalog(),
         )
+        # A mockup that was drawn arrives the same way one that was uploaded
+        # does: detected, filed by the shape of its openings, and named for it.
+        if not str(payload.get("name", "")).strip():
+            draft = settle_new_templates([draft], category_id=category_id)[0]
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
@@ -928,6 +933,84 @@ def get_admin_templates():
     return jsonify({"templates": templates})
 
 
+def _import_detector():
+    """The detector a newly added mockup meets, set up the way the admin asked.
+
+    What runs on a new mockup is a setting of its own, separate from the mode
+    the studio is in: adding mockups and working on one are different moments.
+    "none" means the frames are left to the admin, and nothing runs.
+    """
+    engine = catalog().get_settings()
+    import_mode = str(
+        engine.get("CLASSIC_IMPORT_MODE")
+        or current_app.config.get("CLASSIC_IMPORT_MODE", "auto")
+    ).strip().lower() or "auto"
+    if import_mode == "none":
+        return None
+    return ClassicDetectionProvider(
+        green_edge_expand=_setting_int(engine, current_app.config, "CLASSIC_GREEN_EDGE_EXPAND", 1),
+        green_tolerance=_setting_int(engine, current_app.config, "CLASSIC_GREEN_TOLERANCE", 130),
+        default_mode="green_frames_mockups" if import_mode == "green_frames" else "auto",
+    )
+
+
+def settle_new_templates(templates: list[dict], *, category_id: int) -> list[dict]:
+    """Detect, file and name mockups that have just arrived.
+
+    Imported or generated, a mockup reaches the catalog the same way and should
+    leave this step the same way: its frames found, its shelf decided by the
+    shape of those frames, and a name that says both. Sharing the step is what
+    keeps a generated mockup from being the one thing in the studio still
+    called after the file it came from.
+    """
+    detector = _import_detector()
+    if detector is None:
+        return templates
+
+    # Filing happens among the shelves beside the one the mockup was aimed at,
+    # so it never leaves the product it was added to.
+    chosen = catalog().get_category(category_id) or {}
+    parent_id = chosen.get("parent_id") or chosen.get("id")
+    shelves = {
+        shelf["name"]: shelf
+        for shelf in catalog().list_categories()
+        if shelf.get("parent_id") == parent_id
+    }
+    taken_names = [record["name"] for record in catalog().list_templates()]
+
+    settled: list[dict] = []
+    for template in templates:
+        if template["status"] == "active":
+            settled.append(template)
+            continue
+        proposal = detector.detect(
+            draft_asset_path(
+                Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
+                template["template_id"],
+                "background.png",
+            )
+        )
+        changes = {
+            "artwork_area": proposal.artwork_area,
+            "orientation": orientation_for_size(
+                proposal.artwork_area["width"],
+                proposal.artwork_area["height"],
+            ),
+            "detection_provider": proposal.provider,
+            "detection_confidence": proposal.confidence,
+            # Kept, so the frames the detector found are not thrown away here
+            # and asked for again by the next screen that needs them.
+            "raw_artwork_area": proposal.raw_artwork_area,
+        }
+        changes.update(
+            _filing_for(template, proposal, shelves=shelves, taken_names=taken_names)
+        )
+        filed = catalog().update_template(template["template_id"], changes)
+        taken_names.append(filed["name"])
+        settled.append(filed)
+    return settled
+
+
 def _filing_for(
     template: dict, proposal: Any, *, shelves: dict[str, dict], taken_names: list[str]
 ) -> dict[str, Any]:
@@ -964,62 +1047,7 @@ def import_admin_templates():
             drafts_folder=Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
             catalog=catalog(),
         )
-        # What runs on a newly added mockup is a setting of its own, separate
-        # from the mode the studio is in: adding mockups and working on one are
-        # different moments. "none" imports them and leaves the frames to you.
-        engine = catalog().get_settings()
-        import_mode = str(
-            engine.get("CLASSIC_IMPORT_MODE")
-            or current_app.config.get("CLASSIC_IMPORT_MODE", "auto")
-        ).strip().lower() or "auto"
-        if import_mode == "none":
-            return jsonify({"success": True, "templates": templates}), 201
-        detector = ClassicDetectionProvider(
-            green_edge_expand=_setting_int(engine, current_app.config, "CLASSIC_GREEN_EDGE_EXPAND", 1),
-            green_tolerance=_setting_int(engine, current_app.config, "CLASSIC_GREEN_TOLERANCE", 130),
-            default_mode="green_frames_mockups" if import_mode == "green_frames" else "auto",
-        )
-        # Filing happens among the shelves beside the one the admin imported
-        # into, so an import never leaves the product it was aimed at.
-        chosen = catalog().get_category(category_id) or {}
-        parent_id = chosen.get("parent_id") or chosen.get("id")
-        shelves = {
-            shelf["name"]: shelf
-            for shelf in catalog().list_categories()
-            if shelf.get("parent_id") == parent_id
-        }
-        taken_names = [record["name"] for record in catalog().list_templates()]
-        detected_templates = []
-        for template in templates:
-            if template["status"] == "active":
-                detected_templates.append(template)
-                continue
-            proposal = detector.detect(
-                draft_asset_path(
-                    Path(current_app.config["DRAFT_TEMPLATES_FOLDER"]),
-                    template["template_id"],
-                    "background.png",
-                )
-            )
-            changes = {
-                "artwork_area": proposal.artwork_area,
-                "orientation": orientation_for_size(
-                    proposal.artwork_area["width"],
-                    proposal.artwork_area["height"],
-                ),
-                "detection_provider": proposal.provider,
-                "detection_confidence": proposal.confidence,
-                # Kept, so the frames the detector found are not thrown away
-                # here and asked for again by the next screen that needs them.
-                "raw_artwork_area": proposal.raw_artwork_area,
-            }
-            changes.update(
-                _filing_for(template, proposal, shelves=shelves, taken_names=taken_names)
-            )
-            filed = catalog().update_template(template["template_id"], changes)
-            taken_names.append(filed["name"])
-            detected_templates.append(filed)
-        templates = detected_templates
+        templates = settle_new_templates(templates, category_id=category_id)
     except (ValueError, TemplateImportError) as error:
         return json_error(str(error) or "Category is required", 400)
     except DetectionError as error:
