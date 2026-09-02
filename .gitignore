@@ -23,3 +23,5 @@ models/*
 *.db
 
 .claude/settings.local.json
+print_outputs/*
+!print_outputs/.gitkeep

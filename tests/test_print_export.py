@@ -203,6 +203,23 @@ def test_managing_the_catalog_needs_the_administrator(tmp_path):
     assert created.get_json()["ratio"]["key"] == "9:16"
 
 
+def test_the_page_is_behind_the_same_login_as_the_studio(tmp_path):
+    client, _ = studio(tmp_path)
+
+    anonymous = client.get("/print")
+    assert anonymous.status_code == 302
+    assert "/admin" in anonymous.headers["Location"]
+
+    login(client)
+    page = client.get("/print")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    # The screen it renders, and the two assets it needs.
+    assert "admin/print.css" in body
+    assert "admin/print.js" in body
+    assert 'id="exportResults"' in body and 'id="setList"' in body and 'id="ratioList"' in body
+
+
 def test_a_ratio_is_refused_rather_than_stored_wrong(tmp_path):
     from services.print_catalog_service import PrintCatalogError, PrintCatalogService
 

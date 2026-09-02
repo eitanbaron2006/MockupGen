@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>MockupGen &middot; Print Files</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}?v={{ asset_version('admin/admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin/print.css') }}?v={{ asset_version('admin/print.css') }}">
+</head>
+
+<body class="print-page">
+  <div class="print-app">
+    <header class="print-topbar">
+      <div class="print-brand-col">
+        <a href="/print" class="brand">Print <em>Files</em><strong>.</strong></a>
+        <div class="print-status-badge">
+          <span class="print-dot"></span>
+          <span id="catalogSummary">Loading the catalog&hellip;</span>
+        </div>
+      </div>
+      <div class="print-controls">
+        <a class="btn compact" href="/admin">&#8592; Mockup Studio</a>
+        <a class="btn compact" href="/server-pulse">Server Pulse</a>
+        <button class="btn compact" id="openSettings" title="Where the AI upscalers live on this machine">
+          <span class="icon">&#9881;</span> Settings
+        </button>
+      </div>
+    </header>
+
+    <div class="print-content">
+      <!-- ---------------------------------------------------- print sets -->
+      <section class="panel print-col">
+        <div class="panel-head">
+          <div>
+            <h2>Print sets</h2>
+            <div class="sub">What one artwork turns into</div>
+          </div>
+          <button class="add-set-btn" id="addSet" title="New print set">+</button>
+        </div>
+        <div class="panel-body print-scroll" id="setList"></div>
+      </section>
+
+      <!-- -------------------------------------------------------- export -->
+      <section class="panel print-col export-col">
+        <div class="panel-head">
+          <div>
+            <h2>Export</h2>
+            <div class="sub" id="exportSub">An artwork in, the files a buyer downloads out</div>
+          </div>
+          <button class="btn compact" id="downloadZip" disabled>
+            <span class="icon">&#8681;</span> Download .zip
+          </button>
+        </div>
+
+        <div class="export-results print-scroll" id="exportResults">
+          <div class="empty">Nothing exported yet.</div>
+        </div>
+
+        <div class="export-dock">
+          <label class="artwork-drop" id="artworkDrop">
+            <input type="file" id="artworkInput" accept="image/*" hidden>
+            <img id="artworkPreview" alt="" hidden>
+            <div class="artwork-hint" id="artworkHint">
+              <strong>Drop the artwork</strong>
+              <span>or click to choose &middot; the original file, full size</span>
+            </div>
+          </label>
+
+          <div class="dock-controls">
+            <div class="dock-field">
+              <span class="dock-label">Print set</span>
+              <select id="exportSet" class="dock-select"></select>
+            </div>
+            <div class="dock-field">
+              <span class="dock-label">Quality</span>
+              <select id="exportQuality" class="dock-select"></select>
+            </div>
+            <div class="dock-note" id="artworkFacts">No artwork chosen.</div>
+            <button class="btn primary" id="runExport" disabled>Export print files</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- ratios -->
+      <section class="panel print-col">
+        <div class="panel-head">
+          <div>
+            <h2>Ratios &amp; sizes</h2>
+            <div class="sub">The pixel canvas behind each shape</div>
+          </div>
+          <button class="add-set-btn" id="addRatio" title="New ratio">+</button>
+        </div>
+        <div class="panel-body print-scroll" id="ratioList"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- --------------------------------------------------------- set editor -->
+  <div class="modal-backdrop" id="setModal">
+    <div class="modal print-modal" role="dialog" aria-modal="true" aria-labelledby="setModalTitle">
+      <div class="modal-head">
+        <h2 id="setModalTitle">Print set</h2>
+        <button class="icon-button" data-close="setModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="stack-field">
+          <span class="dock-label">Set name</span>
+          <input id="setName" class="text-input" placeholder="The full pack" autocomplete="off">
+        </label>
+
+        <div class="mode-choice" id="setMode">
+          <button type="button" class="mode-card" data-mode="matching">
+            <strong>Its own ratio</strong>
+            <span>One file, in the shape the artwork already has</span>
+          </button>
+          <button type="button" class="mode-card" data-mode="chosen">
+            <strong>Chosen ratios</strong>
+            <span>Every shape you pick, safe-fit with margins</span>
+          </button>
+        </div>
+
+        <div class="stack-field" id="setRatiosField">
+          <span class="dock-label">Ratios in this set</span>
+          <div class="ratio-picker" id="setRatios"></div>
+        </div>
+
+        <div class="stack-row">
+          <label class="stack-field grow">
+            <span class="dock-label">Quality</span>
+            <select id="setQuality" class="dock-select"></select>
+          </label>
+          <label class="toggle-field">
+            <input type="checkbox" id="setGuide" checked>
+            <span>Include the printing guide</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close="setModal">Cancel</button>
+        <button class="btn primary" id="saveSet">Save set</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- ratio editor -->
+  <div class="modal-backdrop" id="ratioModal">
+    <div class="modal print-modal narrow" role="dialog" aria-modal="true" aria-labelledby="ratioModalTitle">
+      <div class="modal-head">
+        <h2 id="ratioModalTitle">Ratio</h2>
+        <button class="icon-button" data-close="ratioModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="stack-row">
+          <label class="stack-field">
+            <span class="dock-label">Key</span>
+            <input id="ratioKey" class="text-input narrow-input" placeholder="2:3" autocomplete="off">
+          </label>
+          <label class="stack-field grow">
+            <span class="dock-label">Name</span>
+            <input id="ratioName" class="text-input" placeholder="2:3 Ratio" autocomplete="off">
+          </label>
+        </div>
+        <div class="stack-row">
+          <label class="stack-field">
+            <span class="dock-label">Width (px)</span>
+            <input id="ratioWidth" class="text-input narrow-input" type="number" min="100" max="30000">
+          </label>
+          <label class="stack-field">
+            <span class="dock-label">Height (px)</span>
+            <input id="ratioHeight" class="text-input narrow-input" type="number" min="100" max="30000">
+          </label>
+          <div class="ratio-proof" id="ratioProof"></div>
+        </div>
+        <label class="stack-field">
+          <span class="dock-label">Prints at (inches)</span>
+          <input id="ratioSizes" class="text-input" placeholder="4x6, 8x12, 12x18, 24x36" autocomplete="off">
+        </label>
+        <div class="modal-note">Stored portrait. A landscape artwork turns the canvas on its side by itself.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close="ratioModal">Cancel</button>
+        <button class="btn primary" id="saveRatio">Save ratio</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------------- settings -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal print-modal narrow" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">Print settings</h2>
+        <button class="icon-button" data-close="settingsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-note">
+          The two AI qualities run external programs. Point at them here and they become
+          selectable; leave them empty and the studio says so instead of failing mid-export.
+        </div>
+        <label class="stack-field">
+          <span class="dock-label">Real-ESRGAN (realesrgan-ncnn-vulkan.exe)</span>
+          <input id="realesrganPath" class="text-input" placeholder="C:\tools\realesrgan\realesrgan-ncnn-vulkan.exe" autocomplete="off">
+        </label>
+        <label class="stack-field">
+          <span class="dock-label">Topaz Photo AI (tpai.exe)</span>
+          <input id="topazPath" class="text-input" placeholder="C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe" autocomplete="off">
+        </label>
+        <div class="quality-status" id="qualityStatus"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close="settingsModal">Cancel</button>
+        <button class="btn primary" id="saveSettings">Save settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------ confirm -->
+  <div class="modal-backdrop" id="confirmModal">
+    <div class="modal print-modal narrow" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="modal-head">
+        <h2 id="confirmTitle">Delete</h2>
+      </div>
+      <div class="modal-body">
+        <div class="modal-note danger" id="confirmMessage"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" data-close="confirmModal">Cancel</button>
+        <button class="btn danger" id="confirmYes">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- full preview -->
+  <div class="print-preview" id="printPreview">
+    <button class="icon-button preview-close" data-close="printPreview">&times;</button>
+    <img id="previewImage" alt="">
+    <div class="preview-caption" id="previewCaption"></div>
+  </div>
+
+  <div class="print-toast" id="printToast"></div>
+
+  <script type="module" src="{{ url_for('static', filename='admin/print.js') }}?v={{ asset_version('admin/print.js') }}"></script>
+</body>
+
+</html>
