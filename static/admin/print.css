@@ -148,7 +148,7 @@ body.print-page {
   display: flex;
   gap: 10px;
   justify-content: space-between;
-  padding-right: 26px;
+  padding-right: 34px;
 }
 
 .set-card-name {
@@ -202,31 +202,37 @@ body.print-page {
 
 .set-trash {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
   color: var(--faint);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
-  padding: 4px;
+  min-width: 32px;
+  padding: 7px;
   position: absolute;
-  right: 8px;
-  top: 9px;
+  right: 6px;
+  top: 7px;
 }
 
 .set-trash:hover {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
 /* --- Ratio cards -------------------------------------------------------- */
 
+/* A fixed column for the shape, so every name starts at the same place
+   whatever proportion the rectangle happens to be. */
 .ratio-card {
   align-items: center;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 11px;
   cursor: pointer;
-  display: flex;
+  display: grid;
   gap: 11px;
+  grid-template-columns: 74px 1fr auto;
   margin-bottom: 9px;
   padding: 10px 11px;
   position: relative;
@@ -246,8 +252,11 @@ body.print-page {
   height: 46px;
 }
 
+.ratio-card > .ratio-shape {
+  margin: 0 auto;
+}
+
 .ratio-card-body {
-  flex: 1;
   min-width: 0;
 }
 
@@ -268,32 +277,60 @@ body.print-page {
 .ratio-card-sizes {
   color: var(--faint);
   font-size: 10.5px;
+  line-height: 1.45;
   margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .ratio-actions {
+  align-items: center;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 7px;
 }
 
-.ratio-actions button {
+/* These two were 10px hit targets in the first cut -- too small to aim at. */
+.ratio-toggle {
   background: transparent;
-  border: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
   color: var(--faint);
   cursor: pointer;
   font-family: var(--mono);
   font-size: 10px;
-  line-height: 1;
-  padding: 3px 4px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  min-width: 42px;
+  padding: 7px 8px;
 }
 
-.ratio-actions button:hover {
+.ratio-toggle.is-on {
+  border-color: rgba(110, 116, 72, .4);
+  color: var(--success);
+}
+
+.ratio-toggle:hover {
+  border-color: var(--accent);
   color: var(--accent);
 }
+
+.ratio-drop {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  min-width: 42px;
+  padding: 6px 8px;
+}
+
+.ratio-drop:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A built-in ratio carries no trash at all: it is switched off, not removed. */
 
 /* --- The export column -------------------------------------------------- */
 

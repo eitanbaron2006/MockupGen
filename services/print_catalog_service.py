@@ -41,6 +41,13 @@ DEFAULT_RATIOS = (
     ("11:14", "11:14 Ratio", 6600, 8400, "11x14, 22x28"),
     ("ISO A", "A-Series Ratio", 7016, 9933, "A5, A4, A3, A2, A1"),
     ("1:1", "1:1 Square", 7200, 7200, "5x5, 8x8, 10x10, 12x12, 16x16, 20x20, 24x24"),
+    ("5:7", "5:7 Ratio", 5000, 7000, "5x7, 50x70cm"),
+    ("US Letter", "US Letter", 5100, 6600, "8.5x11"),
+    # The two panoramics are stored on their side because that is the shape they
+    # are sold in; target_size turns any ratio to match the artwork, so storing
+    # one landscape costs nothing.
+    ("3:1", "3:1 Panoramic", 10800, 3600, "36x12, 30x10"),
+    ("2:1", "2:1 Panoramic", 10800, 5400, "36x18, 24x12"),
 )
 
 
@@ -76,6 +83,7 @@ class PrintCatalogService:
                     height INTEGER NOT NULL,
                     sizes TEXT NOT NULL DEFAULT '',
                     active INTEGER NOT NULL DEFAULT 1,
+                    builtin INTEGER NOT NULL DEFAULT 0,
                     sort_order INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 );
@@ -95,18 +103,33 @@ class PrintCatalogService:
                 );
                 """
             )
-            seeded = connection.execute("SELECT COUNT(*) FROM ratios").fetchone()[0]
-            if not seeded:
-                # A shop that has one of these already has all of them; an empty
-                # screen would only invite typing the same numbers back in.
-                for order, (key, name, width, height, sizes) in enumerate(DEFAULT_RATIOS):
-                    connection.execute(
-                        """
-                        INSERT INTO ratios(key, name, width, height, sizes, active, sort_order, created_at)
-                        VALUES(?, ?, ?, ?, ?, 1, ?, ?)
-                        """,
-                        (key, name, width, height, sizes, order, utc_now()),
-                    )
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(ratios)")}
+            if "builtin" not in columns:
+                connection.execute("ALTER TABLE ratios ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0")
+
+            # A shop that has one of these already has all of them; an empty
+            # screen would only invite typing the same numbers back in. This
+            # runs every start rather than only on an empty table, so a ratio
+            # added to the list later reaches a database that already exists --
+            # and one the admin switched off or edited is left exactly as it is.
+            known = {
+                str(row["key"]).lower(): row["id"]
+                for row in connection.execute("SELECT id, key FROM ratios")
+            }
+            order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM ratios").fetchone()[0]
+            for key, name, width, height, sizes in DEFAULT_RATIOS:
+                existing = known.get(key.lower())
+                if existing is not None:
+                    connection.execute("UPDATE ratios SET builtin = 1 WHERE id = ?", (existing,))
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO ratios(key, name, width, height, sizes, active, builtin, sort_order, created_at)
+                    VALUES(?, ?, ?, ?, ?, 1, 1, ?, ?)
+                    """,
+                    (key, name, width, height, sizes, order, utc_now()),
+                )
+                order += 1
         self._checkpoint()
 
     # ------------------------------------------------------------- ratios
@@ -144,8 +167,8 @@ class PrintCatalogService:
             order = connection.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM ratios").fetchone()[0]
             cursor = connection.execute(
                 """
-                INSERT INTO ratios(key, name, width, height, sizes, active, sort_order, created_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ratios(key, name, width, height, sizes, active, builtin, sort_order, created_at)
+                VALUES(?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """,
                 (
                     key,
@@ -199,10 +222,22 @@ class PrintCatalogService:
         return self.get_ratio(ratio_id)
 
     def delete_ratio(self, ratio_id: int) -> None:
+        """Only a ratio the admin added themselves.
+
+        The seeded ones are what the shop sells; deleting one would silently
+        stop every set that names it, and there is no way back short of
+        retyping the numbers. Switching it off does the same job and is
+        reversible, so that is the only way out for a built-in.
+        """
+        current = self.get_ratio(ratio_id)
+        if not current:
+            raise PrintCatalogError("Ratio not found")
+        if current.get("builtin"):
+            raise PrintCatalogError(
+                f'"{current["key"]}" is a built-in ratio and cannot be deleted -- switch it off instead'
+            )
         with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM ratios WHERE id = ?", (ratio_id,))
-            if not cursor.rowcount:
-                raise PrintCatalogError("Ratio not found")
+            connection.execute("DELETE FROM ratios WHERE id = ?", (ratio_id,))
         self._checkpoint()
 
     @staticmethod

@@ -45,10 +45,15 @@ async function api(path, options = {}) {
 
 /* --------------------------------------------------------------- drawing */
 
-/** One ratio as a rectangle at its true proportion -- the shape is the label. */
-function shapeHtml(ratio, height = 28, on = false) {
-  const width = Math.max(6, Math.round(height * (ratio.width / ratio.height)));
-  return `<i class="ratio-shape${on ? ' is-on' : ''}" style="width:${width}px;height:${height}px" title="${escapeHtml(ratio.key)}"></i>`;
+/** One ratio as a rectangle at its true proportion -- the shape is the label.
+    It is fitted inside a box rather than hung from its height, because a 3:1
+    panoramic drawn to a 46px height is 138px wide and shoves the card's text
+    out of the column. */
+function shapeHtml(ratio, height = 28, on = false, maxWidth = Math.round(height * 1.55)) {
+  const fit = Math.min(height / ratio.height, maxWidth / ratio.width);
+  const width = Math.max(6, Math.round(ratio.width * fit));
+  const drawn = Math.max(6, Math.round(ratio.height * fit));
+  return `<i class="ratio-shape${on ? ' is-on' : ''}" style="width:${width}px;height:${drawn}px" title="${escapeHtml(ratio.key)}"></i>`;
 }
 
 const modeLabel = (set) => (set.mode === 'chosen' ? plural((set.ratio_keys || []).length, 'ratio') : 'Its own ratio');
@@ -105,8 +110,10 @@ function renderRatios() {
         <div class="ratio-card-sizes" title="${escapeHtml(ratio.sizes || '')}">${escapeHtml(ratio.sizes || 'No sizes listed')}</div>
       </div>
       <div class="ratio-actions">
-        <button data-toggle="${ratio.id}" title="${ratio.active ? 'Stop offering this ratio' : 'Offer this ratio again'}">${ratio.active ? 'ON' : 'OFF'}</button>
-        <button data-drop="${ratio.id}" title="Delete this ratio">&#128465;</button>
+        <button class="ratio-toggle${ratio.active ? ' is-on' : ''}" data-toggle="${ratio.id}" title="${ratio.active ? 'Stop offering this ratio' : 'Offer this ratio again'}">${ratio.active ? 'ON' : 'OFF'}</button>
+        ${ratio.builtin
+          ? ''
+          : `<button class="ratio-drop" data-drop="${ratio.id}" title="Delete this ratio">&#128465;</button>`}
       </div>
     </div>`).join('');
 }
@@ -413,6 +420,9 @@ async function loadRatios() {
   state.ratios = payload.ratios || [];
   state.qualities = payload.qualities || [];
   renderRatios();
+  // The set cards name their quality and draw their ratios, both of which
+  // arrive here -- and the two loads race, so whichever lands second redraws.
+  renderSets();
   renderExportControls();
   renderSummary();
 }

@@ -151,7 +151,8 @@ def delete_print_ratio(ratio_id: int):
     try:
         print_catalog().delete_ratio(ratio_id)
     except PrintCatalogError as error:
-        return json_error(str(error), 404)
+        # A built-in ratio is refused, not missing.
+        return json_error(str(error), 404 if "not found" in str(error).lower() else 400)
     return jsonify({"success": True, "ratio_id": ratio_id})
 
 

@@ -207,13 +207,16 @@ def scale(image: Image.Image, width: int, height: int, quality: str, tools: dict
 def target_size(ratio: dict[str, Any], artwork: Image.Image) -> tuple[int, int]:
     """The canvas for one ratio, turned to match the artwork.
 
-    A ratio is stored portrait; a landscape artwork gets the same ratio on its
-    side rather than a file it would sit in sideways.
+    The canvas follows the artwork's orientation rather than flipping whatever
+    was stored: most ratios are kept portrait, but a panoramic is kept on its
+    side, and blindly swapping would stand a 3:1 print upright. A square
+    artwork has no orientation to follow, so the stored one is kept.
     """
     width, height = int(ratio["width"]), int(ratio["height"])
-    if artwork.width > artwork.height and width != height:
-        return height, width
-    return width, height
+    if width == height or artwork.width == artwork.height:
+        return width, height
+    longer, shorter = max(width, height), min(width, height)
+    return (longer, shorter) if artwork.width > artwork.height else (shorter, longer)
 
 
 def render_print_file(
@@ -252,7 +255,9 @@ def print_file_name(ratio: dict[str, Any], artwork: Image.Image, extension: str 
     """What the buyer sees in their download, and what it is for."""
     key = str(ratio.get("key", "ratio")).replace(":", "x").replace(" ", "-").lower()
     largest = str(ratio.get("sizes", "")).split(",")[-1].strip().replace(" ", "")
-    landscape = artwork.width > artwork.height and ratio["width"] != ratio["height"]
+    # What the file actually is, not what the ratio was stored as.
+    width, height = target_size(ratio, artwork)
+    landscape = width > height
     parts = [f"{key}_ratio"]
     if largest:
         parts.append(f"{largest}_inch")

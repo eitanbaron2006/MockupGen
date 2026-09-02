@@ -60,6 +60,10 @@ def test_the_ratios_a_shop_sells_are_there_from_the_start(tmp_path):
     offered = client.get("/api/print/ratios").get_json()
     keys = [ratio["key"] for ratio in offered["ratios"]]
     assert keys[:3] == ["2:3", "3:4", "4:5"]
+    # Every shape the seller's own resizer offered, panoramics included.
+    assert set(keys) == {"2:3", "3:4", "4:5", "11:14", "ISO A", "1:1", "5:7", "US Letter", "3:1", "2:1"}
+    panoramic = next(ratio for ratio in offered["ratios"] if ratio["key"] == "3:1")
+    assert (panoramic["width"], panoramic["height"]) == (10800, 3600)
     two_three = offered["ratios"][0]
     assert (two_three["width"], two_three["height"]) == (7200, 10800)
     assert "24x36" in two_three["sizes"]
@@ -234,3 +238,82 @@ def test_a_ratio_is_refused_rather_than_stored_wrong(tmp_path):
         catalog.create_ratio({"key": "huge", "width": 90000, "height": 90000})
     with pytest.raises(PrintCatalogError, match="needs a key"):
         catalog.create_ratio({"key": "  ", "width": 1000, "height": 1500})
+
+
+def test_a_ratio_added_to_the_list_reaches_a_database_that_already_exists(tmp_path):
+    """The seed used to run only on an empty table, which stranded upgrades."""
+    from services.print_catalog_service import PrintCatalogService
+
+    catalog = PrintCatalogService(tmp_path / "print.sqlite3")
+    catalog.initialize()
+    # An older database: two of the built-ins were never there, and one of the
+    # ones that was has been switched off and renamed by the admin.
+    two_to_three = catalog.get_ratio_by_key("2:3")
+    catalog.update_ratio(two_to_three["id"], {"active": False, "name": "My own name"})
+    import sqlite3
+
+    with sqlite3.connect(catalog.database_path) as connection:
+        connection.execute("DELETE FROM ratios WHERE key IN ('3:1', '2:1')")
+
+    catalog.initialize()
+
+    keys = [ratio["key"] for ratio in catalog.list_ratios()]
+    assert "3:1" in keys and "2:1" in keys
+    # ...and the admin's edits to an existing one survived the top-up.
+    kept = catalog.get_ratio_by_key("2:3")
+    assert kept["name"] == "My own name" and kept["active"] == 0
+
+
+def test_a_built_in_ratio_is_switched_off_rather_than_deleted(tmp_path):
+    """Deleting one would break every set naming it, with no way back."""
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+
+    built_in = next(r for r in client.get("/api/print/ratios").get_json()["ratios"] if r["key"] == "2:3")
+    assert built_in["builtin"] == 1
+    refused = client.delete(f"/api/print/ratios/{built_in['id']}", headers={"X-CSRF-Token": csrf})
+    assert refused.status_code == 400
+    assert "built-in" in refused.get_json()["error"]
+    assert client.get("/api/print/ratios").get_json()["ratios"]
+
+    # Switching it off is allowed, and is what the screen offers instead.
+    off = client.patch(
+        f"/api/print/ratios/{built_in['id']}",
+        json={"active": False},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert off.status_code == 200 and off.get_json()["ratio"]["active"] == 0
+
+    # A ratio the admin added is theirs to delete.
+    mine = client.post(
+        "/api/print/ratios",
+        json={"key": "9:16", "name": "Story", "width": 2000, "height": 3556},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["ratio"]
+    assert mine["builtin"] == 0
+    assert client.delete(f"/api/print/ratios/{mine['id']}", headers={"X-CSRF-Token": csrf}).status_code == 200
+
+
+def test_a_panoramic_canvas_is_not_stood_on_its_end(tmp_path):
+    """The canvas follows the artwork, rather than flipping what was stored.
+
+    A panoramic is stored landscape because that is how it is sold. The first
+    version swapped every non-square ratio for a landscape artwork, which stood
+    a 3:1 print upright -- the one shape that must never happen to it.
+    """
+    from PIL import Image as PillowImage
+
+    from services.print_export_service import target_size
+
+    panoramic = {"key": "3:1", "width": 10800, "height": 3600}
+    upright = {"key": "2:3", "width": 7200, "height": 10800}
+    wide_art = PillowImage.new("RGB", (1800, 600))
+    tall_art = PillowImage.new("RGB", (600, 900))
+    square_art = PillowImage.new("RGB", (800, 800))
+
+    assert target_size(panoramic, wide_art) == (10800, 3600)
+    assert target_size(panoramic, tall_art) == (3600, 10800)
+    assert target_size(upright, wide_art) == (10800, 7200)
+    assert target_size(upright, tall_art) == (7200, 10800)
+    # A square artwork has no orientation to follow.
+    assert target_size(panoramic, square_art) == (10800, 3600)

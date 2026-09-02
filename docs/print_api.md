@@ -97,9 +97,20 @@ separator is refused with `400`.
 | `POST` `PATCH` `DELETE` | `/api/print/sets[/<id>]` | yes |
 | `GET` `PUT` | `/api/print/settings` | yes — where the two AI programs live |
 
-A **ratio** is a key (`2:3`), a name, a portrait pixel canvas (100–30000px per
-side) and the frame sizes it prints at. Keys are unique and compared without
-case. A ratio can be switched off rather than deleted.
+A **ratio** is a key (`2:3`), a name, a pixel canvas (100–30000px per side) and
+the frame sizes it prints at. Keys are unique and compared without case.
+
+Ten ratios ship with the service — `2:3`, `3:4`, `4:5`, `11:14`, `ISO A`, `1:1`,
+`5:7`, `US Letter`, `3:1` and `2:1` — and carry `"builtin": 1`. **A built-in
+ratio cannot be deleted** (`400`): deleting one would silently stop every set
+that names it, with no way back but retyping the numbers, so `active: false`
+is the way out instead. A ratio the admin adds is `"builtin": 0` and is theirs
+to delete. New built-ins added in a later version reach an existing database on
+the next start, and never overwrite a row the admin has edited.
+
+Most ratios are stored portrait; the two panoramics are stored on their side
+because that is the shape they sell in. The export orients each canvas to the
+artwork either way, so a landscape artwork never stands a 3:1 print upright.
 
 A **print set** is `matching` (one file, the artwork's own ratio) or `chosen`
 (the ratio keys you name), plus a quality and whether the printing guide ships.
