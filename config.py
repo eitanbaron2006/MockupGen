@@ -25,6 +25,11 @@ DRAFT_TEMPLATES_FOLDER = _folder("DRAFT_TEMPLATES_FOLDER", "draft_templates")
 # Ready-made print-size charts live beside the catalog rather than inside a
 # template: one chart serves every artwork of the same ratio.
 SIZE_GUIDES_FOLDER = _folder("SIZE_GUIDES_FOLDER", "data/size_guides")
+# The print service keeps its own database and its own output folder: it is a
+# different job from mockups -- what a shop sells a print at, not what a
+# mockup is -- and holding it apart leaves it able to become its own app.
+PRINT_DATABASE_PATH = _folder("PRINT_DATABASE_PATH", "data/print_sizes.sqlite3")
+PRINT_OUTPUT_FOLDER = _folder("PRINT_OUTPUT_FOLDER", "print_outputs")
 DATABASE_PATH = _folder("DATABASE_PATH", "data/mockup_catalog.sqlite3")
 # A request with no ceiling on it is read into memory whatever its size, so an
 # upload of a few hundred megabytes is all it takes to put the server out. 32MB
@@ -58,6 +63,8 @@ class Config:
     TEMPLATES_FOLDER = TEMPLATES_FOLDER
     DRAFT_TEMPLATES_FOLDER = DRAFT_TEMPLATES_FOLDER
     SIZE_GUIDES_FOLDER = SIZE_GUIDES_FOLDER
+    PRINT_DATABASE_PATH = PRINT_DATABASE_PATH
+    PRINT_OUTPUT_FOLDER = PRINT_OUTPUT_FOLDER
     DATABASE_PATH = DATABASE_PATH
     MAX_CONTENT_LENGTH = MAX_CONTENT_LENGTH
     ADMIN_MAX_CONTENT_LENGTH = ADMIN_MAX_CONTENT_LENGTH

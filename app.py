@@ -12,6 +12,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from config import Config
 from routes.admin_routes import admin_routes
 from routes.mockup_routes import mockup_routes
+from routes.print_routes import print_routes
 from services.catalog_service import CatalogService
 
 
@@ -25,6 +26,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             app.config["DATABASE_PATH"] = str(test_root / "data" / "mockup_catalog.sqlite3")
             app.config["DRAFT_TEMPLATES_FOLDER"] = str(test_root / "draft_templates")
             app.config["SIZE_GUIDES_FOLDER"] = str(test_root / "size_guides")
+            app.config["PRINT_DATABASE_PATH"] = str(test_root / "data" / "print_sizes.sqlite3")
+            app.config["PRINT_OUTPUT_FOLDER"] = str(test_root / "print_outputs")
 
     # The session cookie -- and with it the admin's logged-in state and the CSRF
     # token -- is only as good as the key that signs it. The shipped default is
@@ -47,6 +50,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         "TEMPLATES_FOLDER",
         "DRAFT_TEMPLATES_FOLDER",
         "SIZE_GUIDES_FOLDER",
+        "PRINT_OUTPUT_FOLDER",
     ):
         Path(app.config[key]).mkdir(parents=True, exist_ok=True)
 
@@ -58,6 +62,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     catalog_service = CatalogService(Path(app.config["DATABASE_PATH"]))
     catalog_service.initialize(Path(app.config["TEMPLATES_FOLDER"]))
     app.extensions["catalog_service"] = catalog_service
+
+    # The print side keeps its own database, for the reasons in config.py.
+    from services.print_catalog_service import PrintCatalogService
+
+    print_catalog = PrintCatalogService(Path(app.config["PRINT_DATABASE_PATH"]))
+    print_catalog.initialize()
+    app.extensions["print_catalog"] = print_catalog
 
     # Admin assets were cache-busted by a hand-edited ?v= number, so any edit
     # that forgot to bump it shipped stale JS/CSS to every open browser. The
@@ -176,6 +187,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     app.register_blueprint(mockup_routes)
     app.register_blueprint(admin_routes)
+    app.register_blueprint(print_routes)
 
     @app.get("/outputs/<path:filename>")
     def output_file(filename: str):
