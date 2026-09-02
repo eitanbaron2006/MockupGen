@@ -426,30 +426,39 @@ body.print-page {
   padding: 14px 12px;
 }
 
-/* The dock stays at the bottom, and stays out of the way of the results. */
+/* The dock stays at the bottom and takes as little of the panel as it can:
+   one row, controls only as wide as their longest option, and the button at
+   the end of it. The first cut stretched three selects across the full width
+   for values eleven characters long. */
 .export-dock {
-  align-items: stretch;
+  align-items: center;
   border-top: 1px solid var(--line);
   display: grid;
   flex-shrink: 0;
-  gap: 14px;
-  grid-template-columns: 186px 1fr;
-  padding: 14px;
+  gap: 5px 12px;
+  grid-template-areas:
+    "thumb controls button"
+    "thumb facts    button";
+  grid-template-columns: 112px 1fr auto;
+  padding: 12px 14px;
 }
 
 .artwork-drop {
   align-items: center;
   background: var(--paper);
+  grid-area: thumb;
   border: 1px dashed var(--line);
-  border-radius: 11px;
+  border-radius: 9px;
   cursor: pointer;
   display: flex;
-  height: 132px;
+  flex-shrink: 0;
+  height: 74px;
   justify-content: center;
   overflow: hidden;
-  padding: 10px;
+  padding: 5px;
   position: relative;
   text-align: center;
+  width: 112px;
 }
 
 .artwork-drop:hover,
@@ -465,29 +474,28 @@ body.print-page {
 
 .artwork-hint {
   display: grid;
-  gap: 5px;
+  gap: 2px;
+  padding: 0 4px;
 }
 
 .artwork-hint strong {
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 11.5px;
 }
 
 .artwork-hint span {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 9.5px;
+  line-height: 1.3;
 }
 
 .dock-controls {
-  align-content: start;
-  display: grid;
-  gap: 9px;
-  grid-template-columns: 1fr 1fr 1fr;
-}
-
-.dock-note {
-  grid-column: span 2;
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  grid-area: controls;
 }
 
 .dock-field {
@@ -505,7 +513,7 @@ body.print-page {
 }
 
 /* Widths are set here on purpose: the studio-wide select rule is 100%, which
-   collapses these two into the width of whatever text they happen to hold. */
+   collapses these into the width of whatever text they happen to hold. */
 .dock-select {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -513,28 +521,32 @@ body.print-page {
   color: var(--ink);
   font-family: var(--body);
   font-size: 12.5px;
-  height: 38px;
+  height: 36px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 9px;
   width: 100%;
 }
 
+#exportSet { width: 178px; }
+#exportQuality { width: 162px; }
+#exportMode { width: 168px; }
+
+/* The facts about the upload get the thin line under the controls rather
+   than a row of their own. */
 .dock-note {
-  align-self: end;
   color: var(--muted);
-  grid-column: span 2;
   font-family: var(--mono);
   font-size: 9.5px;
+  grid-area: facts;
   letter-spacing: .04em;
-  line-height: 1.5;
-  padding-bottom: 2px;
+  line-height: 1.4;
   text-transform: uppercase;
 }
 
-.dock-controls .btn.primary {
-  align-self: end;
-  height: 40px;
-  width: 100%;
+.export-dock .btn.primary {
+  grid-area: button;
+  height: 38px;
+  padding: 0 20px;
 }
 
 /* --- Modals ------------------------------------------------------------- */
