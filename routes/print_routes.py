@@ -43,6 +43,8 @@ from services.print_export_service import (
     PrintExportError,
     available_qualities,
     discover_tool,
+    flatten_artwork,
+    has_transparency,
     print_file_name,
     printing_guide,
     render_print_file,
@@ -265,7 +267,9 @@ def export_print_files():
     spec = {**spec, **{key: value for key, value in request.form.items() if key != "spec"}}
 
     try:
-        artwork = load_rgba(upload).convert("RGB")
+        uploaded = load_rgba(upload)
+        transparent = has_transparency(uploaded)
+        artwork = flatten_artwork(uploaded)
     except (ImageProcessingError, UnidentifiedImageError, OSError) as error:
         return json_error(f"That file is not a readable image: {error}", 400)
 
@@ -344,6 +348,7 @@ def export_print_files():
         {
             "success": len(made) == len(files),
             "artwork_ratio": round(artwork.width / artwork.height, 4),
+            "artwork_was_transparent": transparent,
             "quality": quality or "bicubic",
             "mode": output_mode,
             "files": files,

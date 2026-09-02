@@ -300,6 +300,30 @@ def target_size(ratio: dict[str, Any], artwork: Image.Image) -> tuple[int, int]:
     return (longer, shorter) if artwork.width > artwork.height else (shorter, longer)
 
 
+def flatten_artwork(image: Image.Image, background: tuple[int, int, int] = (255, 255, 255)) -> Image.Image:
+    """An uploaded artwork as opaque pixels, transparency laid on white.
+
+    A print file is a JPEG, so it has a background whatever happens; the only
+    question is which one. Dropping the alpha channel the plain way leaves the
+    colour that sat underneath it -- black, for the cut-out PNGs a shop sends --
+    so the transparent areas are composited onto white deliberately instead.
+    """
+    if image.mode not in ("RGBA", "LA", "PA") and "transparency" not in image.info:
+        return image.convert("RGB")
+    source = image.convert("RGBA")
+    canvas = Image.new("RGBA", source.size, (*background, 255))
+    canvas.alpha_composite(source)
+    return canvas.convert("RGB")
+
+
+def has_transparency(image: Image.Image) -> bool:
+    """Whether the upload actually carried see-through pixels."""
+    if image.mode in ("RGBA", "LA", "PA"):
+        alpha = image.convert("RGBA").getchannel("A")
+        return alpha.getextrema()[0] < 255
+    return "transparency" in image.info
+
+
 def center_crop_to_ratio(image: Image.Image, width: int, height: int) -> Image.Image:
     """Trim the source to the target shape, before any resizing.
 

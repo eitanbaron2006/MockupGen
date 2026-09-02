@@ -439,3 +439,51 @@ def test_the_studio_ships_its_own_copy_of_the_upscaler():
         # On a machine that has the checkout, that is what gets used -- ahead
         # of any system-wide install.
         assert discover_tool("realesrgan") == str(first)
+
+
+def test_a_cut_out_artwork_is_laid_on_white_not_black(tmp_path):
+    """A print file is a JPEG, so the only question is which background.
+
+    Dropping the alpha channel the plain way leaves what sat under it, which is
+    black -- so a cut-out PNG exported as a black rectangle with the artwork in
+    the middle of it.
+    """
+    from services.print_export_service import flatten_artwork, has_transparency
+
+    cut_out = Image.new("RGBA", (400, 600), (0, 0, 0, 0))
+    cut_out.paste(Image.new("RGBA", (200, 300), (200, 90, 70, 255)), (100, 150))
+    assert has_transparency(cut_out) is True
+    flat = flatten_artwork(cut_out)
+    assert flat.mode == "RGB"
+    assert flat.getpixel((5, 5)) == (255, 255, 255)
+    assert flat.getpixel((200, 300)) == (200, 90, 70)
+
+    # An artwork that never had transparency is left alone.
+    opaque = Image.new("RGB", (100, 100), (10, 20, 30))
+    assert has_transparency(opaque) is False
+    assert flatten_artwork(opaque).getpixel((5, 5)) == (10, 20, 30)
+
+
+def test_the_export_says_whether_the_upload_was_transparent(tmp_path):
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    stream = io.BytesIO()
+    cut_out = Image.new("RGBA", (600, 900), (0, 0, 0, 0))
+    cut_out.paste(Image.new("RGBA", (300, 450), (200, 90, 70, 255)), (150, 225))
+    cut_out.save(stream, format="PNG")
+    stream.seek(0)
+
+    made = client.post(
+        "/api/print/export",
+        data={"artwork": (stream, "cutout.png"), "spec": json.dumps({"ratios": "2:3", "quality": "basic"})},
+        content_type="multipart/form-data",
+    ).get_json()
+    assert made["artwork_was_transparent"] is True
+
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    with Image.open(folder / made["files"][0]["file"]) as produced:
+        corner = produced.convert("RGB").getpixel((4, 4))
+    # White, not the black the plain conversion left behind.
+    assert min(corner) > 240, corner
