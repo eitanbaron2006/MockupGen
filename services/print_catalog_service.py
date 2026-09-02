@@ -22,9 +22,26 @@ MODE_MATCHING = "matching"
 MODE_CHOSEN = "chosen"
 SET_MODES = (MODE_MATCHING, MODE_CHOSEN)
 
+# Which ratios a set produces (above) and how the artwork meets each canvas
+# (below) are two different questions, so they are two different fields.
+OUTPUT_MODES = ("safe_fit", "safe_fill", "fill_crop")
+DEFAULT_OUTPUT_MODE = "safe_fit"
+
 
 class PrintCatalogError(ValueError):
     """Something the print catalog will not store."""
+
+
+def checked_output_mode(value: Any) -> str:
+    """An output mode the exporter actually knows, or a refusal.
+
+    Storing an unknown one would only surface as a failed export later, when
+    the artwork is already uploaded and the admin has moved on.
+    """
+    mode = str(value or DEFAULT_OUTPUT_MODE).strip().lower()
+    if mode not in OUTPUT_MODES:
+        raise PrintCatalogError(f"Unknown output mode: {value}")
+    return mode
 
 
 def utc_now() -> str:
@@ -93,6 +110,7 @@ class PrintCatalogService:
                     mode TEXT NOT NULL DEFAULT 'matching',
                     ratio_keys TEXT NOT NULL DEFAULT '[]',
                     quality TEXT NOT NULL DEFAULT 'bicubic',
+                    output_mode TEXT NOT NULL DEFAULT 'safe_fit',
                     include_guide INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -106,6 +124,11 @@ class PrintCatalogService:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(ratios)")}
             if "builtin" not in columns:
                 connection.execute("ALTER TABLE ratios ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0")
+            set_columns = {row["name"] for row in connection.execute("PRAGMA table_info(print_sets)")}
+            if "output_mode" not in set_columns:
+                connection.execute(
+                    "ALTER TABLE print_sets ADD COLUMN output_mode TEXT NOT NULL DEFAULT 'safe_fit'"
+                )
 
             # A shop that has one of these already has all of them; an empty
             # screen would only invite typing the same numbers back in. This
@@ -278,14 +301,15 @@ class PrintCatalogService:
                 raise PrintCatalogError(f'A print set called "{name}" already exists')
             cursor = connection.execute(
                 """
-                INSERT INTO print_sets(name, mode, ratio_keys, quality, include_guide, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO print_sets(name, mode, ratio_keys, quality, output_mode, include_guide, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
                     mode,
                     json.dumps(ratio_keys),
                     str(record.get("quality") or "bicubic"),
+                    checked_output_mode(record.get("output_mode")),
                     1 if record.get("include_guide", True) else 0,
                     stamp,
                     stamp,
@@ -320,6 +344,9 @@ class PrintCatalogService:
         if "quality" in changes:
             assignments.append("quality = ?")
             values.append(str(changes["quality"] or "bicubic"))
+        if "output_mode" in changes:
+            assignments.append("output_mode = ?")
+            values.append(checked_output_mode(changes["output_mode"]))
         if "include_guide" in changes:
             assignments.append("include_guide = ?")
             values.append(1 if changes["include_guide"] else 0)
@@ -363,6 +390,7 @@ class PrintCatalogService:
         except json.JSONDecodeError:
             record["ratio_keys"] = []
         record["include_guide"] = bool(record.get("include_guide"))
+        record["output_mode"] = record.get("output_mode") or DEFAULT_OUTPUT_MODE
         return record
 
     # ------------------------------------------------------------ settings

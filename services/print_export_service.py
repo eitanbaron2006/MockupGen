@@ -34,6 +34,85 @@ class PrintExportError(ValueError):
     """A print file that cannot be made as asked."""
 
 
+# How the artwork meets a canvas it does not exactly fill. Ported from the
+# seller's own resizer, wording included, because these are the three choices
+# the shop already thinks in.
+OUTPUT_MODES = (
+    {
+        "key": "safe_fit",
+        "name": "Safe Fit",
+        "note": "No crop, white margins if needed",
+        "cuts": False,
+        "recommended": True,
+    },
+    {
+        "key": "safe_fill",
+        "name": "Safe Fill",
+        "note": "No crop, blurred extension instead of margins",
+        "cuts": False,
+        "recommended": False,
+    },
+    {
+        "key": "fill_crop",
+        "name": "Expert: Fill / Crop",
+        "note": "Fills the canvas edge to edge -- may cut the artwork",
+        "cuts": True,
+        "recommended": False,
+    },
+)
+
+MODE_KEYS = tuple(mode["key"] for mode in OUTPUT_MODES)
+DEFAULT_MODE = "safe_fit"
+
+# The studio ships Real-ESRGAN with it, under tools/, so the AI quality
+# works on a fresh checkout with nothing to install and nothing to
+# configure. The usual install locations are still checked after it, and
+# a path set in the settings still wins over both.
+BUNDLED_ROOT = Path(__file__).resolve().parents[1] / 'tools'
+
+TOOL_CANDIDATES = {
+    "realesrgan": (
+        str(BUNDLED_ROOT / 'realesrgan' / 'realesrgan-ncnn-vulkan.exe'),
+        r"C:\realesrgan\realesrgan-ncnn-vulkan.exe",
+        r"C:\Program Files\realesrgan\realesrgan-ncnn-vulkan.exe",
+        r"C:\Tools\realesrgan\realesrgan-ncnn-vulkan.exe",
+    ),
+    "topaz": (
+        r"C:\Program Files\Topaz Labs LLC\Topaz Photo AI\tpai.exe",
+        r"C:\Program Files\Topaz Labs LLC\Topaz Gigapixel AI\gigapixel.exe",
+    ),
+}
+
+PROGRAM_NAMES = {
+    "realesrgan": "realesrgan-ncnn-vulkan.exe",
+    "topaz": "tpai.exe",
+}
+
+
+def discover_tool(name: str) -> str:
+    """Where this machine actually keeps one of the two upscalers, if anywhere.
+
+    An empty setting used to mean "unavailable", which reported Real-ESRGAN as
+    missing on a machine where it was installed and working. The usual
+    locations are checked instead, and PATH after them.
+    """
+    for candidate in TOOL_CANDIDATES.get(name, ()):
+        if Path(candidate).is_file():
+            return candidate
+    found = shutil.which(PROGRAM_NAMES.get(name, name))
+    return found or ""
+
+
+def resolved_tools(settings: dict[str, str] | None = None) -> dict[str, str]:
+    """The configured path where there is one, and what was found where not."""
+    settings = settings or {}
+    resolved = {}
+    for name, key in (("realesrgan", "realesrgan_path"), ("topaz", "topaz_path")):
+        configured = str(settings.get(key) or settings.get(name) or "").strip()
+        resolved[name] = configured or discover_tool(name)
+    return resolved
+
+
 # What each quality does, and what it needs. The order is the order the studio
 # offers them: the cheapest that looks right, first.
 QUALITIES = (
@@ -93,7 +172,7 @@ def available_qualities(tools: dict[str, str] | None = None) -> list[dict[str, A
         if needs:
             available = bool(program) and Path(program).is_file()
             if not program:
-                reason = "No path configured for this program"
+                reason = f"{PROGRAM_NAMES.get(needs, needs)} was not found on this machine"
             elif not available:
                 reason = f"Not found at {program}"
         offered.append({**quality, "available": available, "reason": reason})
@@ -149,11 +228,13 @@ def scale_realesrgan(image: Image.Image, width: int, height: int, program: str) 
         source = Path(scratch) / "input.png"
         result = Path(scratch) / "output.png"
         image.convert("RGB").save(source, "PNG")
-        _run_external(
-            program,
-            ["-i", str(source), "-o", str(result), "-n", "realesrgan-x4plus", "-j", "1:1:1"],
-            "Real-ESRGAN",
-        )
+        arguments = ["-i", str(source), "-o", str(result), "-n", "realesrgan-x4plus", "-j", "1:1:1"]
+        # The binary looks for its weights beside itself; saying so explicitly
+        # means it still works when it is started from another directory.
+        models = Path(program).parent / "models"
+        if models.is_dir():
+            arguments += ["-m", str(models)]
+        _run_external(program, arguments, "Real-ESRGAN")
         if not result.is_file():
             raise PrintExportError("Real-ESRGAN produced no output")
         with Image.open(result) as upscaled:
@@ -219,23 +300,74 @@ def target_size(ratio: dict[str, Any], artwork: Image.Image) -> tuple[int, int]:
     return (longer, shorter) if artwork.width > artwork.height else (shorter, longer)
 
 
+def center_crop_to_ratio(image: Image.Image, width: int, height: int) -> Image.Image:
+    """Trim the source to the target shape, before any resizing.
+
+    Only the fill modes reach this: it is what makes the blurred backdrop the
+    right shape, and what the expert mode does to the artwork itself.
+    """
+    source_ratio = image.width / image.height
+    target_ratio = width / height
+    if source_ratio > target_ratio:
+        kept = round(image.height * target_ratio)
+        left = (image.width - kept) // 2
+        return image.crop((left, 0, left + kept, image.height))
+    kept = round(image.width / target_ratio)
+    top = (image.height - kept) // 2
+    return image.crop((0, top, image.width, top + kept))
+
+
+def blurred_backdrop(artwork: Image.Image, width: int, height: int) -> Image.Image:
+    """A soft full-bleed background made from the artwork itself.
+
+    The backdrop is cropped and blurred; the artwork laid over it is not. That
+    is what makes this a safe mode -- frames, borders and text in the original
+    survive, and the file still fills the canvas edge to edge.
+
+    The scaling here is deliberately plain rather than following the chosen
+    quality: a Gaussian blur of 80px erases any difference an AI upscaler could
+    make, and running one over a second full-size canvas would double the cost
+    of an export for a result nobody can see.
+    """
+    backdrop = scale_bicubic(center_crop_to_ratio(artwork, width, height), width, height)
+    backdrop = backdrop.convert("RGB").filter(
+        ImageFilter.GaussianBlur(radius=max(18, round(max(width, height) / 90)))
+    )
+    # A white wash keeps it quiet behind the artwork rather than busy.
+    wash = Image.new("RGBA", (width, height), (255, 255, 255, 70))
+    composed = backdrop.convert("RGBA")
+    composed.alpha_composite(wash)
+    return composed.convert("RGB")
+
+
 def render_print_file(
     artwork: Image.Image,
     ratio: dict[str, Any],
     *,
     quality: str = "bicubic",
+    mode: str = DEFAULT_MODE,
     tools: dict[str, str] | None = None,
     background: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
-    """One print file: the whole artwork, centred, never cropped.
+    """One print file, in the Etsy output mode the shop chose.
 
-    Where the artwork's shape does not match the ratio the difference becomes
-    margin. That is the point of the mode -- a buyer who wanted the full image
-    gets it, and a border trimmed off a print is a refund.
+    ``safe_fit``  the whole artwork, centred, white margins where the shapes
+                  differ. The safe default: a border trimmed off a print is a
+                  refund.
+    ``safe_fill`` the whole artwork again, over a blurred extension of itself,
+                  so the file fills the canvas without plain margins.
+    ``fill_crop`` fills the canvas by cutting the overflow. The expert mode --
+                  it is the only one that loses part of the artwork.
     """
+    if mode not in MODE_KEYS:
+        raise PrintExportError(f"Unknown output mode: {mode}")
     width, height = target_size(ratio, artwork)
     if width < 1 or height < 1:
         raise PrintExportError(f"Ratio {ratio.get('key')} has no usable size")
+
+    if mode == "fill_crop":
+        cropped = center_crop_to_ratio(artwork, width, height)
+        return scale(cropped, width, height, quality, tools).convert("RGB")
 
     fit = min(width / artwork.width, height / artwork.height)
     fitted = scale(
@@ -246,7 +378,11 @@ def render_print_file(
         tools,
     ).convert("RGB")
 
-    canvas = Image.new("RGB", (width, height), background)
+    canvas = (
+        blurred_backdrop(artwork, width, height)
+        if mode == "safe_fill"
+        else Image.new("RGB", (width, height), background)
+    )
     canvas.paste(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
     return canvas
 
@@ -266,16 +402,23 @@ def print_file_name(ratio: dict[str, Any], artwork: Image.Image, extension: str 
     return f"{'_'.join(parts)}.{extension}"
 
 
-def printing_guide(ratios: list[dict[str, Any]]) -> str:
+def printing_guide(ratios: list[dict[str, Any]], mode: str = DEFAULT_MODE) -> str:
     """The note that ships with the files, so the buyer knows which to print."""
+    told = {
+        "safe_fit": "prepared in safe-fit mode, so nothing has been cropped from it.",
+        "safe_fill": "complete in every file -- the soft border around it is an",
+        "fill_crop": "filled to the edge of each file, which trims the overflow.",
+    }[mode if mode in MODE_KEYS else DEFAULT_MODE]
     lines = [
         "Thank you for your purchase!",
         "",
         "This package contains high-resolution files in several aspect ratios.",
         "Choose the file that matches your frame before printing. The artwork is",
-        "prepared in safe-fit mode, so nothing has been cropped from it.",
-        "",
+        told,
     ]
+    if mode == "safe_fill":
+        lines.append("extension of the artwork itself, not part of the image.")
+    lines.append("")
     for ratio in ratios:
         sizes = str(ratio.get("sizes", "")).strip()
         if not sizes:

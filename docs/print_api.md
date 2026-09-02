@@ -25,7 +25,8 @@ API. Changing the catalog needs an admin session and the CSRF header.
 {
   "set": 3,
   "ratios": "2:3, 4:5",
-  "quality": "bicubic"
+  "quality": "bicubic",
+  "mode": "safe_fit"
 }
 ```
 
@@ -36,9 +37,17 @@ API. Changing the catalog needs an admin session and the CSRF header.
   is given.
 - Neither one: the artwork's **own** ratio, the closest active one to its shape.
 - `quality` — `bicubic` (default), `step`, `step-unsharp`, `basic`, `ai`
-  (Real-ESRGAN) or `gigapixel` (Topaz). The two AI modes run external programs
-  and are only available where those are installed; `GET /api/print/ratios`
-  reports which ones this machine can deliver, and why not.
+  (Real-ESRGAN) or `gigapixel` (Topaz). The two AI modes run external programs.
+  Real-ESRGAN **ships with the studio** in `tools/realesrgan/`, so the AI
+  quality works on a fresh checkout with nothing to install and nothing to
+  configure. Failing that the usual install locations (`C:\realesrgan\`,
+  Topaz's own folder) and PATH are checked, and a path typed into the
+  settings wins over all of them -- an empty setting does not mean missing.
+  `GET /api/print/ratios` reports which ones this machine can deliver, and
+  why not.
+- `mode` — the Etsy output mode (below). Taken from the set when one is given;
+  passing it explicitly overrides the set for that one export without changing
+  it. An unknown mode is refused with `400`.
 
 At most 12 files per export.
 
@@ -74,6 +83,23 @@ Files are JPEG quality 95 with a 300 DPI header. A landscape artwork turns the
 canvas on its side and the name gains `_landscape`. The leading hex is the batch
 id — it keeps one export apart from another on disk and is stripped from the
 archive, so it is not part of what the buyer sees.
+
+## Etsy output modes
+
+How the artwork meets a canvas whose shape it does not match. `GET
+/api/print/ratios` returns the list under `modes`, with the wording the screen
+shows and a `cuts` flag.
+
+| Key | What it does |
+|---|---|
+| `safe_fit` | The whole artwork, centred, **white margins** where the shapes differ. The default and the recommendation. |
+| `safe_fill` | The whole artwork again, over a **blurred extension of itself**, so the file fills the canvas with no plain margins. |
+| `fill_crop` | Fills the canvas edge to edge by **cutting** the overflow. The only mode that loses part of the artwork — not for work with internal frames, borders or text. |
+
+The blurred backdrop is always scaled plainly, whatever quality was asked for:
+an 80px Gaussian blur erases any difference an AI upscaler could make, and
+running one over a second full-size canvas would double the cost of the export
+for a result nobody can see.
 
 ## Archive
 
@@ -113,7 +139,9 @@ because that is the shape they sell in. The export orients each canvas to the
 artwork either way, so a landscape artwork never stands a 3:1 print upright.
 
 A **print set** is `matching` (one file, the artwork's own ratio) or `chosen`
-(the ratio keys you name), plus a quality and whether the printing guide ships.
+(the ratio keys you name), plus a quality, an `output_mode` and whether the
+printing guide ships. The guide's wording follows the mode, so a buyer reading
+it is told what was actually done to the artwork.
 
 ## Note on mockups
 

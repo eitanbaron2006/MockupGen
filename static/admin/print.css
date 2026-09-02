@@ -471,7 +471,11 @@ body.print-page {
   align-content: start;
   display: grid;
   gap: 9px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.dock-note {
+  grid-column: span 2;
 }
 
 .dock-field {
@@ -506,6 +510,7 @@ body.print-page {
 .dock-note {
   align-self: end;
   color: var(--muted);
+  grid-column: span 2;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: .04em;
@@ -671,6 +676,77 @@ body.print-page {
 .mode-card.is-on {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* The three Etsy output modes, as the original tool presents them: radios in
+   one bordered group, with the destructive one marked in the accent. */
+.output-modes {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.output-mode {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 8px 9px;
+  text-align: left;
+  width: 100%;
+}
+
+.output-mode:hover {
+  background: var(--paper);
+}
+
+.output-mode.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.output-mode .dot {
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 13px;
+  position: relative;
+  width: 13px;
+}
+
+.output-mode.is-on .dot {
+  border-color: var(--accent);
+}
+
+.output-mode.is-on .dot::after {
+  background: var(--accent);
+  border-radius: 50%;
+  content: "";
+  inset: 2.5px;
+  position: absolute;
+}
+
+.output-mode strong {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.output-mode em {
+  color: var(--faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* The one mode that can lose part of the artwork says so in the accent. */
+.output-mode.cuts strong,
+.output-mode.cuts em {
+  color: var(--accent);
 }
 
 .ratio-picker {

@@ -7,6 +7,7 @@ const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 const state = {
   ratios: [],
   qualities: [],
+  modes: [],
   sets: [],
   settings: {},
   artwork: null,
@@ -60,6 +61,8 @@ const modeLabel = (set) => (set.mode === 'chosen' ? plural((set.ratio_keys || []
 
 const qualityName = (key) => state.qualities.find((quality) => quality.key === key)?.name || key;
 
+const modeName = (key) => state.modes.find((mode) => mode.key === key)?.name || key;
+
 /* The batch id keeps one export apart from another on disk. It is not part of
    what the buyer receives -- the archive strips it -- so the screen does too. */
 const buyerName = (file) => (file.includes('_') ? file.slice(file.indexOf('_') + 1) : file);
@@ -89,7 +92,7 @@ function renderSets() {
         </div>
         <div class="ratio-shapes">${drawn}</div>
         <div class="set-card-foot">
-          ${escapeHtml(qualityName(set.quality))}${set.include_guide ? ' &middot; with guide' : ''}
+          ${escapeHtml(modeName(set.output_mode))} &middot; ${escapeHtml(qualityName(set.quality))}${set.include_guide ? ' &middot; with guide' : ''}
         </div>
       </div>`;
   }).join('');
@@ -125,6 +128,11 @@ function renderQualityOptions(select, chosen) {
     </option>`).join('');
 }
 
+function renderModeOptions(select, chosen) {
+  select.innerHTML = state.modes.map((mode) => `
+    <option value="${mode.key}"${mode.key === chosen ? ' selected' : ''}>${escapeHtml(mode.name)}</option>`).join('');
+}
+
 function renderExportControls() {
   const select = el('exportSet');
   const current = select.value;
@@ -134,21 +142,23 @@ function renderExportControls() {
   ].join('');
   if (current) select.value = current;
   renderQualityOptions(el('exportQuality'), el('exportQuality').value || 'bicubic');
+  renderModeOptions(el('exportMode'), el('exportMode').value || 'safe_fit');
   syncQualityForSet();
 }
 
-/** A saved set carries its own quality, so the dock follows it rather than
-    silently overriding what the admin stored. */
+/** A saved set carries its own quality and output mode, so the dock follows it
+    rather than silently overriding what the admin stored. */
 function syncQualityForSet() {
   const set = state.sets.find((entry) => String(entry.id) === el('exportSet').value);
-  const quality = el('exportQuality');
-  if (set) {
-    quality.value = set.quality;
-    quality.disabled = true;
-    quality.title = `Set by "${set.name}"`;
-  } else {
-    quality.disabled = false;
-    quality.title = '';
+  for (const [node, field] of [[el('exportQuality'), 'quality'], [el('exportMode'), 'output_mode']]) {
+    if (set) {
+      node.value = set[field];
+      node.disabled = true;
+      node.title = `Set by "${set.name}"`;
+    } else {
+      node.disabled = false;
+      node.title = '';
+    }
   }
 }
 
@@ -228,8 +238,12 @@ async function runExport() {
   try {
     const spec = {};
     const setId = el('exportSet').value;
-    if (setId) spec.set = Number(setId);
-    else spec.quality = el('exportQuality').value;
+    if (setId) {
+      spec.set = Number(setId);
+    } else {
+      spec.quality = el('exportQuality').value;
+      spec.mode = el('exportMode').value;
+    }
     const body = new FormData();
     body.append('artwork', state.artwork, state.artwork.name);
     body.append('spec', JSON.stringify(spec));
@@ -237,7 +251,7 @@ async function runExport() {
     state.lastExport = made;
     renderResults();
     const good = made.files.filter((entry) => entry.success).length;
-    el('exportSub').textContent = `${good} of ${made.files.length} files · ${qualityName(made.quality)}`;
+    el('exportSub').textContent = `${good} of ${made.files.length} files · ${modeName(made.mode)} · ${qualityName(made.quality)}`;
     toast(made.success ? `${good} print files ready.` : `${good} of ${made.files.length} made — see the notes.`, !made.success);
   } catch (error) {
     el('exportSub').textContent = 'An artwork in, the files a buyer downloads out';
@@ -290,6 +304,7 @@ function openSetModal(set) {
   el('setName').value = set?.name || '';
   el('setGuide').checked = set ? Boolean(set.include_guide) : true;
   renderQualityOptions(el('setQuality'), set?.quality || 'bicubic');
+  renderOutputModes(set?.output_mode || 'safe_fit');
   setMode(set?.mode || 'matching');
   const chosen = (set?.ratio_keys || []).map((key) => key.toLowerCase());
   el('setRatios').innerHTML = state.ratios.map((ratio) => `
@@ -299,6 +314,18 @@ function openSetModal(set) {
     </button>`).join('');
   openModal('setModal');
 }
+
+function renderOutputModes(chosen) {
+  el('setOutputMode').innerHTML = state.modes.map((mode) => `
+    <button type="button" class="output-mode${mode.key === chosen ? ' is-on' : ''}${mode.cuts ? ' cuts' : ''}" data-output="${mode.key}">
+      <span class="dot"></span>
+      <span>
+        <strong>${escapeHtml(mode.name)}</strong> &mdash; <em>${escapeHtml(mode.note)}</em>
+      </span>
+    </button>`).join('');
+}
+
+const currentOutputMode = () => el('setOutputMode').querySelector('.output-mode.is-on')?.dataset.output || 'safe_fit';
 
 function setMode(mode) {
   el('setMode').querySelectorAll('.mode-card').forEach((card) => {
@@ -321,6 +348,7 @@ async function saveSet() {
     mode,
     ratio_keys: keys,
     quality: el('setQuality').value,
+    output_mode: currentOutputMode(),
     include_guide: el('setGuide').checked,
   };
   if (!payload.name) {
@@ -381,14 +409,23 @@ function renderQualityStatus() {
       <span>${escapeHtml(quality.name)}</span>
       <em>${quality.available ? 'Ready' : escapeHtml(quality.reason || 'Not installed')}</em>
     </div>`).join('');
+  el('qualityStatus').hidden = !state.qualities.some((quality) => quality.needs);
 }
 
 async function openSettingsModal() {
   try {
     const payload = await api('/api/print/settings');
     state.settings = payload.settings || {};
+    const found = payload.found || {};
     el('realesrganPath').value = state.settings.realesrgan_path || '';
     el('topazPath').value = state.settings.topaz_path || '';
+    // An empty box is not a missing program: show where it was found, so the
+    // admin can see there is nothing to fill in.
+    for (const [id, key] of [['realesrganPath', 'realesrgan'], ['topazPath', 'topaz']]) {
+      el(id).placeholder = found[key]
+        ? `Leave empty to use ${found[key]}`
+        : 'Not found on this machine';
+    }
     renderQualityStatus();
     openModal('settingsModal');
   } catch (error) {
@@ -419,6 +456,7 @@ async function loadRatios() {
   const payload = await api('/api/print/ratios');
   state.ratios = payload.ratios || [];
   state.qualities = payload.qualities || [];
+  state.modes = payload.modes || [];
   renderRatios();
   // The set cards name their quality and draw their ratios, both of which
   // arrive here -- and the two loads race, so whichever lands second redraws.
@@ -450,6 +488,10 @@ function wire() {
   el('setMode').addEventListener('click', (event) => {
     const card = event.target.closest('.mode-card');
     if (card) setMode(card.dataset.mode);
+  });
+  el('setOutputMode').addEventListener('click', (event) => {
+    const option = event.target.closest('.output-mode');
+    if (option) renderOutputModes(option.dataset.output);
   });
   el('setRatios').addEventListener('click', (event) => {
     const pick = event.target.closest('.ratio-pick');

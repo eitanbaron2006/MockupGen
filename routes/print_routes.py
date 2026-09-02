@@ -32,13 +32,21 @@ from PIL import UnidentifiedImageError
 
 from routes.responses import json_error
 from services.image_utils import ImageProcessingError, load_rgba
-from services.print_catalog_service import PrintCatalogError, ratios_for
+from services.print_catalog_service import (
+    DEFAULT_OUTPUT_MODE,
+    PrintCatalogError,
+    checked_output_mode,
+    ratios_for,
+)
 from services.print_export_service import (
+    OUTPUT_MODES,
     PrintExportError,
     available_qualities,
+    discover_tool,
     print_file_name,
     printing_guide,
     render_print_file,
+    resolved_tools,
 )
 
 print_routes = Blueprint("print_routes", __name__)
@@ -53,12 +61,13 @@ def print_catalog():
 
 
 def _tools() -> dict[str, str]:
-    """Where the optional upscalers live on this machine."""
-    settings = print_catalog().get_settings()
-    return {
-        "realesrgan": settings.get("realesrgan_path", ""),
-        "topaz": settings.get("topaz_path", ""),
-    }
+    """Where the optional upscalers live on this machine.
+
+    A setting that was never filled in does not mean "not installed": the
+    usual install locations are checked too, so a machine that has
+    Real-ESRGAN where the original resizer puts it needs no configuration.
+    """
+    return resolved_tools(print_catalog().get_settings())
 
 
 def _print_folder() -> Path:
@@ -115,6 +124,7 @@ def get_print_ratios():
         {
             "ratios": print_catalog().list_ratios(),
             "qualities": available_qualities(_tools()),
+            "modes": list(OUTPUT_MODES),
         }
     )
 
@@ -205,7 +215,15 @@ def get_print_settings():
     refusal = _require_admin_json()
     if refusal:
         return refusal
-    return jsonify({"settings": print_catalog().get_settings()})
+    # Discovery only, never the configured path: the screen offers this as
+    # "found at ...", and echoing back a wrong setting under that wording would
+    # be the opposite of helpful.
+    return jsonify(
+        {
+            "settings": print_catalog().get_settings(),
+            "found": {name: discover_tool(name) for name in ("realesrgan", "topaz")},
+        }
+    )
 
 
 @print_routes.put("/api/print/settings")
@@ -252,7 +270,9 @@ def export_print_files():
         return json_error(f"That file is not a readable image: {error}", 400)
 
     quality = str(spec.get("quality") or "").strip()
+    asked_mode = str(spec.get("mode") or spec.get("output_mode") or "").strip()
     include_guide = True
+    output_mode = ""
     requested = spec.get("set")
     if requested not in (None, ""):
         try:
@@ -263,6 +283,7 @@ def export_print_files():
             return json_error(f"Print set not found: {requested}", 404)
         ratios = ratios_for(catalog, print_set, artwork.width / artwork.height)
         quality = quality or print_set["quality"]
+        output_mode = print_set["output_mode"]
         include_guide = print_set["include_guide"]
     else:
         wanted = spec.get("ratios") or ""
@@ -273,6 +294,12 @@ def export_print_files():
             if keys
             else ratios_for(catalog, {"mode": "matching"}, artwork.width / artwork.height)
         )
+    try:
+        # An explicit mode wins over the set's, so one export can be tried
+        # another way without editing the set.
+        output_mode = checked_output_mode(asked_mode or output_mode or DEFAULT_OUTPUT_MODE)
+    except PrintCatalogError as error:
+        return json_error(str(error), 400)
     if not ratios:
         return json_error("No ratio matches this request", 400)
     if len(ratios) > MAX_FILES_PER_EXPORT:
@@ -283,7 +310,13 @@ def export_print_files():
     files = []
     for ratio in ratios:
         try:
-            rendered = render_print_file(artwork, ratio, quality=quality or "bicubic", tools=_tools())
+            rendered = render_print_file(
+                artwork,
+                ratio,
+                quality=quality or "bicubic",
+                mode=output_mode,
+                tools=_tools(),
+            )
         except PrintExportError as error:
             files.append({"ratio": ratio["key"], "success": False, "error": str(error)})
             continue
@@ -304,7 +337,7 @@ def export_print_files():
     guide_name = None
     if include_guide and any(entry["success"] for entry in files):
         guide_name = f"{batch}_printing_guide.txt"
-        (folder / guide_name).write_text(printing_guide(ratios), encoding="utf-8")
+        (folder / guide_name).write_text(printing_guide(ratios, output_mode), encoding="utf-8")
 
     made = [entry for entry in files if entry["success"]]
     return jsonify(
@@ -312,6 +345,7 @@ def export_print_files():
             "success": len(made) == len(files),
             "artwork_ratio": round(artwork.width / artwork.height, 4),
             "quality": quality or "bicubic",
+            "mode": output_mode,
             "files": files,
             "guide": {"file": guide_name, "url": f"/print-outputs/{guide_name}"} if guide_name else None,
         }

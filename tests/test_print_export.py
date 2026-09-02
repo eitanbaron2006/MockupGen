@@ -68,11 +68,21 @@ def test_the_ratios_a_shop_sells_are_there_from_the_start(tmp_path):
     assert (two_three["width"], two_three["height"]) == (7200, 10800)
     assert "24x36" in two_three["sizes"]
 
-    # The qualities say what this machine can actually deliver.
+    # The qualities say what this machine can actually deliver. Whether the two
+    # AI programs are installed here is not the test's business -- that they are
+    # reported honestly either way is.
     qualities = {quality["key"]: quality for quality in offered["qualities"]}
     assert qualities["bicubic"]["available"] is True
-    assert qualities["ai"]["available"] is False
-    assert qualities["ai"]["reason"]
+    for key in ("ai", "gigapixel"):
+        assert qualities[key]["available"] or qualities[key]["reason"]
+
+    # And the three Etsy output modes are offered, with the wording the screen
+    # shows and a flag for the one that can cut the artwork.
+    assert [mode["key"] for mode in offered["modes"]] == ["safe_fit", "safe_fill", "fill_crop"]
+    modes = {mode["key"]: mode for mode in offered["modes"]}
+    assert modes["safe_fit"]["recommended"] is True
+    assert modes["fill_crop"]["cuts"] is True
+    assert modes["safe_fill"]["cuts"] is False
 
 
 def test_an_export_never_crops_the_artwork(tmp_path):
@@ -317,3 +327,115 @@ def test_a_panoramic_canvas_is_not_stood_on_its_end(tmp_path):
     assert target_size(upright, tall_art) == (7200, 10800)
     # A square artwork has no orientation to follow.
     assert target_size(panoramic, square_art) == (10800, 3600)
+
+
+def test_an_installed_upscaler_is_offered_without_being_configured(tmp_path, monkeypatch):
+    """An empty setting is not the same as "not installed".
+
+    The first cut reported Real-ESRGAN missing on a machine where it was
+    installed and working, because nothing had been typed into the settings.
+    """
+    from services import print_export_service as export_service
+
+    program = tmp_path / "realesrgan-ncnn-vulkan.exe"
+    program.write_bytes(b"")
+    monkeypatch.setattr(export_service, "TOOL_CANDIDATES", {"realesrgan": (str(program),), "topaz": ()})
+    monkeypatch.setattr(export_service.shutil, "which", lambda name: None)
+
+    found = export_service.resolved_tools({})
+    assert found["realesrgan"] == str(program)
+    offered = {q["key"]: q for q in export_service.available_qualities(found)}
+    assert offered["ai"]["available"] is True
+    # Topaz is genuinely absent here, and says so by name.
+    assert offered["gigapixel"]["available"] is False
+    assert "tpai.exe" in offered["gigapixel"]["reason"]
+
+    # A path the admin typed still wins over what was found.
+    typed = export_service.resolved_tools({"realesrgan_path": r"D:\elsewhere\x.exe"})
+    assert typed["realesrgan"] == r"D:\elsewhere\x.exe"
+
+
+def test_the_three_etsy_output_modes_do_what_they_say(tmp_path):
+    """Safe Fit leaves margins, Safe Fill covers them, Fill/Crop cuts."""
+    from PIL import Image as PillowImage
+
+    from services.print_export_service import render_print_file
+
+    # A tall artwork with a bright edge, into a square canvas.
+    art = PillowImage.new("RGB", (300, 600), (40, 90, 200))
+    for y in range(600):
+        for x in range(6):
+            art.putpixel((x, y), (250, 40, 40))
+    square = {"key": "1:1", "width": 400, "height": 400}
+
+    fit = render_print_file(art, square, quality="basic", mode="safe_fit")
+    fill = render_print_file(art, square, quality="basic", mode="safe_fill")
+    crop = render_print_file(art, square, quality="basic", mode="fill_crop")
+
+    assert fit.size == fill.size == crop.size == (400, 400)
+    # Safe Fit: plain white at the sides.
+    assert fit.getpixel((2, 200)) == (255, 255, 255)
+    # Safe Fill: the same margin is covered, and it is not white.
+    assert fill.getpixel((2, 200)) != (255, 255, 255)
+    # Both keep the whole artwork: its red edge survives across the middle.
+    for produced in (fit, fill):
+        middle = [produced.getpixel((x, 200)) for x in range(400)]
+        assert any(pixel[0] > 180 and pixel[1] < 110 for pixel in middle), "the artwork edge was lost"
+    # Fill/Crop fills the canvas rather than leaving a margin.
+    assert crop.getpixel((2, 200)) != (255, 255, 255)
+
+
+def test_an_unknown_output_mode_is_refused_rather_than_guessed(tmp_path):
+    from services.print_catalog_service import PrintCatalogError, PrintCatalogService
+
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    refused = export(client, {"ratios": "2:3", "mode": "creative"})
+    assert refused.status_code == 400
+    assert "creative" in refused.get_json()["error"]
+
+    made = export(client, {"ratios": "2:3", "quality": "basic", "mode": "safe_fill"}).get_json()
+    assert made["mode"] == "safe_fill"
+
+    catalog = PrintCatalogService(tmp_path / "other.sqlite3")
+    catalog.initialize()
+    with pytest.raises(PrintCatalogError, match="Unknown output mode"):
+        catalog.create_set({"name": "Bad", "output_mode": "sideways"})
+
+
+def test_a_set_remembers_its_output_mode(tmp_path):
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    created = client.post(
+        "/api/print/sets",
+        json={"name": "Blurred pack", "mode": "matching", "quality": "basic", "output_mode": "safe_fill"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+    assert created["output_mode"] == "safe_fill"
+
+    made = export(client, {"set": created["id"]}).get_json()
+    assert made["mode"] == "safe_fill"
+    assert "not part of the image" in Path(
+        client.application.config["PRINT_OUTPUT_FOLDER"], made["guide"]["file"]
+    ).read_text(encoding="utf-8")
+
+    # An explicit mode on one export overrides the set without changing it.
+    once = export(client, {"set": created["id"], "mode": "safe_fit"}).get_json()
+    assert once["mode"] == "safe_fit"
+    assert client.get("/api/print/sets").get_json()["sets"][0]["output_mode"] == "safe_fill"
+
+
+def test_the_studio_ships_its_own_copy_of_the_upscaler():
+    """A fresh checkout should have the AI quality without an install step."""
+    from services.print_export_service import BUNDLED_ROOT, TOOL_CANDIDATES, discover_tool
+
+    first = Path(TOOL_CANDIDATES["realesrgan"][0])
+    assert first.parent.parent == BUNDLED_ROOT, "the bundled copy must be looked at first"
+    if first.is_file():
+        # On a machine that has the checkout, that is what gets used -- ahead
+        # of any system-wide install.
+        assert discover_tool("realesrgan") == str(first)

@@ -78,6 +78,10 @@
               <span class="dock-label">Quality</span>
               <select id="exportQuality" class="dock-select"></select>
             </div>
+            <div class="dock-field">
+              <span class="dock-label">Etsy output mode</span>
+              <select id="exportMode" class="dock-select"></select>
+            </div>
             <div class="dock-note" id="artworkFacts">No artwork chosen.</div>
             <button class="btn primary" id="runExport" disabled>Export print files</button>
           </div>
@@ -125,6 +129,15 @@
         <div class="stack-field" id="setRatiosField">
           <span class="dock-label">Ratios in this set</span>
           <div class="ratio-picker" id="setRatios"></div>
+        </div>
+
+        <div class="stack-field">
+          <span class="dock-label">Etsy output mode</span>
+          <div class="output-modes" id="setOutputMode"></div>
+          <p class="modal-note">
+            Recommended: Safe Fit. It creates exact Etsy ratio files without cutting the
+            artwork. Use the blurred extension only when you do not want plain margins.
+          </p>
         </div>
 
         <div class="stack-row">
