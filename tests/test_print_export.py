@@ -487,3 +487,122 @@ def test_the_export_says_whether_the_upload_was_transparent(tmp_path):
         corner = produced.convert("RGB").getpixel((4, 4))
     # White, not the black the plain conversion left behind.
     assert min(corner) > 240, corner
+
+
+def test_an_export_leaves_a_record_of_what_it_made(tmp_path):
+    """A folder of anonymous files cannot be answered for, or cleaned up.
+
+    The record is what says which artwork a print file came from, under which
+    set and mode -- and it is what lets anything sweep the folder later without
+    guessing which files still matter.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    pack = client.post(
+        "/api/print/sets",
+        json={"name": "The pack", "mode": "chosen", "ratio_keys": ["2:3", "3:4"], "quality": "basic"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+
+    made = client.post(
+        "/api/print/export",
+        data={
+            "artwork": (artwork(), "seaside.png"),
+            "spec": json.dumps({"set": pack["id"], "reference": "listing-7781"}),
+        },
+        content_type="multipart/form-data",
+    ).get_json()
+    assert made["export_id"]
+
+    history = client.get("/api/print/exports").get_json()
+    assert history["total"] == 1
+    entry = history["exports"][0]
+    assert entry["artwork_name"] == "seaside.png"
+    assert (entry["artwork_width"], entry["artwork_height"]) == (1200, 1800)
+    assert entry["set_name"] == "The pack" and entry["set_id"] == pack["id"]
+    assert entry["output_mode"] == "safe_fit" and entry["quality"] == "basic"
+    assert entry["guide_file"].endswith("printing_guide.txt")
+    assert [f["ratio_key"] for f in entry["files"]] == ["2:3", "3:4"]
+    # The size on disk is recorded, so a cleanup can say what it will reclaim.
+    assert all(f["bytes"] > 0 for f in entry["files"])
+
+    # The shop app asks what it already holds for one listing.
+    assert client.get("/api/print/exports?reference=listing-7781").get_json()["total"] == 1
+    assert client.get("/api/print/exports?reference=listing-0000").get_json()["total"] == 0
+
+
+def test_forgetting_an_export_takes_its_files_with_it(tmp_path):
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+    made = export(client, {"ratios": "2:3, 3:4", "quality": "basic"}).get_json()
+
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    produced = [folder / entry["file"] for entry in made["files"]] + [folder / made["guide"]["file"]]
+    assert all(path.is_file() for path in produced)
+
+    # Changing the history is guarded like the rest of it: this session is the
+    # administrator already, so what is missing here is the CSRF token.
+    assert client.delete(f"/api/print/exports/{made['export_id']}").status_code == 403
+
+    gone = client.delete(f"/api/print/exports/{made['export_id']}", headers={"X-CSRF-Token": csrf})
+    assert gone.status_code == 200
+    assert gone.get_json()["files_removed"] == 3
+    assert not any(path.is_file() for path in produced), "files outlived their record"
+    assert client.get("/api/print/exports").get_json()["total"] == 0
+    assert client.delete(f"/api/print/exports/{made['export_id']}", headers={"X-CSRF-Token": csrf}).status_code == 404
+
+
+def test_the_sweep_clears_what_is_past_its_keeping_date(tmp_path):
+    """Retention is the point of the record: nothing else can do this safely."""
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    old = export(client, {"ratios": "2:3", "quality": "basic"}).get_json()
+    fresh = export(client, {"ratios": "3:4", "quality": "basic"}).get_json()
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    old_file = folder / old["files"][0]["file"]
+    fresh_file = folder / fresh["files"][0]["file"]
+
+    # Age one of them past the retention window.
+    long_ago = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+    with sqlite3.connect(client.application.config["PRINT_DATABASE_PATH"]) as connection:
+        connection.execute("UPDATE exports SET created_at = ? WHERE id = ?", (long_ago, old["export_id"]))
+
+    swept = client.post("/api/print/exports/sweep", headers={"X-CSRF-Token": csrf})
+    assert swept.status_code == 200
+    assert swept.get_json()["exports"] == 1
+    assert not old_file.is_file() and fresh_file.is_file()
+    assert [e["id"] for e in client.get("/api/print/exports").get_json()["exports"]] == [fresh["export_id"]]
+
+    # A file no record claims is swept on the same clock: nothing can name it,
+    # so once it is past the window it is only taking up room. This is what
+    # clears whatever was written before the history existed.
+    import os
+
+    stray = folder / "left_behind_by_an_older_version.jpg"
+    stray.write_bytes(b"x")
+    old_time = stray.stat().st_mtime - 60 * 86400
+    os.utime(stray, (old_time, old_time))
+    again = client.post("/api/print/exports/sweep", headers={"X-CSRF-Token": csrf}).get_json()
+    assert again["unclaimed_files"] == 1 and not stray.is_file()
+    # The claimed set comes from the database, not from one page of history:
+    # reading a page would call every older export unclaimed and delete files
+    # that are still on the books.
+    catalog = client.application.extensions["print_catalog"]
+    assert catalog.claimed_file_names() >= {fresh["files"][0]["file"], fresh["guide"]["file"]}
+    # ...and a claimed file of the same age is left exactly where it is.
+    assert fresh_file.is_file()
+
+    # Zero days means keep everything, for a shop that archives its own.
+    client.put("/api/print/settings", json={"retention_days": "0"}, headers={"X-CSRF-Token": csrf})
+    with sqlite3.connect(client.application.config["PRINT_DATABASE_PATH"]) as connection:
+        connection.execute("UPDATE exports SET created_at = ?", (long_ago,))
+    assert client.post("/api/print/exports/sweep", headers={"X-CSRF-Token": csrf}).get_json()["exports"] == 0
+    assert fresh_file.is_file()

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +119,33 @@ class PrintCatalogService:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS exports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch TEXT NOT NULL UNIQUE,
+                    artwork_name TEXT NOT NULL DEFAULT '',
+                    artwork_width INTEGER NOT NULL DEFAULT 0,
+                    artwork_height INTEGER NOT NULL DEFAULT 0,
+                    set_id INTEGER,
+                    set_name TEXT NOT NULL DEFAULT '',
+                    output_mode TEXT NOT NULL DEFAULT 'safe_fit',
+                    quality TEXT NOT NULL DEFAULT 'bicubic',
+                    guide_file TEXT NOT NULL DEFAULT '',
+                    reference TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS export_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    export_id INTEGER NOT NULL REFERENCES exports(id) ON DELETE CASCADE,
+                    ratio_key TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
+                    width INTEGER NOT NULL DEFAULT 0,
+                    height INTEGER NOT NULL DEFAULT 0,
+                    prints_at TEXT NOT NULL DEFAULT '',
+                    bytes INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS exports_made_at ON exports(created_at DESC);
+                CREATE INDEX IF NOT EXISTS export_files_owner ON export_files(export_id);
+                CREATE INDEX IF NOT EXISTS exports_reference ON exports(reference);
                 """
             )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(ratios)")}
@@ -392,6 +419,128 @@ class PrintCatalogService:
         record["include_guide"] = bool(record.get("include_guide"))
         record["output_mode"] = record.get("output_mode") or DEFAULT_OUTPUT_MODE
         return record
+
+    # ------------------------------------------------------------- exports
+
+    def record_export(self, record: dict[str, Any], files: list[dict[str, Any]]) -> dict[str, Any]:
+        """What one export produced, so the files on disk stop being anonymous.
+
+        Without this a finished print file is only a name in a folder: nothing
+        says which artwork it came from, under which set, or whether it is
+        still wanted -- which is also why nothing could clean up after itself.
+        """
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO exports(
+                    batch, artwork_name, artwork_width, artwork_height, set_id, set_name,
+                    output_mode, quality, guide_file, reference, created_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(record.get("batch") or ""),
+                    str(record.get("artwork_name") or ""),
+                    int(record.get("artwork_width") or 0),
+                    int(record.get("artwork_height") or 0),
+                    record.get("set_id"),
+                    str(record.get("set_name") or ""),
+                    str(record.get("output_mode") or DEFAULT_OUTPUT_MODE),
+                    str(record.get("quality") or "bicubic"),
+                    str(record.get("guide_file") or ""),
+                    str(record.get("reference") or ""),
+                    utc_now(),
+                ),
+            )
+            export_id = cursor.lastrowid
+            for entry in files:
+                connection.execute(
+                    """
+                    INSERT INTO export_files(export_id, ratio_key, file_name, width, height, prints_at, bytes)
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        export_id,
+                        str(entry.get("ratio") or ""),
+                        str(entry.get("file") or ""),
+                        int(entry.get("width") or 0),
+                        int(entry.get("height") or 0),
+                        str(entry.get("prints_at") or ""),
+                        int(entry.get("bytes") or 0),
+                    ),
+                )
+        self._checkpoint()
+        return self.get_export(export_id)
+
+    def list_exports(self, *, limit: int = 50, offset: int = 0, reference: str = "") -> list[dict[str, Any]]:
+        where, values = ("WHERE reference = ?", [str(reference)]) if reference else ("", [])
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM exports {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (*values, max(1, min(int(limit), 200)), max(0, int(offset))),
+            ).fetchall()
+            return [self._with_files(connection, dict(row)) for row in rows]
+
+    def count_exports(self, *, reference: str = "") -> int:
+        where, values = ("WHERE reference = ?", [str(reference)]) if reference else ("", [])
+        with self._connect() as connection:
+            return connection.execute(f"SELECT COUNT(*) FROM exports {where}", values).fetchone()[0]
+
+    def get_export(self, export_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM exports WHERE id = ?", (export_id,)).fetchone()
+            return self._with_files(connection, dict(row)) if row else None
+
+    @staticmethod
+    def _with_files(connection: sqlite3.Connection, export: dict[str, Any]) -> dict[str, Any]:
+        export["files"] = [
+            dict(entry)
+            for entry in connection.execute(
+                "SELECT ratio_key, file_name, width, height, prints_at, bytes "
+                "FROM export_files WHERE export_id = ? ORDER BY id",
+                (export["id"],),
+            )
+        ]
+        return export
+
+    def forget_export(self, export_id: int) -> list[str]:
+        """Drop the record, and answer with the file names it was holding."""
+        export = self.get_export(export_id)
+        if not export:
+            raise PrintCatalogError("Export not found")
+        names = [entry["file_name"] for entry in export["files"]]
+        if export["guide_file"]:
+            names.append(export["guide_file"])
+        with self._connect() as connection:
+            connection.execute("DELETE FROM export_files WHERE export_id = ?", (export_id,))
+            connection.execute("DELETE FROM exports WHERE id = ?", (export_id,))
+        self._checkpoint()
+        return names
+
+    def claimed_file_names(self) -> set[str]:
+        """Every file name the history still answers for.
+
+        Asked of the database rather than of a page of results: a cleanup that
+        walked only the first page would see the older exports as unclaimed
+        and delete files that are still on the books.
+        """
+        with self._connect() as connection:
+            names = {row[0] for row in connection.execute("SELECT file_name FROM export_files")}
+            names |= {
+                row[0]
+                for row in connection.execute("SELECT guide_file FROM exports WHERE guide_file != ''")
+            }
+        return names
+
+    def exports_older_than(self, days: int) -> list[dict[str, Any]]:
+        """Every export past its keeping date. Zero days means keep forever."""
+        if days <= 0:
+            return []
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id FROM exports WHERE created_at < ? ORDER BY created_at", (cutoff,)
+            ).fetchall()
+        return [self.get_export(row["id"]) for row in rows]
 
     # ------------------------------------------------------------ settings
 

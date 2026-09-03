@@ -12,6 +12,7 @@ the same way it calls for mockups.
 from __future__ import annotations
 
 import json
+import time
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -56,6 +57,52 @@ print_routes = Blueprint("print_routes", __name__)
 # A print file is tens of megapixels; a request that asks for a dozen of them
 # is asking for minutes of work, so the count is capped.
 MAX_FILES_PER_EXPORT = 12
+
+# How long a finished export is kept before the sweep removes it, files and
+# record together. Zero keeps everything, which is what a shop that archives
+# its own deliveries elsewhere would want.
+DEFAULT_RETENTION_DAYS = 30
+
+
+def _retention_days() -> int:
+    try:
+        return max(0, int(print_catalog().get_settings().get("retention_days", DEFAULT_RETENTION_DAYS)))
+    except (TypeError, ValueError):
+        return DEFAULT_RETENTION_DAYS
+
+
+def sweep_expired_exports() -> dict[str, int]:
+    """Delete exports past their keeping date, files and record together.
+
+    This is why the record exists at all: a folder of anonymous files cannot be
+    cleaned up safely, because nothing says which of them still matters.
+
+    Files that no record claims are swept on the same clock. Anything written
+    before the history existed, or left behind by a half-finished export, is
+    unreachable by definition -- nothing can name it -- so once it is past the
+    window it is only taking up room.
+    """
+    days = _retention_days()
+    catalog = print_catalog()
+    folder = _print_folder()
+    removed_files = 0
+    expired = catalog.exports_older_than(days)
+    for export in expired:
+        for name in catalog.forget_export(export["id"]):
+            path = folder / name
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                removed_files += 1
+
+    orphans = 0
+    if days > 0:
+        claimed = catalog.claimed_file_names()
+        cutoff = time.time() - days * 86400
+        for path in folder.iterdir():
+            if path.is_file() and path.name not in claimed and path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+                orphans += 1
+    return {"exports": len(expired), "files": removed_files, "unclaimed_files": orphans}
 
 
 def print_catalog():
@@ -224,6 +271,7 @@ def get_print_settings():
         {
             "settings": print_catalog().get_settings(),
             "found": {name: discover_tool(name) for name in ("realesrgan", "topaz")},
+            "retention_days": _retention_days(),
         }
     )
 
@@ -234,7 +282,7 @@ def put_print_settings():
     if refusal:
         return refusal
     payload = request.get_json(silent=True) or {}
-    allowed = {"realesrgan_path", "topaz_path"}
+    allowed = {"realesrgan_path", "topaz_path", "retention_days"}
     print_catalog().set_settings({k: str(v) for k, v in payload.items() if k in allowed})
     return jsonify({"success": True, "settings": print_catalog().get_settings()})
 
@@ -275,6 +323,7 @@ def export_print_files():
 
     quality = str(spec.get("quality") or "").strip()
     asked_mode = str(spec.get("mode") or spec.get("output_mode") or "").strip()
+    chosen_set = None
     include_guide = True
     output_mode = ""
     requested = spec.get("set")
@@ -289,6 +338,7 @@ def export_print_files():
         quality = quality or print_set["quality"]
         output_mode = print_set["output_mode"]
         include_guide = print_set["include_guide"]
+        chosen_set = print_set
     else:
         wanted = spec.get("ratios") or ""
         keys = [key.strip().lower() for key in (wanted.split(",") if isinstance(wanted, str) else wanted) if str(key).strip()]
@@ -344,9 +394,36 @@ def export_print_files():
         (folder / guide_name).write_text(printing_guide(ratios, output_mode), encoding="utf-8")
 
     made = [entry for entry in files if entry["success"]]
+    # The record is what turns the folder into a history: which artwork, under
+    # which set, in which mode -- and what may be swept away later.
+    saved = None
+    if made:
+        for entry in made:
+            produced = folder / entry["file"]
+            entry["bytes"] = produced.stat().st_size if produced.is_file() else 0
+        saved = catalog.record_export(
+            {
+                "batch": batch,
+                "artwork_name": upload.filename or "",
+                "artwork_width": artwork.width,
+                "artwork_height": artwork.height,
+                "set_id": chosen_set["id"] if chosen_set else None,
+                "set_name": chosen_set["name"] if chosen_set else "",
+                "output_mode": output_mode,
+                "quality": quality or "bicubic",
+                "guide_file": guide_name or "",
+                # Whatever the shop app calls this listing, so it can ask later
+                # what it already has for it.
+                "reference": str(spec.get("reference") or "").strip()[:200],
+            },
+            made,
+        )
+        sweep_expired_exports()
+
     return jsonify(
         {
             "success": len(made) == len(files),
+            "export_id": saved["id"] if saved else None,
             "artwork_ratio": round(artwork.width / artwork.height, 4),
             "artwork_was_transparent": transparent,
             "quality": quality or "bicubic",
@@ -355,6 +432,66 @@ def export_print_files():
             "guide": {"file": guide_name, "url": f"/print-outputs/{guide_name}"} if guide_name else None,
         }
     ), (200 if len(made) == len(files) else 207)
+
+
+@print_routes.get("/api/print/exports")
+def get_print_exports():
+    """What has been produced, newest first.
+
+    Open like the export itself: the shop app asks what it already holds for a
+    listing rather than rendering it a second time.
+    """
+    catalog = print_catalog()
+    reference = str(request.args.get("reference") or "").strip()
+    try:
+        limit = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        return json_error("limit and offset must be whole numbers", 400)
+    return jsonify(
+        {
+            "exports": catalog.list_exports(limit=limit, offset=offset, reference=reference),
+            "total": catalog.count_exports(reference=reference),
+            "retention_days": _retention_days(),
+        }
+    )
+
+
+@print_routes.get("/api/print/exports/<int:export_id>")
+def get_print_export(export_id: int):
+    export = print_catalog().get_export(export_id)
+    if not export:
+        return json_error("Export not found", 404)
+    return jsonify({"export": export})
+
+
+@print_routes.delete("/api/print/exports/<int:export_id>")
+def delete_print_export(export_id: int):
+    """Forget one export, and take its files with it."""
+    refusal = _require_admin_json() or _require_csrf()
+    if refusal:
+        return refusal
+    folder = _print_folder()
+    try:
+        names = print_catalog().forget_export(export_id)
+    except PrintCatalogError as error:
+        return json_error(str(error), 404)
+    removed = 0
+    for name in names:
+        path = folder / name
+        if path.is_file():
+            path.unlink(missing_ok=True)
+            removed += 1
+    return jsonify({"success": True, "export_id": export_id, "files_removed": removed})
+
+
+@print_routes.post("/api/print/exports/sweep")
+def sweep_print_exports():
+    """Run the retention sweep now rather than waiting for the next export."""
+    refusal = _require_admin_json() or _require_csrf()
+    if refusal:
+        return refusal
+    return jsonify({"success": True, **sweep_expired_exports(), "retention_days": _retention_days()})
 
 
 @print_routes.post("/api/print/archive")

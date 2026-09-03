@@ -6,6 +6,12 @@
             "driver": "SQLite",
             "database": "${workspaceFolder:MockupGen}/etsy_resizer_settings.db",
             "name": "resizerdb"
+        },
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "database": "${workspaceFolder:MockupGen}/data/print_sizes.sqlite3",
+            "name": "print_sizes"
         }
     ]
 }

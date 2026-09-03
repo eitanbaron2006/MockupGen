@@ -101,6 +101,53 @@ an 80px Gaussian blur erases any difference an AI upscaler could make, and
 running one over a second full-size canvas would double the cost of the export
 for a result nobody can see.
 
+## History
+
+Every successful export is recorded, so a finished file is never an anonymous
+name in a folder. The record says which artwork it came from, under which set
+and mode, and what it weighs — which is also what makes cleanup possible.
+
+`POST /api/print/export` accepts an optional `reference` in the spec (whatever
+the shop app calls the listing) and answers with `export_id`.
+
+| Method | Path | Needs admin |
+|---|---|---|
+| `GET` | `/api/print/exports` | no — `?reference=`, `?limit=`, `?offset=` |
+| `GET` | `/api/print/exports/<id>` | no |
+| `DELETE` | `/api/print/exports/<id>` | yes — forgets the record **and deletes its files** |
+| `POST` | `/api/print/exports/sweep` | yes — runs the retention sweep now |
+
+```json
+{
+  "id": 12,
+  "batch": "4fa08fb5e5ea",
+  "artwork_name": "seaside.png",
+  "artwork_width": 1200, "artwork_height": 1800,
+  "set_id": 3, "set_name": "The pack",
+  "output_mode": "safe_fit", "quality": "bicubic",
+  "guide_file": "4fa08fb5e5ea_printing_guide.txt",
+  "reference": "listing-7781",
+  "created_at": "2026-09-03T12:04:11+00:00",
+  "files": [
+    {"ratio_key": "2:3", "file_name": "…_2x3_ratio_24x36_inch.jpg",
+     "width": 7200, "height": 10800, "prints_at": "4x6, 8x12, …", "bytes": 8421553}
+  ]
+}
+```
+
+### Retention
+
+`retention_days` (a print setting, default **30**) is how long an export is
+kept. The sweep runs after each export and on demand, and removes:
+
+- exports past that age — record and files together;
+- files in the output folder that **no record claims** and are past the same
+  age. Nothing can name such a file, so once it is old it is only taking up
+  room. This is what clears whatever was written before the history existed.
+
+Set `retention_days` to `0` to keep everything, for a shop that archives its
+deliveries elsewhere.
+
 ## Archive
 
 `POST /api/print/archive`
