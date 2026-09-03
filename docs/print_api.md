@@ -84,6 +84,33 @@ canvas on its side and the name gains `_landscape`. The leading hex is the batch
 id — it keeps one export apart from another on disk and is stripped from the
 archive, so it is not part of what the buyer sees.
 
+### Watching it happen
+
+A six-ratio export at full size is minutes of work. Ask for the files **as they
+are made** with `?stream=1` on the export, or an `Accept: application/x-ndjson`
+header. The plain single-object answer stays the default, so a caller that has
+always received one JSON object keeps receiving one.
+
+The response is newline-delimited JSON — one object per line:
+
+```
+{"event":"start","batch":"4fa08…","ratios":["2:3","3:4"],"quality":"bicubic","mode":"safe_fit"}
+{"event":"file","ratio":"2:3","success":true,"file":"…","url":"/print-outputs/…","width":7200,…}
+{"event":"file","ratio":"3:4","success":true,…}
+{"event":"done","success":true,"export_id":12,"files":[…],"guide":{…}}
+```
+
+Each file is written to disk before its line is sent, so its `url` works the
+moment it arrives. A ratio that failed comes through as a `file` line with
+`"success": false` and an `error`. The `done` line carries everything the plain
+answer would have, and is the point at which the export is recorded and the
+retention sweep runs.
+
+**A note for anything that adds middleware:** asking a streamed response for its
+content length converts the generator to a list, which collects the whole body
+before a byte of it is sent. The telemetry hook does this for ordinary responses
+and skips it for streamed ones — see `_record_telemetry` in `app.py`.
+
 ## Etsy output modes
 
 How the artwork meets a canvas whose shape it does not match. `GET

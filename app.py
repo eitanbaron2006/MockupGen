@@ -139,7 +139,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         )
         if not is_telemetry_poll:
             req_size = request.content_length or 0
-            resp_size = response.calculate_content_length() or 0
+            # Asking a streamed response for its length converts the generator
+            # to a list, which collects the whole body before a byte of it is
+            # sent -- the export that answers a file at a time arrived all at
+            # once because of this line. A stream is measured as it goes, and
+            # what telemetry loses is one number on a handful of requests.
+            resp_size = 0 if response.is_streamed else (response.calculate_content_length() or 0)
             client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "127.0.0.1").split(",")[0].strip()
 
             telemetry: TelemetryService | None = app.extensions.get("telemetry_service")

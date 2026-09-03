@@ -27,6 +27,7 @@ from flask import (
     request,
     send_file,
     session,
+    stream_with_context,
     url_for,
 )
 from PIL import UnidentifiedImageError
@@ -290,6 +291,18 @@ def put_print_settings():
 # ------------------------------------------------------------------ export
 
 
+def _wants_stream() -> bool:
+    """Whether this caller wants the files as they are made.
+
+    Off unless asked for: the shop application has always received one JSON
+    object and that must not change under it. The screen asks for the stream.
+    """
+    asked = str(request.args.get("stream") or request.form.get("stream") or "").lower()
+    if asked in {"1", "true", "yes"}:
+        return True
+    return "application/x-ndjson" in (request.headers.get("Accept") or "")
+
+
 @print_routes.post("/api/print/export")
 def export_print_files():
     """One artwork in, the print files a listing ships out.
@@ -361,67 +374,66 @@ def export_print_files():
 
     folder = _print_folder()
     batch = uuid4().hex[:12]
-    files = []
-    for ratio in ratios:
+    tools = _tools()
+
+    def one_file(ratio: dict) -> dict:
+        """Render and save a single ratio, whatever the answer turns out to be."""
         try:
             rendered = render_print_file(
                 artwork,
                 ratio,
                 quality=quality or "bicubic",
                 mode=output_mode,
-                tools=_tools(),
+                tools=tools,
             )
         except PrintExportError as error:
-            files.append({"ratio": ratio["key"], "success": False, "error": str(error)})
-            continue
+            return {"ratio": ratio["key"], "success": False, "error": str(error)}
         name = f"{batch}_{print_file_name(ratio, artwork)}"
-        rendered.save(folder / name, format="JPEG", quality=95, optimize=True, dpi=(300, 300))
-        files.append(
-            {
-                "ratio": ratio["key"],
-                "success": True,
-                "file": name,
-                "url": f"/print-outputs/{name}",
-                "width": rendered.width,
-                "height": rendered.height,
-                "prints_at": ratio.get("sizes", ""),
-            }
-        )
+        produced = folder / name
+        rendered.save(produced, format="JPEG", quality=95, optimize=True, dpi=(300, 300))
+        return {
+            "ratio": ratio["key"],
+            "success": True,
+            "file": name,
+            "url": f"/print-outputs/{name}",
+            "width": rendered.width,
+            "height": rendered.height,
+            "prints_at": ratio.get("sizes", ""),
+            "bytes": produced.stat().st_size if produced.is_file() else 0,
+        }
 
-    guide_name = None
-    if include_guide and any(entry["success"] for entry in files):
-        guide_name = f"{batch}_printing_guide.txt"
-        (folder / guide_name).write_text(printing_guide(ratios, output_mode), encoding="utf-8")
+    def finish(files: list[dict]) -> dict:
+        """The guide, the record and the sweep -- the same either way round."""
+        guide_name = None
+        if include_guide and any(entry["success"] for entry in files):
+            guide_name = f"{batch}_printing_guide.txt"
+            (folder / guide_name).write_text(printing_guide(ratios, output_mode), encoding="utf-8")
 
-    made = [entry for entry in files if entry["success"]]
-    # The record is what turns the folder into a history: which artwork, under
-    # which set, in which mode -- and what may be swept away later.
-    saved = None
-    if made:
-        for entry in made:
-            produced = folder / entry["file"]
-            entry["bytes"] = produced.stat().st_size if produced.is_file() else 0
-        saved = catalog.record_export(
-            {
-                "batch": batch,
-                "artwork_name": upload.filename or "",
-                "artwork_width": artwork.width,
-                "artwork_height": artwork.height,
-                "set_id": chosen_set["id"] if chosen_set else None,
-                "set_name": chosen_set["name"] if chosen_set else "",
-                "output_mode": output_mode,
-                "quality": quality or "bicubic",
-                "guide_file": guide_name or "",
-                # Whatever the shop app calls this listing, so it can ask later
-                # what it already has for it.
-                "reference": str(spec.get("reference") or "").strip()[:200],
-            },
-            made,
-        )
-        sweep_expired_exports()
+        made = [entry for entry in files if entry["success"]]
+        # The record is what turns the folder into a history: which artwork,
+        # under which set, in which mode -- and what may be swept away later.
+        saved = None
+        if made:
+            saved = catalog.record_export(
+                {
+                    "batch": batch,
+                    "artwork_name": upload.filename or "",
+                    "artwork_width": artwork.width,
+                    "artwork_height": artwork.height,
+                    "set_id": chosen_set["id"] if chosen_set else None,
+                    "set_name": chosen_set["name"] if chosen_set else "",
+                    "output_mode": output_mode,
+                    "quality": quality or "bicubic",
+                    "guide_file": guide_name or "",
+                    # Whatever the shop app calls this listing, so it can ask
+                    # later what it already has for it.
+                    "reference": str(spec.get("reference") or "").strip()[:200],
+                },
+                made,
+            )
+            sweep_expired_exports()
 
-    return jsonify(
-        {
+        return {
             "success": len(made) == len(files),
             "export_id": saved["id"] if saved else None,
             "artwork_ratio": round(artwork.width / artwork.height, 4),
@@ -431,7 +443,40 @@ def export_print_files():
             "files": files,
             "guide": {"file": guide_name, "url": f"/print-outputs/{guide_name}"} if guide_name else None,
         }
-    ), (200 if len(made) == len(files) else 207)
+
+    if _wants_stream():
+        # Newline-delimited JSON: the screen shows a file the moment it exists
+        # rather than holding a blank panel for the minutes a six-ratio export
+        # takes. The plain answer stays the default, because the shop app asks
+        # for one JSON object and that contract must not move under it.
+        def lines():
+            yield json.dumps(
+                {
+                    "event": "start",
+                    "batch": batch,
+                    "ratios": [ratio["key"] for ratio in ratios],
+                    "quality": quality or "bicubic",
+                    "mode": output_mode,
+                }
+            ) + "\n"
+            produced = []
+            for ratio in ratios:
+                entry = one_file(ratio)
+                produced.append(entry)
+                yield json.dumps({"event": "file", **entry}) + "\n"
+            yield json.dumps({"event": "done", **finish(produced)}) + "\n"
+
+        return current_app.response_class(
+            stream_with_context(lines()),
+            mimetype="application/x-ndjson",
+            # Nothing in between should hold the lines back and hand them over
+            # as one block at the end.
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    files = [one_file(ratio) for ratio in ratios]
+    summary = finish(files)
+    return jsonify(summary), (200 if summary["success"] else 207)
 
 
 @print_routes.get("/api/print/exports")

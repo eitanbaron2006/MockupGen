@@ -50,14 +50,22 @@
             <h2>Export</h2>
             <div class="sub" id="exportSub">An artwork in, the files a buyer downloads out</div>
           </div>
-          <button class="btn compact" id="downloadZip" disabled>
-            <span class="icon">&#8681;</span> Download .zip
-          </button>
+          <div class="head-tools">
+            <div class="view-switch" id="exportViews">
+              <button type="button" class="is-on" data-view="results">Results</button>
+              <button type="button" data-view="history">History</button>
+            </div>
+            <button class="btn compact" id="downloadZip" disabled title="Ready once every file is made">
+              <span class="icon">&#8681;</span> Download .zip
+            </button>
+          </div>
         </div>
 
         <div class="export-results print-scroll" id="exportResults">
           <div class="empty">Nothing exported yet.</div>
         </div>
+
+        <div class="export-history print-scroll" id="exportHistory" hidden></div>
 
         <div class="export-dock">
           <label class="artwork-drop" id="artworkDrop">
@@ -248,7 +256,9 @@
   <!-- ------------------------------------------------------- full preview -->
   <div class="print-preview" id="printPreview">
     <button class="icon-button preview-close" data-close="printPreview">&times;</button>
+    <button class="preview-step preview-prev" id="previewPrev" title="Previous (scroll, or arrow keys)" hidden>&#8249;</button>
     <img id="previewImage" alt="">
+    <button class="preview-step preview-next" id="previewNext" title="Next (scroll, or arrow keys)" hidden>&#8250;</button>
     <div class="preview-caption" id="previewCaption"></div>
   </div>
 

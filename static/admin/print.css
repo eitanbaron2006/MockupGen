@@ -927,3 +927,198 @@ body.print-page {
     grid-template-columns: 264px minmax(360px, 1fr) 288px;
   }
 }
+
+/* --- The working clock, the history, and walking the full-screen view ----- */
+
+.head-tools {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.view-switch {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+.view-switch button {
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  padding: 7px 11px;
+  text-transform: uppercase;
+}
+
+.view-switch button.is-on {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+/* The clock runs in the header while files land below. Nothing is covered and
+   nothing is blocked: a file already made stays clickable while the rest render. */
+.sub.is-working,
+#exportSub.is-working {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  gap: 7px;
+}
+
+#exportSub.is-working::before {
+  animation: export-pulse 1s ease-in-out infinite;
+  background: var(--accent);
+  border-radius: 50%;
+  content: "";
+  height: 7px;
+  width: 7px;
+}
+
+@keyframes export-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .35; transform: scale(.7); }
+}
+
+/* A ratio that has been asked for but has not arrived: it holds its place so
+   the grid does not jump about as each file lands. */
+.print-result.is-pending {
+  cursor: default;
+}
+
+.print-result.is-pending .pending-shade {
+  background:
+    linear-gradient(100deg, rgba(21, 20, 15, .04) 30%, rgba(21, 20, 15, .09) 50%, rgba(21, 20, 15, .04) 70%)
+    var(--paper);
+  background-size: 300% 100%;
+  animation: pending-sweep 1.4s linear infinite;
+  border-bottom: 1px solid var(--line-soft);
+  height: 132px;
+}
+
+@keyframes pending-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+/* --- History ------------------------------------------------------------- */
+
+.export-history {
+  display: block;
+}
+
+.history-run {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  position: relative;
+}
+
+.history-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.history-artwork {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-facts {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .05em;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.history-run .set-trash {
+  position: static;
+  flex-shrink: 0;
+}
+
+.history-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.history-file {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 5px 5px 4px;
+  width: 76px;
+}
+
+.history-file:hover {
+  border-color: var(--accent);
+}
+
+.history-file img {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%),
+    linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%);
+  background-position: 0 0, 8px 8px;
+  background-size: 16px 16px;
+  height: 56px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.history-file span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+/* --- Walking the full-screen view ---------------------------------------- */
+
+.preview-step {
+  align-items: center;
+  background: rgba(247, 241, 222, .1);
+  border: 1px solid rgba(247, 241, 222, .25);
+  border-radius: 50%;
+  color: var(--panel);
+  cursor: pointer;
+  display: flex;
+  font-size: 26px;
+  height: 46px;
+  justify-content: center;
+  line-height: 1;
+  padding-bottom: 4px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 46px;
+}
+
+.preview-step:hover {
+  background: rgba(247, 241, 222, .22);
+}
+
+.preview-prev { left: 22px; }
+.preview-next { right: 22px; }

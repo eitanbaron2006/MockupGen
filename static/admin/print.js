@@ -14,6 +14,11 @@ const state = {
   artworkSize: null,
   artworkUrl: null,
   lastExport: null,
+  running: null,
+  previews: [],
+  previewAt: 0,
+  view: 'results',
+  history: [],
   editingSet: null,
   editingRatio: null,
   confirmAction: null,
@@ -171,6 +176,35 @@ function renderSummary() {
 
 /* ----------------------------------------------------------------- export */
 
+/** One finished file as a card. Used by the export and by the history. */
+function resultCard(entry) {
+  if (!entry.success) {
+    return `<div class="print-result is-failed">
+        <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
+        <div class="print-result-error">${escapeHtml(entry.error)}</div>
+      </div>`;
+  }
+  return `<div class="print-result" data-preview="${escapeHtml(entry.url)}" data-caption="${escapeHtml(buyerName(entry.file))}" role="button" tabindex="0">
+      <img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.ratio)}" loading="lazy">
+      <div class="print-result-body">
+        <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
+        <div class="print-result-px">${entry.width} &times; ${entry.height} px &middot; 300 DPI</div>
+        <div class="print-result-sizes">${escapeHtml(entry.prints_at || '')}</div>
+      </div>
+    </div>`;
+}
+
+/** A card for a ratio that has been asked for but has not arrived yet. */
+function pendingCard(key) {
+  return `<div class="print-result is-pending">
+      <div class="pending-shade"></div>
+      <div class="print-result-body">
+        <div class="print-result-ratio">${escapeHtml(key)}</div>
+        <div class="print-result-px">rendering&hellip;</div>
+      </div>
+    </div>`;
+}
+
 function renderResults() {
   const results = el('exportResults');
   const made = state.lastExport;
@@ -179,22 +213,10 @@ function renderResults() {
     el('downloadZip').disabled = true;
     return;
   }
-  const cards = made.files.map((entry) => {
-    if (!entry.success) {
-      return `<div class="print-result is-failed">
-          <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
-          <div class="print-result-error">${escapeHtml(entry.error)}</div>
-        </div>`;
-    }
-    return `<div class="print-result" data-preview="${escapeHtml(entry.url)}" data-caption="${escapeHtml(buyerName(entry.file))}" role="button" tabindex="0">
-        <img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.ratio)}" loading="lazy">
-        <div class="print-result-body">
-          <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
-          <div class="print-result-px">${entry.width} &times; ${entry.height} px &middot; 300 DPI</div>
-          <div class="print-result-sizes">${escapeHtml(entry.prints_at || '')}</div>
-        </div>
-      </div>`;
-  });
+  const cards = made.files.map(resultCard);
+  // While the export is still running, the ratios yet to come hold their place
+  // so the grid does not jump about as each one lands.
+  for (const key of (made.awaiting || [])) cards.push(pendingCard(key));
   if (made.guide) {
     cards.push(`<a class="print-result guide-result" href="${escapeHtml(made.guide.url)}" target="_blank" rel="noopener">
         <div class="print-result-body">
@@ -204,7 +226,113 @@ function renderResults() {
       </a>`);
   }
   results.innerHTML = cards.join('');
-  el('downloadZip').disabled = !made.files.some((entry) => entry.success);
+  // A half-made set of files is not a package. The archive waits for the last
+  // one -- a buyer sent four files out of six has been sent the wrong thing.
+  el('downloadZip').disabled = !made.complete || !made.files.some((entry) => entry.success);
+  collectPreviews();
+}
+
+/* Every file currently on show, in the order it is shown. The full-screen
+   view walks this list, so comparing two ratios does not mean closing the
+   view, finding the next card and opening it again. */
+function collectPreviews() {
+  state.previews = [...document.querySelectorAll('#exportResults [data-preview], #exportHistory [data-preview]')]
+    .map((node) => ({ url: node.dataset.preview, caption: node.dataset.caption }));
+  // Files keep arriving while the view is open, so the count it shows follows
+  // them rather than waiting for the next scroll to catch up.
+  if (el('printPreview').classList.contains('is-open')) {
+    const showing = state.previews.findIndex((entry) => entry.url === el('previewImage').getAttribute('src'));
+    if (showing >= 0) openPreview(showing);
+  }
+}
+
+function openPreview(index) {
+  if (!state.previews.length) return;
+  const total = state.previews.length;
+  state.previewAt = ((index % total) + total) % total;
+  const shown = state.previews[state.previewAt];
+  el('previewImage').src = shown.url;
+  el('previewCaption').textContent = total > 1
+    ? `${shown.caption}   ·   ${state.previewAt + 1} of ${total}`
+    : shown.caption;
+  el('previewPrev').hidden = total < 2;
+  el('previewNext').hidden = total < 2;
+  openModal('printPreview');
+}
+
+const stepPreview = (by) => openPreview(state.previewAt + by);
+
+/* A trackpad reports a flick as a run of events; one step per gesture. */
+let wheelReady = true;
+function onPreviewWheel(event) {
+  if (!state.previews.length) return;
+  event.preventDefault();
+  if (!wheelReady || Math.abs(event.deltaY) < 4) return;
+  wheelReady = false;
+  window.setTimeout(() => { wheelReady = true; }, 180);
+  stepPreview(event.deltaY > 0 ? 1 : -1);
+}
+
+/* ---------------------------------------------------------------- history */
+
+const shortDate = (value) => {
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? '' : at.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
+
+function renderHistory() {
+  const panel = el('exportHistory');
+  if (!state.history.length) {
+    panel.innerHTML = '<div class="empty">Nothing exported yet. What you make is kept here.</div>';
+    return;
+  }
+  panel.innerHTML = state.history.map((run) => `
+    <div class="history-run">
+      <div class="history-head">
+        <div>
+          <div class="history-artwork">${escapeHtml(run.artwork_name || 'Untitled artwork')}</div>
+          <div class="history-facts">
+            ${escapeHtml(shortDate(run.created_at))}
+            &middot; ${escapeHtml(run.set_name || 'no set')}
+            &middot; ${escapeHtml(modeName(run.output_mode))}
+            &middot; ${escapeHtml(qualityName(run.quality))}
+            &middot; ${plural(run.files.length, 'file')}
+          </div>
+        </div>
+        <button class="set-trash" data-forget="${run.id}" title="Delete this export and its files">&#128465;</button>
+      </div>
+      <div class="history-files">
+        ${run.files.map((file) => `
+          <button class="history-file" data-preview="/print-outputs/${escapeHtml(file.file_name)}" data-caption="${escapeHtml(buyerName(file.file_name))}">
+            <img src="/print-outputs/${escapeHtml(file.file_name)}" alt="${escapeHtml(file.ratio_key)}" loading="lazy">
+            <span>${escapeHtml(file.ratio_key)}</span>
+          </button>`).join('')}
+      </div>
+    </div>`).join('');
+  collectPreviews();
+}
+
+async function loadHistory() {
+  try {
+    const payload = await api('/api/print/exports?limit=40');
+    state.history = payload.exports || [];
+    renderHistory();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function showView(view) {
+  state.view = view;
+  el('exportResults').hidden = view !== 'results';
+  el('exportHistory').hidden = view !== 'history';
+  document.querySelectorAll('#exportViews [data-view]').forEach((button) => {
+    button.classList.toggle('is-on', button.dataset.view === view);
+  });
+  if (view === 'history') loadHistory();
+  else collectPreviews();
 }
 
 function showArtwork(file) {
@@ -227,14 +355,81 @@ function showArtwork(file) {
   probe.src = state.artworkUrl;
 }
 
+/* The clock. It runs in the header while files land in the panel below, so
+   the wait is visible without anything being blocked: every file already made
+   stays clickable, and the full-screen view works while the rest render. */
+function elapsed(since) {
+  const seconds = Math.floor((Date.now() - since) / 1000);
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function showProgress() {
+  const run = state.running;
+  const sub = el('exportSub');
+  if (!run) {
+    sub.classList.remove('is-working');
+    return;
+  }
+  const done = state.lastExport?.files.length || 0;
+  sub.classList.add('is-working');
+  sub.textContent = `${done} of ${run.total} files · ${elapsed(run.startedAt)} · ${modeName(run.mode)}`;
+}
+
+function startClock(run) {
+  state.running = run;
+  showProgress();
+  run.ticker = window.setInterval(showProgress, 1000);
+}
+
+function stopClock() {
+  if (state.running?.ticker) window.clearInterval(state.running.ticker);
+  state.running = null;
+  el('exportSub').classList.remove('is-working');
+}
+
+/** One newline-delimited JSON line from the export. */
+function onExportEvent(event) {
+  if (event.event === 'start') {
+    state.lastExport = {
+      files: [],
+      awaiting: [...event.ratios],
+      guide: null,
+      mode: event.mode,
+      quality: event.quality,
+      complete: false,
+    };
+    startClock({ total: event.ratios.length, startedAt: Date.now(), mode: event.mode });
+    renderResults();
+    return;
+  }
+  if (event.event === 'file') {
+    const { event: _kind, ...entry } = event;
+    state.lastExport.files.push(entry);
+    state.lastExport.awaiting = state.lastExport.awaiting.filter((key) => key !== entry.ratio);
+    renderResults();
+    showProgress();
+    return;
+  }
+  if (event.event === 'done') {
+    const { event: _kind, ...summary } = event;
+    state.lastExport = { ...summary, awaiting: [], complete: true };
+    stopClock();
+    renderResults();
+    const good = summary.files.filter((entry) => entry.success).length;
+    el('exportSub').textContent = `${good} of ${summary.files.length} files · ${modeName(summary.mode)} · ${qualityName(summary.quality)}`;
+    toast(summary.success ? `${good} print files ready.` : `${good} of ${summary.files.length} made — see the notes.`, !summary.success);
+  }
+}
+
 async function runExport() {
   if (!state.artwork) return;
+  showView('results');
   const button = el('runExport');
   const restore = button.innerHTML;
   button.disabled = true;
   button.classList.add('is-busy');
   button.textContent = 'Exporting…';
-  el('exportSub').textContent = 'Working — a full-size file takes a moment each';
+  el('downloadZip').disabled = true;
   try {
     const spec = {};
     const setId = el('exportSet').value;
@@ -247,13 +442,39 @@ async function runExport() {
     const body = new FormData();
     body.append('artwork', state.artwork, state.artwork.name);
     body.append('spec', JSON.stringify(spec));
-    const made = await api('/api/print/export', { method: 'POST', body });
-    state.lastExport = made;
-    renderResults();
-    const good = made.files.filter((entry) => entry.success).length;
-    el('exportSub').textContent = `${good} of ${made.files.length} files · ${modeName(made.mode)} · ${qualityName(made.quality)}`;
-    toast(made.success ? `${good} print files ready.` : `${good} of ${made.files.length} made — see the notes.`, !made.success);
+
+    // Asking for the stream: each file arrives on its own line as it is made,
+    // rather than the whole set appearing at the end of a long silence.
+    const response = await fetch('/api/print/export?stream=1', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf },
+      body,
+    });
+    if (!response.ok || !response.body) {
+      const failed = await response.json().catch(() => ({}));
+      throw new Error(failed.error || `Export failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf('\n');
+      while (cut >= 0) {
+        const line = buffer.slice(0, cut).trim();
+        buffer = buffer.slice(cut + 1);
+        if (line) onExportEvent(JSON.parse(line));
+        cut = buffer.indexOf('\n');
+      }
+    }
+    if (!state.lastExport?.complete) throw new Error('The export stopped before it finished');
   } catch (error) {
+    stopClock();
+    if (state.lastExport) state.lastExport.awaiting = [];
+    renderResults();
     el('exportSub').textContent = 'An artwork in, the files a buyer downloads out';
     toast(error.message, true);
   } finally {
@@ -543,12 +764,45 @@ function wire() {
     if (card) openRatioModal(state.ratios.find((entry) => String(entry.id) === card.dataset.ratio));
   });
 
-  el('exportResults').addEventListener('click', (event) => {
+  const openFromCard = (event) => {
     const card = event.target.closest('[data-preview]');
     if (!card) return;
-    el('previewImage').src = card.dataset.preview;
-    el('previewCaption').textContent = card.dataset.caption;
-    openModal('printPreview');
+    collectPreviews();
+    openPreview(state.previews.findIndex((entry) => entry.url === card.dataset.preview));
+  };
+  el('exportResults').addEventListener('click', openFromCard);
+
+  el('exportHistory').addEventListener('click', (event) => {
+    const forget = event.target.closest('[data-forget]');
+    if (forget) {
+      const run = state.history.find((entry) => String(entry.id) === forget.dataset.forget);
+      confirmThen(
+        `Delete this export of "${run?.artwork_name || 'the artwork'}"? Its ${plural(run?.files.length || 0, 'file')} will be deleted too.`,
+        async () => {
+          await api(`/api/print/exports/${forget.dataset.forget}`, { method: 'DELETE' });
+          await loadHistory();
+          toast('Export deleted.');
+        },
+      );
+      return;
+    }
+    openFromCard(event);
+  });
+
+  el('exportViews').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-view]');
+    if (button) showView(button.dataset.view);
+  });
+
+  // Moving between the results without leaving the full-screen view.
+  el('printPreview').addEventListener('wheel', onPreviewWheel, { passive: false });
+  el('previewPrev').addEventListener('click', (event) => {
+    event.stopPropagation();
+    stepPreview(-1);
+  });
+  el('previewNext').addEventListener('click', (event) => {
+    event.stopPropagation();
+    stepPreview(1);
   });
 
   el('confirmYes').addEventListener('click', async () => {
@@ -572,8 +826,13 @@ function wire() {
     });
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    document.querySelectorAll('.is-open').forEach((open) => open.classList.remove('is-open'));
+    if (event.key === 'Escape') {
+      document.querySelectorAll('.is-open').forEach((open) => open.classList.remove('is-open'));
+      return;
+    }
+    if (!el('printPreview').classList.contains('is-open')) return;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') stepPreview(1);
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') stepPreview(-1);
   });
 
   const drop = el('artworkDrop');

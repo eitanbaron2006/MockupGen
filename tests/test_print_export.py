@@ -606,3 +606,62 @@ def test_the_sweep_clears_what_is_past_its_keeping_date(tmp_path):
         connection.execute("UPDATE exports SET created_at = ?", (long_ago,))
     assert client.post("/api/print/exports/sweep", headers={"X-CSRF-Token": csrf}).get_json()["exports"] == 0
     assert fresh_file.is_file()
+
+
+def test_the_files_can_arrive_one_at_a_time(tmp_path):
+    """A six-ratio export is minutes of watching nothing happen otherwise.
+
+    The stream is opt-in: the shop application asks for one JSON object and
+    that contract must not move under it.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    response = client.post(
+        "/api/print/export?stream=1",
+        data={"artwork": (artwork(), "art.png"), "spec": json.dumps({"ratios": "2:3, 3:4, 4:5", "quality": "basic"})},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    assert response.mimetype == "application/x-ndjson"
+
+    events = [json.loads(line) for line in response.get_data(as_text=True).splitlines() if line.strip()]
+    kinds = [event["event"] for event in events]
+    # One line to say what is coming, one per file as it lands, one to close.
+    assert kinds == ["start", "file", "file", "file", "done"]
+    assert events[0]["ratios"] == ["2:3", "3:4", "4:5"]
+    assert [event["ratio"] for event in events[1:4]] == ["2:3", "3:4", "4:5"]
+    assert all(event["url"].startswith("/print-outputs/") for event in events[1:4])
+
+    # Each file is on disk by the time its line is sent -- that is the point.
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    assert all((folder / event["file"]).is_file() for event in events[1:4])
+
+    # The closing line carries everything the plain answer would have.
+    done = events[-1]
+    assert done["success"] is True
+    assert done["export_id"] and done["guide"]["file"].endswith("printing_guide.txt")
+    assert [entry["ratio"] for entry in done["files"]] == ["2:3", "3:4", "4:5"]
+
+    # ...and the history was written once, at the end.
+    assert client.get("/api/print/exports").get_json()["total"] == 1
+
+
+def test_the_plain_answer_is_still_what_a_caller_gets_by_default(tmp_path):
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    plain = export(client, {"ratios": "2:3", "quality": "basic"})
+    assert plain.mimetype == "application/json"
+    assert plain.get_json()["files"][0]["ratio"] == "2:3"
+
+    # An Accept header asks for it just as well as the query does.
+    streamed = client.post(
+        "/api/print/export",
+        data={"artwork": (artwork(), "art.png"), "spec": json.dumps({"ratios": "2:3", "quality": "basic"})},
+        content_type="multipart/form-data",
+        headers={"Accept": "application/x-ndjson"},
+    )
+    assert streamed.mimetype == "application/x-ndjson"
