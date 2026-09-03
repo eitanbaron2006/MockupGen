@@ -1100,10 +1100,20 @@ def test_what_the_studio_remembers_goes_through_one_door():
         assert f"{key}: " in preferences.split("export const KEYS = {", 1)[1].split("};", 1)[0], key
         assert f"KEYS.{key}" in js + rails + studio_state, key
 
-    # Every read is guarded, so storage that refuses is a default, not a crash.
-    for reader in ("function read(key)", "function write(key, value)"):
-        body = preferences.split(reader, 1)[1].split(chr(10) + "}", 1)[0]
-        assert "catch" in body, reader
+    # Every touch of storage is guarded, so a browser that refuses it gives a
+    # default rather than a crash. The check follows the calls themselves
+    # rather than the shape of one function, because the guard belongs wherever
+    # storage is reached -- not wherever it happened to be reached first.
+    for line, text_of_line in enumerate(preferences.splitlines()):
+        if "localStorage" not in text_of_line or "localStorage" in text_of_line.lstrip()[:3]:
+            continue
+        enclosing = chr(10).join(preferences.splitlines()[max(0, line - 6):line + 6])
+        assert "catch" in enclosing, f"unguarded storage access on line {line + 1}"
+
+    # The database is the copy that counts: it is read before the browser's,
+    # and a change is sent back to be stored.
+    assert "/api/admin/preferences" in preferences
+    assert preferences.index("const stored = known[key]") < preferences.index("return cached(key)")
 
 
 def test_the_studio_speaks_through_one_module():

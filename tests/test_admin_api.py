@@ -804,27 +804,96 @@ def test_login_stops_answering_after_ten_wrong_passwords(tmp_path: Path):
     """
     from routes import admin_routes
 
-    admin_routes._login_attempts.clear()
-    try:
-        client = build_app(tmp_path).test_client()
+    app = build_app(tmp_path)
+    client = app.test_client()
 
-        for attempt in range(admin_routes.LOGIN_MAX_ATTEMPTS):
-            response = client.post("/api/admin/login", json={"password": "wrong"})
-            assert response.status_code == 401, attempt
+    for attempt in range(admin_routes.LOGIN_MAX_ATTEMPTS):
+        response = client.post("/api/admin/login", json={"password": "wrong"})
+        assert response.status_code == 401, attempt
 
-        blocked = client.post("/api/admin/login", json={"password": "wrong"})
-        assert blocked.status_code == 429
-        # The right password is not a way past the limit either.
-        assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 429
+    blocked = client.post("/api/admin/login", json={"password": "wrong"})
+    assert blocked.status_code == 429
+    # The right password is not a way past the limit either.
+    assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 429
 
-        # A successful login wipes the slate, so a fumbled password earlier in
-        # the day cannot lock the studio out later.
-        admin_routes._login_attempts.clear()
-        assert client.post("/api/admin/login", json={"password": "wrong"}).status_code == 401
-        assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 200
-        assert admin_routes._login_attempts == {}
-    finally:
-        admin_routes._login_attempts.clear()
+    # ...and neither is restarting the server. The count used to live in the
+    # process, so a deploy, a crash or the reloader picking up an edit handed
+    # the guesser a fresh ten tries -- the one thing a rate limit must not do.
+    restarted = build_app(tmp_path).test_client()
+    assert restarted.post("/api/admin/login", json={"password": "wrong"}).status_code == 429
+
+    # A successful login wipes the slate, so a fumbled password earlier in the
+    # day cannot lock the studio out later.
+    catalog = app.extensions["catalog_service"]
+    catalog.clear_login_attempts(client="127.0.0.1")
+    assert client.post("/api/admin/login", json={"password": "wrong"}).status_code == 401
+    assert client.post("/api/admin/login", json={"password": "admin-pass"}).status_code == 200
+    assert catalog.count_login_attempts("127.0.0.1", 0) == 0
+
+
+def test_an_error_outlives_the_process_that_had_it(tmp_path: Path):
+    """Requests are a live view; an error is the one thing worth keeping.
+
+    An error at three in the morning that vanished at the next restart was
+    information nothing could get back.
+    """
+    app = build_app(tmp_path)
+    telemetry = app.extensions["telemetry_service"]
+    telemetry.record_error(
+        "req-1", "POST", "/api/mockups/render", 500, exc=ValueError("the render fell over")
+    )
+
+    # A brand new process, reading the same catalog.
+    again = build_app(tmp_path)
+    kept = again.extensions["telemetry_service"].get_recent_errors()
+    assert [entry["error_type"] for entry in kept] == ["ValueError"]
+    assert kept[0]["error_message"] == "the render fell over"
+    assert kept[0]["path"] == "/api/mockups/render"
+    assert "ValueError" in kept[0]["traceback"]
+
+    # Clearing the logs clears the stored copy too, or the next start-up would
+    # load back the very errors the admin just asked to be rid of.
+    client = again.test_client()
+    csrf = login(client)
+    cleared = client.post("/api/telemetry/clear-logs", headers={"X-CSRF-Token": csrf})
+    assert cleared.status_code == 200 and cleared.get_json()["stored_errors_cleared"] == 1
+    assert build_app(tmp_path).extensions["telemetry_service"].get_recent_errors() == []
+
+
+def test_working_files_have_a_keeping_time_rather_than_a_history(tmp_path: Path):
+    """A rendered mockup is fetched once and finished with.
+
+    There is nothing to look back at, only room to reclaim -- which is why
+    these get a keeping time and print files get a record.
+    """
+    import os
+
+    from routes.admin_routes import DEFAULT_OUTPUT_RETENTION_HOURS, sweep_old_outputs
+
+    app = build_app(tmp_path)
+    outputs = Path(app.config["OUTPUT_FOLDER"])
+    outputs.mkdir(parents=True, exist_ok=True)
+    stale, recent = outputs / "old.jpg", outputs / "new.jpg"
+    stale.write_bytes(b"x" * 100)
+    recent.write_bytes(b"y" * 100)
+    long_ago = stale.stat().st_mtime - (DEFAULT_OUTPUT_RETENTION_HOURS + 5) * 3600
+    os.utime(stale, (long_ago, long_ago))
+
+    # A dotfile holds the folder open in the repository; it is not output.
+    keeper = outputs / ".gitkeep"
+    keeper.write_bytes(b"")
+    os.utime(keeper, (long_ago, long_ago))
+
+    assert sweep_old_outputs(app)["deleted_count"] == 1
+    assert not stale.is_file() and recent.is_file()
+    assert keeper.is_file(), "the sweep took a placeholder file with it"
+
+
+    # Zero hours keeps everything, for a shop that clears its own.
+    app.extensions["catalog_service"].set_settings({"OUTPUT_RETENTION_HOURS": "0"})
+    os.utime(recent, (long_ago, long_ago))
+    assert sweep_old_outputs(app)["deleted_count"] == 0
+    assert recent.is_file()
 
 
 def test_server_refuses_to_start_on_the_published_default_secret_key(tmp_path: Path):
@@ -1721,3 +1790,64 @@ def test_filing_never_moves_a_mockup_off_a_main_shelf(tmp_path: Path):
 
     assert filed["category_name"] == "MAIN Portrait"
     assert filed["name"] == "MAIN-W1-1"
+
+
+def test_the_studio_layout_is_stored_where_a_new_browser_can_find_it(tmp_path):
+    """The browser is a cache; the database is the copy that counts.
+
+    Kept in the studio's own settings and handed down with the page, so a
+    cleared cache or a second machine opens on the same layout instead of the
+    defaults.
+    """
+    client = build_app(tmp_path).test_client()
+
+    # They are the admin's own, so they are not readable or writable by anyone.
+    assert client.get("/api/admin/preferences").status_code == 401
+    assert client.put("/api/admin/preferences", json={"preferences": {"a": "b"}}).status_code == 401
+
+    csrf = login(client)
+    assert client.put("/api/admin/preferences", json={"preferences": {"a": "b"}}).status_code == 403
+
+    saved = client.put(
+        "/api/admin/preferences",
+        json={"preferences": {"mockupStudio.sidebarWidth": "318", "mockupStudio.sidebarLocked": "true"}},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert saved.status_code == 200
+    assert saved.get_json()["preferences"]["mockupStudio.sidebarWidth"] == "318"
+
+    # One screen saving its own key must not wipe another screen's.
+    client.put(
+        "/api/admin/preferences",
+        json={"preferences": {"mockupStudio.queueCompact": "true"}},
+        headers={"X-CSRF-Token": csrf},
+    )
+    stored = client.get("/api/admin/preferences").get_json()["preferences"]
+    assert stored["mockupStudio.sidebarWidth"] == "318"
+    assert stored["mockupStudio.queueCompact"] == "true"
+
+    # The page carries them, so nothing has to be fetched before the first paint.
+    page = client.get("/admin").get_data(as_text=True)
+    assert 'id="uiPreferences"' in page
+    assert '"mockupStudio.sidebarWidth": "318"' in page or '"mockupStudio.sidebarWidth":"318"' in page
+
+    # A null forgets one without touching the rest.
+    client.put(
+        "/api/admin/preferences",
+        json={"preferences": {"mockupStudio.queueCompact": None}},
+        headers={"X-CSRF-Token": csrf},
+    )
+    stored = client.get("/api/admin/preferences").get_json()["preferences"]
+    assert "mockupStudio.queueCompact" not in stored and stored["mockupStudio.sidebarWidth"] == "318"
+
+
+def test_unreadable_preferences_open_the_studio_on_its_defaults(tmp_path):
+    """A preference that cannot be parsed is not worth a broken studio."""
+    app = build_app(tmp_path)
+    client = app.test_client()
+    catalog = app.extensions["catalog_service"]
+    catalog.set_settings({catalog.UI_PREFERENCES_KEY: "{not json at all"})
+
+    assert catalog.get_ui_preferences() == {}
+    login(client)
+    assert client.get("/admin").status_code == 200

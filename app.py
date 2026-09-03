@@ -100,6 +100,22 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     )
     app.extensions["telemetry_service"] = telemetry_service
 
+    # Errors are kept in the catalog and read back at start-up, so the pulse
+    # opens on the history it had rather than on an empty list that says,
+    # wrongly, that nothing has ever gone wrong. Requests and timings stay in
+    # memory: their worth expires in minutes, and a write per request would
+    # buy a growing table and nothing else.
+    from routes.admin_routes import sweep_old_outputs
+
+    telemetry_service.keep_errors_with(
+        catalog_service.record_error,
+        catalog_service.recent_errors(200),
+    )
+    # A server that was off over a weekend should not come back holding a week
+    # of working files, so the keeping time is applied once on the way up.
+    if not app.config.get("TESTING"):
+        sweep_old_outputs(app)
+
     import time
     import uuid
 

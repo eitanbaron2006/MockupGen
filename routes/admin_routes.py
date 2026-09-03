@@ -1,5 +1,6 @@
 import hmac
 import io
+import json
 import secrets
 import sqlite3
 import threading
@@ -332,16 +333,48 @@ def admin_login_page():
 def admin_page():
     if not is_admin():
         return redirect(url_for("admin_routes.admin_login_page"))
-    return render_template("admin/index.html", csrf_token=session["csrf_token"])
+    # The stored layout is handed down with the page rather than fetched after
+    # it: the studio reads these synchronously while it builds itself, so a
+    # round trip here would mean painting the wrong layout first and correcting
+    # it a moment later.
+    return render_template(
+        "admin/index.html",
+        csrf_token=session["csrf_token"],
+        ui_preferences=json.dumps(catalog().get_ui_preferences(), ensure_ascii=False),
+    )
+
+
+@admin_routes.get("/api/admin/preferences")
+@require_admin_json
+def get_ui_preferences():
+    return jsonify({"preferences": catalog().get_ui_preferences()})
+
+
+@admin_routes.put("/api/admin/preferences")
+@require_admin_json
+@require_csrf
+def put_ui_preferences():
+    """Save how the studio is laid out. Merged, so one screen cannot wipe another."""
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get("preferences", payload)
+    if not isinstance(changes, dict):
+        return json_error("preferences must be an object", 400)
+    if len(changes) > 50:
+        return json_error("Too many preferences in one request", 400)
+    return jsonify({"success": True, "preferences": catalog().set_ui_preferences(changes)})
 
 
 # A password login invites exactly one attack: guessing. Ten tries from an
 # address in five minutes is far more than a person needs and far less than a
-# script wants. The count is kept in this process only -- it is a speed bump on
-# the door, not an audit trail -- and it is cleared the moment a login succeeds.
+# script wants, and the count is cleared the moment a login succeeds.
+#
+# It is kept in the catalog rather than in this process: counting in memory
+# meant that anything which restarted the server -- a deploy, a crash, an edit
+# picked up by the reloader -- handed the guesser a fresh ten tries, which is
+# the one thing a rate limit must not do. The clock is wall time for the same
+# reason; a monotonic one means nothing to the next process.
 LOGIN_WINDOW_SECONDS = 300
 LOGIN_MAX_ATTEMPTS = 10
-_login_attempts: dict[str, list[float]] = {}
 _login_attempts_lock = threading.Lock()
 
 
@@ -352,23 +385,19 @@ def _login_client() -> str:
 
 
 def _login_attempt_allowed(client: str) -> bool:
-    now = time.monotonic()
+    now = time.time()
+    store = catalog()
     with _login_attempts_lock:
-        recent = [when for when in _login_attempts.get(client, []) if now - when < LOGIN_WINDOW_SECONDS]
-        allowed = len(recent) < LOGIN_MAX_ATTEMPTS
+        store.clear_login_attempts(before=now - LOGIN_WINDOW_SECONDS)
+        allowed = store.count_login_attempts(client, now - LOGIN_WINDOW_SECONDS) < LOGIN_MAX_ATTEMPTS
         if allowed:
-            recent.append(now)
-        _login_attempts[client] = recent
-        if len(_login_attempts) > 1024:
-            for key, when in list(_login_attempts.items()):
-                if not when or now - when[-1] >= LOGIN_WINDOW_SECONDS:
-                    _login_attempts.pop(key, None)
+            store.record_login_attempt(client, now)
     return allowed
 
 
 def _login_succeeded(client: str) -> None:
     with _login_attempts_lock:
-        _login_attempts.pop(client, None)
+        catalog().clear_login_attempts(client=client)
 
 
 @admin_routes.post("/api/admin/login")
@@ -1701,6 +1730,31 @@ def get_telemetry_errors():
     return jsonify({"success": True, "errors": svc.get_recent_errors(limit=limit)})
 
 
+# Rendered mockups and uploads are working files: the shop app fetches one and
+# is done with it. They get a keeping time rather than a history -- there is
+# nothing to look back at, only room to reclaim. Print files are the other way
+# around, which is why those have a record and these do not.
+DEFAULT_OUTPUT_RETENTION_HOURS = 48.0
+
+
+def _output_retention_hours() -> float:
+    try:
+        stored = catalog().get_settings().get("OUTPUT_RETENTION_HOURS")
+        return max(0.0, float(stored)) if stored else DEFAULT_OUTPUT_RETENTION_HOURS
+    except (TypeError, ValueError):
+        return DEFAULT_OUTPUT_RETENTION_HOURS
+
+
+def sweep_old_outputs(app) -> dict:
+    """Clear working files past their keeping time. Zero hours keeps them."""
+    telemetry = app.extensions.get("telemetry_service")
+    if telemetry is None:
+        return {"deleted_count": 0}
+    with app.app_context():
+        hours = _output_retention_hours()
+    return telemetry.purge_temp_files(max_age_hours=hours) if hours > 0 else {"deleted_count": 0}
+
+
 @admin_routes.post("/api/telemetry/purge-temp")
 @require_admin_json
 @require_csrf
@@ -1708,9 +1762,9 @@ def purge_telemetry_temp():
     svc = current_app.extensions.get("telemetry_service")
     if not svc:
         return jsonify({"success": False, "error": "Telemetry service not available"}), 503
-    max_age_hours = float(request.args.get("max_age_hours", 24.0))
+    max_age_hours = float(request.args.get("max_age_hours", _output_retention_hours()))
     result = svc.purge_temp_files(max_age_hours=max_age_hours)
-    return jsonify({"success": True, **result})
+    return jsonify({"success": True, **result, "max_age_hours": max_age_hours})
 
 
 @admin_routes.post("/api/telemetry/clear-logs")
@@ -1721,4 +1775,7 @@ def clear_telemetry_logs():
     if not svc:
         return jsonify({"success": False, "error": "Telemetry service not available"}), 503
     svc.clear_logs()
-    return jsonify({"success": True, "message": "Telemetry logs cleared"})
+    # The stored copy goes too, or the next start-up would load back the very
+    # errors the admin just asked to be rid of.
+    stored = catalog().clear_errors()
+    return jsonify({"success": True, "message": "Telemetry logs cleared", "stored_errors_cleared": stored})

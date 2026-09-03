@@ -87,6 +87,24 @@ class CatalogService:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client TEXT NOT NULL,
+                    at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS login_attempts_client ON login_attempts(client, at);
+                CREATE TABLE IF NOT EXISTS error_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    request_id TEXT NOT NULL DEFAULT '',
+                    at TEXT NOT NULL,
+                    method TEXT NOT NULL DEFAULT '',
+                    path TEXT NOT NULL DEFAULT '',
+                    status INTEGER NOT NULL DEFAULT 0,
+                    error_type TEXT NOT NULL DEFAULT 'Error',
+                    message TEXT NOT NULL DEFAULT '',
+                    traceback TEXT NOT NULL DEFAULT '',
+                    client_ip TEXT NOT NULL DEFAULT ''
+                );
                 CREATE TABLE IF NOT EXISTS listing_sets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
@@ -678,6 +696,120 @@ class CatalogService:
                     (key, value),
                 )
         self._checkpoint()
+
+    # The lock on the door survives a restart. Counting in memory meant that
+    # anything which restarted the process -- a deploy, a crash, a reload after
+    # an edit -- handed the guesser a fresh ten tries, which is the one thing a
+    # rate limit must not do.
+    def record_login_attempt(self, client: str, at: float) -> None:
+        with self._connect() as connection:
+            connection.execute("INSERT INTO login_attempts(client, at) VALUES(?, ?)", (str(client), float(at)))
+
+    def count_login_attempts(self, client: str, since: float) -> int:
+        with self._connect() as connection:
+            return connection.execute(
+                "SELECT COUNT(*) FROM login_attempts WHERE client = ? AND at >= ?", (str(client), float(since))
+            ).fetchone()[0]
+
+    def clear_login_attempts(self, client: str = "", before: float = 0.0) -> None:
+        """Forget one client's attempts after a success, or everything stale."""
+        with self._connect() as connection:
+            if client:
+                connection.execute("DELETE FROM login_attempts WHERE client = ?", (str(client),))
+            if before:
+                connection.execute("DELETE FROM login_attempts WHERE at < ?", (float(before),))
+
+    # Errors outlive the process that had them. Requests and timings are a
+    # live view -- their worth expires in minutes and a write per request would
+    # buy nothing -- but an error that happened overnight and vanished at the
+    # next restart is the one thing here that cannot be reconstructed.
+    ERROR_HISTORY = 1000
+
+    def record_error(self, error: dict[str, Any]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO error_log(
+                    request_id, at, method, path, status, error_type, message, traceback, client_ip
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(error.get("id") or ""),
+                    str(error.get("timestamp") or utc_now()),
+                    str(error.get("method") or ""),
+                    str(error.get("path") or ""),
+                    int(error.get("status") or 0),
+                    str(error.get("error_type") or "Error"),
+                    str(error.get("error_message") or "")[:2000],
+                    str(error.get("traceback") or "")[:20000],
+                    str(error.get("client_ip") or ""),
+                ),
+            )
+            # Bounded on the way in: an error log that grows without limit is a
+            # second problem on top of the first.
+            connection.execute(
+                "DELETE FROM error_log WHERE id NOT IN "
+                "(SELECT id FROM error_log ORDER BY id DESC LIMIT ?)",
+                (self.ERROR_HISTORY,),
+            )
+
+    def recent_errors(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM error_log ORDER BY id DESC LIMIT ?", (max(1, min(int(limit), 1000)),)
+            ).fetchall()
+        return [
+            {
+                "id": row["request_id"],
+                "timestamp": row["at"],
+                "method": row["method"],
+                "path": row["path"],
+                "status": row["status"],
+                "error_type": row["error_type"],
+                "error_message": row["message"],
+                "traceback": row["traceback"],
+                "client_ip": row["client_ip"],
+            }
+            for row in rows
+        ]
+
+    def clear_errors(self) -> int:
+        with self._connect() as connection:
+            removed = connection.execute("SELECT COUNT(*) FROM error_log").fetchone()[0]
+            connection.execute("DELETE FROM error_log")
+        return removed
+
+    # How the admin likes the studio laid out: the width of the sidebar, which
+    # panels are collapsed, where the canvas rails were left. It lives here
+    # rather than only in the browser so a new browser, a cleared cache or a
+    # second machine opens on the same studio -- the browser keeps a copy, but
+    # this is the copy that counts.
+    UI_PREFERENCES_KEY = "UI_PREFERENCES"
+
+    def get_ui_preferences(self) -> dict[str, str]:
+        stored = self.get_settings().get(self.UI_PREFERENCES_KEY, "")
+        if not stored:
+            return {}
+        try:
+            parsed = json.loads(stored)
+        except json.JSONDecodeError:
+            # A preference that cannot be read is not worth an error: the
+            # studio opens on its defaults, which is what it did before any of
+            # this was stored at all.
+            return {}
+        return {str(k): str(v) for k, v in parsed.items()} if isinstance(parsed, dict) else {}
+
+    def set_ui_preferences(self, changes: dict[str, str]) -> dict[str, str]:
+        """Merge, never replace: the screens save one key at a time."""
+        merged = {**self.get_ui_preferences()}
+        for key, value in changes.items():
+            name = str(key)[:120]
+            if value is None:
+                merged.pop(name, None)
+            else:
+                merged[name] = str(value)[:20000]
+        self.set_settings({self.UI_PREFERENCES_KEY: json.dumps(merged, ensure_ascii=False)})
+        return merged
 
     def get_settings(self) -> dict[str, str]:
         with self._connect() as connection:

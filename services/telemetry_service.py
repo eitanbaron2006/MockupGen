@@ -7,6 +7,7 @@ server resource utilization (CPU, RAM, threads, disk), and mockup rendering perf
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 import time
@@ -15,7 +16,9 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 try:
     import psutil
@@ -81,6 +84,7 @@ class TelemetryService:
         self._lock = threading.Lock()
 
         # Ring buffers for history
+        self._error_store: Callable[[dict[str, Any]], None] | None = None
         self.recent_requests: deque[RequestRecord] = deque(maxlen=max_request_history)
         self.recent_errors: deque[ErrorRecord] = deque(maxlen=max_error_history)
         self.render_metrics: deque[RenderMetric] = deque(maxlen=300)
@@ -172,6 +176,43 @@ class TelemetryService:
 
         with self._lock:
             self.recent_errors.appendleft(error_rec)
+
+        # Requests and timings are a live view and stay in memory; an error is
+        # the one thing here that cannot be reconstructed after a restart, so
+        # it is handed to whatever the application gave us to keep it. A store
+        # that fails must not turn one error into two.
+        if self._error_store is not None:
+            try:
+                self._error_store(asdict(error_rec))
+            except Exception:  # noqa: BLE001 - the error being recorded matters more
+                logger.exception("Could not store an error record")
+
+    def keep_errors_with(self, store: Callable[[dict[str, Any]], None], history: list[dict[str, Any]]) -> None:
+        """Where errors are kept, and what was kept before this process began.
+
+        The stored ones are loaded back so the pulse opens on the history it
+        had rather than on an empty list that says, wrongly, that nothing has
+        gone wrong.
+        """
+        self._error_store = store
+        with self._lock:
+            known = {record.id for record in self.recent_errors}
+            for entry in history:
+                if entry.get("id") in known:
+                    continue
+                self.recent_errors.append(
+                    ErrorRecord(
+                        id=str(entry.get("id") or ""),
+                        timestamp=str(entry.get("timestamp") or ""),
+                        method=str(entry.get("method") or ""),
+                        path=str(entry.get("path") or ""),
+                        status=int(entry.get("status") or 0),
+                        error_type=str(entry.get("error_type") or "Error"),
+                        error_message=str(entry.get("error_message") or ""),
+                        traceback=str(entry.get("traceback") or ""),
+                        client_ip=str(entry.get("client_ip") or ""),
+                    )
+                )
 
     def record_render(
         self,
@@ -355,7 +396,10 @@ class TelemetryService:
                 continue
             try:
                 for path in folder.glob("*"):
-                    if path.is_file():
+                    # A dotfile in a working folder is not working output: it
+                    # is there to hold the folder open. The first version of
+                    # this swept away .gitkeep on the way up.
+                    if path.is_file() and not path.name.startswith("."):
                         try:
                             mtime = path.stat().st_mtime
                             if (now - mtime) > max_age_seconds:
