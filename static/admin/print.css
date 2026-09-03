@@ -391,11 +391,29 @@ body.print-page {
   padding: 9px 10px 10px;
 }
 
+.print-result-top {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
 .print-result-ratio {
   color: var(--ink);
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 600;
+}
+
+/* How long this one took. Alongside the ratio rather than below it: at full
+   size the ratios differ by seconds, and it is the number that says which
+   quality is worth its wait. */
+.print-result-took {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  white-space: nowrap;
 }
 
 .print-result-px {

@@ -141,7 +141,8 @@ class PrintCatalogService:
                     width INTEGER NOT NULL DEFAULT 0,
                     height INTEGER NOT NULL DEFAULT 0,
                     prints_at TEXT NOT NULL DEFAULT '',
-                    bytes INTEGER NOT NULL DEFAULT 0
+                    bytes INTEGER NOT NULL DEFAULT 0,
+                    ms INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS exports_made_at ON exports(created_at DESC);
                 CREATE INDEX IF NOT EXISTS export_files_owner ON export_files(export_id);
@@ -151,6 +152,9 @@ class PrintCatalogService:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(ratios)")}
             if "builtin" not in columns:
                 connection.execute("ALTER TABLE ratios ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0")
+            file_columns = {row["name"] for row in connection.execute("PRAGMA table_info(export_files)")}
+            if file_columns and "ms" not in file_columns:
+                connection.execute("ALTER TABLE export_files ADD COLUMN ms INTEGER NOT NULL DEFAULT 0")
             set_columns = {row["name"] for row in connection.execute("PRAGMA table_info(print_sets)")}
             if "output_mode" not in set_columns:
                 connection.execute(
@@ -455,8 +459,9 @@ class PrintCatalogService:
             for entry in files:
                 connection.execute(
                     """
-                    INSERT INTO export_files(export_id, ratio_key, file_name, width, height, prints_at, bytes)
-                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO export_files(
+                        export_id, ratio_key, file_name, width, height, prints_at, bytes, ms
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         export_id,
@@ -466,6 +471,7 @@ class PrintCatalogService:
                         int(entry.get("height") or 0),
                         str(entry.get("prints_at") or ""),
                         int(entry.get("bytes") or 0),
+                        int(entry.get("ms") or 0),
                     ),
                 )
         self._checkpoint()
@@ -495,7 +501,7 @@ class PrintCatalogService:
         export["files"] = [
             dict(entry)
             for entry in connection.execute(
-                "SELECT ratio_key, file_name, width, height, prints_at, bytes "
+                "SELECT ratio_key, file_name, width, height, prints_at, bytes, ms "
                 "FROM export_files WHERE export_id = ? ORDER BY id",
                 (export["id"],),
             )

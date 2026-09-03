@@ -16,6 +16,7 @@ const state = {
   lastExport: null,
   running: null,
   previews: [],
+  previewScope: null,
   previewAt: 0,
   view: 'results',
   history: [],
@@ -67,6 +68,15 @@ const modeLabel = (set) => (set.mode === 'chosen' ? plural((set.ratio_keys || []
 const qualityName = (key) => state.qualities.find((quality) => quality.key === key)?.name || key;
 
 const modeName = (key) => state.modes.find((mode) => mode.key === key)?.name || key;
+
+/** How long one file took, in the shortest form that stays honest. */
+function took(ms) {
+  if (!ms && ms !== 0) return '';
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  return `${Math.floor(seconds / 60)}m ${String(Math.round(seconds % 60)).padStart(2, '0')}s`;
+}
 
 /* The batch id keeps one export apart from another on disk. It is not part of
    what the buyer receives -- the archive strips it -- so the screen does too. */
@@ -180,14 +190,20 @@ function renderSummary() {
 function resultCard(entry) {
   if (!entry.success) {
     return `<div class="print-result is-failed">
-        <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
+        <div class="print-result-top">
+          <span class="print-result-ratio">${escapeHtml(entry.ratio)}</span>
+          ${entry.ms ? `<span class="print-result-took">${escapeHtml(took(entry.ms))}</span>` : ''}
+        </div>
         <div class="print-result-error">${escapeHtml(entry.error)}</div>
       </div>`;
   }
   return `<div class="print-result" data-preview="${escapeHtml(entry.url)}" data-caption="${escapeHtml(buyerName(entry.file))}" role="button" tabindex="0">
       <img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.ratio)}" loading="lazy">
       <div class="print-result-body">
-        <div class="print-result-ratio">${escapeHtml(entry.ratio)}</div>
+        <div class="print-result-top">
+          <span class="print-result-ratio">${escapeHtml(entry.ratio)}</span>
+          ${entry.ms ? `<span class="print-result-took" title="How long this file took to render">${escapeHtml(took(entry.ms))}</span>` : ''}
+        </div>
         <div class="print-result-px">${entry.width} &times; ${entry.height} px &middot; 300 DPI</div>
         <div class="print-result-sizes">${escapeHtml(entry.prints_at || '')}</div>
       </div>
@@ -229,14 +245,22 @@ function renderResults() {
   // A half-made set of files is not a package. The archive waits for the last
   // one -- a buyer sent four files out of six has been sent the wrong thing.
   el('downloadZip').disabled = !made.complete || !made.files.some((entry) => entry.success);
-  collectPreviews();
+  if (state.previewScope === el('exportResults') || !state.previewScope) collectPreviews(el('exportResults'));
 }
 
 /* Every file currently on show, in the order it is shown. The full-screen
    view walks this list, so comparing two ratios does not mean closing the
    view, finding the next card and opening it again. */
-function collectPreviews() {
-  state.previews = [...document.querySelectorAll('#exportResults [data-preview], #exportHistory [data-preview]')]
+/* What the full-screen view walks is whatever the clicked card belongs to:
+   the results of this export, or the one past export whose files were opened.
+   Scrolling from a history entry into an unrelated one is not "the next
+   result" -- it is a different piece of work. */
+function collectPreviews(scope) {
+  state.previewScope = scope || state.previewScope;
+  const within = state.previewScope && document.contains(state.previewScope)
+    ? state.previewScope
+    : el('exportResults');
+  state.previews = [...within.querySelectorAll('[data-preview]')]
     .map((node) => ({ url: node.dataset.preview, caption: node.dataset.caption }));
   // Files keep arriving while the view is open, so the count it shows follows
   // them rather than waiting for the next scroll to catch up.
@@ -307,11 +331,10 @@ function renderHistory() {
         ${run.files.map((file) => `
           <button class="history-file" data-preview="/print-outputs/${escapeHtml(file.file_name)}" data-caption="${escapeHtml(buyerName(file.file_name))}">
             <img src="/print-outputs/${escapeHtml(file.file_name)}" alt="${escapeHtml(file.ratio_key)}" loading="lazy">
-            <span>${escapeHtml(file.ratio_key)}</span>
+            <span>${escapeHtml(file.ratio_key)}${file.ms ? ` &middot; ${escapeHtml(took(file.ms))}` : ''}</span>
           </button>`).join('')}
       </div>
     </div>`).join('');
-  collectPreviews();
 }
 
 async function loadHistory() {
@@ -767,7 +790,8 @@ function wire() {
   const openFromCard = (event) => {
     const card = event.target.closest('[data-preview]');
     if (!card) return;
-    collectPreviews();
+    // One past export is one piece of work: its files scroll among themselves.
+    collectPreviews(card.closest('.history-run') || el('exportResults'));
     openPreview(state.previews.findIndex((entry) => entry.url === card.dataset.preview));
   };
   el('exportResults').addEventListener('click', openFromCard);

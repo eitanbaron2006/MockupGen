@@ -665,3 +665,31 @@ def test_the_plain_answer_is_still_what_a_caller_gets_by_default(tmp_path):
         headers={"Accept": "application/x-ndjson"},
     )
     assert streamed.mimetype == "application/x-ndjson"
+
+
+def test_each_file_carries_how_long_it_took(tmp_path):
+    """At full size the ratios differ by seconds.
+
+    Which quality is worth its wait is a question the screen should answer
+    without a stopwatch, so the time travels with the file and is stored
+    beside it.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    made = export(client, {"ratios": "2:3, 3:4", "quality": "basic"}).get_json()
+    assert all(isinstance(entry["ms"], int) and entry["ms"] >= 0 for entry in made["files"])
+
+    # It reaches the stream a file at a time, too.
+    streamed = client.post(
+        "/api/print/export?stream=1",
+        data={"artwork": (artwork(), "art.png"), "spec": json.dumps({"ratios": "2:3", "quality": "basic"})},
+        content_type="multipart/form-data",
+    )
+    events = [json.loads(line) for line in streamed.get_data(as_text=True).splitlines() if line.strip()]
+    assert "ms" in next(event for event in events if event["event"] == "file")
+
+    # ...and it is still there when the export is looked back at.
+    kept = client.get("/api/print/exports").get_json()["exports"]
+    assert all("ms" in entry for run in kept for entry in run["files"])

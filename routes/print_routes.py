@@ -377,7 +377,13 @@ def export_print_files():
     tools = _tools()
 
     def one_file(ratio: dict) -> dict:
-        """Render and save a single ratio, whatever the answer turns out to be."""
+        """Render and save a single ratio, whatever the answer turns out to be.
+
+        How long each one took travels with it: at full size the ratios differ
+        by seconds, and which quality is worth its wait is the question the
+        screen should be able to answer without a stopwatch.
+        """
+        began = time.perf_counter()
         try:
             rendered = render_print_file(
                 artwork,
@@ -387,7 +393,12 @@ def export_print_files():
                 tools=tools,
             )
         except PrintExportError as error:
-            return {"ratio": ratio["key"], "success": False, "error": str(error)}
+            return {
+                "ratio": ratio["key"],
+                "success": False,
+                "error": str(error),
+                "ms": round((time.perf_counter() - began) * 1000),
+            }
         name = f"{batch}_{print_file_name(ratio, artwork)}"
         produced = folder / name
         rendered.save(produced, format="JPEG", quality=95, optimize=True, dpi=(300, 300))
@@ -400,6 +411,7 @@ def export_print_files():
             "height": rendered.height,
             "prints_at": ratio.get("sizes", ""),
             "bytes": produced.stat().st_size if produced.is_file() else 0,
+            "ms": round((time.perf_counter() - began) * 1000),
         }
 
     def finish(files: list[dict]) -> dict:
