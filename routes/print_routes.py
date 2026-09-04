@@ -52,6 +52,13 @@ from services.print_export_service import (
     render_print_file,
     resolved_tools,
 )
+from services.print_package_service import (
+    DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_FILES,
+    PackingError,
+    packing_report,
+    plan_delivery,
+)
 
 print_routes = Blueprint("print_routes", __name__)
 
@@ -283,7 +290,7 @@ def put_print_settings():
     if refusal:
         return refusal
     payload = request.get_json(silent=True) or {}
-    allowed = {"realesrgan_path", "topaz_path", "retention_days"}
+    allowed = {"realesrgan_path", "topaz_path", "retention_days", "etsy_max_files", "etsy_max_bytes"}
     print_catalog().set_settings({k: str(v) for k, v in payload.items() if k in allowed})
     return jsonify({"success": True, "settings": print_catalog().get_settings()})
 
@@ -489,6 +496,125 @@ def export_print_files():
     files = [one_file(ratio) for ratio in ratios]
     summary = finish(files)
     return jsonify(summary), (200 if summary["success"] else 207)
+
+
+def _etsy_limits() -> tuple[int, int]:
+    """What the marketplace accepts. Settings, because it is not ours to fix."""
+    stored = print_catalog().get_settings()
+    try:
+        max_files = max(1, int(stored.get("etsy_max_files", DEFAULT_MAX_FILES)))
+    except (TypeError, ValueError):
+        max_files = DEFAULT_MAX_FILES
+    try:
+        max_bytes = max(1, int(stored.get("etsy_max_bytes", DEFAULT_MAX_BYTES)))
+    except (TypeError, ValueError):
+        max_bytes = DEFAULT_MAX_BYTES
+    return max_files, max_bytes
+
+
+@print_routes.post("/api/print/deliverables")
+def build_print_deliverables():
+    """The print files, packed into what a shop is allowed to upload.
+
+    Same input as the export -- an ``artwork`` file and a ``spec`` -- and the
+    same files come out of it. What is different is the shape: a digital
+    listing on Etsy takes five files of twenty megabytes, and a full pack is
+    ten files of three to eight. The total was never the problem; the count is.
+
+    The printing guide goes inside every archive rather than taking a slot of
+    its own, so the buyer finds it whichever one they open first.
+    """
+    made = export_print_files()
+    # An export that could not even start answers for itself.
+    if isinstance(made, tuple):
+        payload, status = made
+        if status >= 400:
+            return made
+        summary = payload.get_json()
+    elif getattr(made, "status_code", 200) >= 400:
+        return made
+    else:
+        summary = made.get_json()
+
+    produced = [entry for entry in summary.get("files", []) if entry.get("success")]
+    if not produced:
+        return json_error("Nothing was produced to package", 400)
+
+    max_files, max_bytes = _etsy_limits()
+    folder = _print_folder()
+    guide = summary.get("guide") or {}
+    guide_name = guide.get("file")
+
+    try:
+        plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
+    except PackingError as error:
+        # Named rather than worked around: quietly delivering eight of eleven
+        # ratios is the worst outcome available.
+        return jsonify({
+            "success": False,
+            "error": str(error),
+            "export_id": summary.get("export_id"),
+            "files": summary.get("files"),
+            "limits": {"max_files": max_files, "max_bytes": max_bytes},
+        }), 409
+
+    if plan["mode"] == "files":
+        # No archive at all. The files already fit the allowance, and a .zip
+        # would only stand between the buyer and what they paid for.
+        deliverables = [
+            {
+                "index": index,
+                "kind": "print",
+                "ratio": entry.get("ratio"),
+                "name": entry["file"].split("_", 1)[-1],
+                "file": entry["file"],
+                "url": entry["url"],
+                "bytes": entry.get("bytes", 0),
+            }
+            for index, entry in enumerate(plan["entries"], start=1)
+        ]
+        if plan["include_guide"] and guide_name:
+            deliverables.append({
+                "index": len(deliverables) + 1,
+                "kind": "guide",
+                "ratio": None,
+                "name": guide_name.split("_", 1)[-1],
+                "file": guide_name,
+                "url": guide["url"],
+                "bytes": (folder / guide_name).stat().st_size if (folder / guide_name).is_file() else 0,
+            })
+    else:
+        report = packing_report(plan["parcels"], max_bytes)
+        for parcel, described in zip(plan["parcels"], report):
+            archive_path = folder / f"{summary.get('export_id') or 'pack'}_{described['name']}"
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for entry in parcel.entries:
+                    source = folder / entry["file"]
+                    if source.is_file():
+                        # The batch id is ours, not the buyer's.
+                        archive.write(source, arcname=entry["file"].split("_", 1)[-1])
+                if guide_name and (folder / guide_name).is_file():
+                    archive.write(folder / guide_name, arcname=guide_name.split("_", 1)[-1])
+            described["kind"] = "archive"
+            described["file"] = archive_path.name
+            described["url"] = f"/print-outputs/{archive_path.name}"
+            described["bytes"] = archive_path.stat().st_size
+            described["headroom_bytes"] = max_bytes - described["bytes"]
+        deliverables = report
+
+    return jsonify({
+        "success": True,
+        "export_id": summary.get("export_id"),
+        "delivery": plan["mode"],
+        "guide_dropped": plan["guide_dropped"],
+        "mode": summary.get("mode"),
+        "quality": summary.get("quality"),
+        "limits": {"max_files": max_files, "max_bytes": max_bytes},
+        "slots_used": len(deliverables),
+        "deliverables": deliverables,
+        "files": summary.get("files"),
+        "guide": summary.get("guide"),
+    })
 
 
 @print_routes.get("/api/print/exports")

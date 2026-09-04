@@ -693,3 +693,62 @@ def test_each_file_carries_how_long_it_took(tmp_path):
     # ...and it is still there when the export is looked back at.
     kept = client.get("/api/print/exports").get_json()["exports"]
     assert all("ms" in entry for run in kept for entry in run["files"])
+
+
+def test_a_few_ratios_come_back_as_plain_files_a_buyer_can_open(tmp_path):
+    """Etsy takes five files. Fewer than five means no archive at all.
+
+    A .zip is a step between the buyer and what they paid for, so it is the
+    fallback rather than the shape everything gets forced into.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    made = client.post(
+        "/api/print/deliverables",
+        data={"artwork": (artwork(), "art.png"), "spec": json.dumps({"ratios": "2:3, 3:4, 4:5", "quality": "basic"})},
+        content_type="multipart/form-data",
+    ).get_json()
+
+    assert made["success"] is True
+    assert made["delivery"] == "files"
+    kinds = [entry["kind"] for entry in made["deliverables"]]
+    assert kinds == ["print", "print", "print", "guide"]
+    assert made["slots_used"] == 4 <= made["limits"]["max_files"]
+    # Every one is a real file the shop can upload as it is.
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    for entry in made["deliverables"]:
+        assert (folder / entry["file"]).is_file()
+        assert not entry["file"].endswith(".zip")
+
+
+def test_more_ratios_than_slots_come_back_as_archives(tmp_path):
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    made = client.post(
+        "/api/print/deliverables",
+        data={
+            "artwork": (artwork(), "art.png"),
+            "spec": json.dumps({"ratios": "2:3, 3:4, 4:5, 11:14, ISO A, 1:1", "quality": "basic"}),
+        },
+        content_type="multipart/form-data",
+    ).get_json()
+
+    assert made["delivery"] == "archives"
+    assert 0 < made["slots_used"] <= made["limits"]["max_files"]
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+
+    inside = []
+    for entry in made["deliverables"]:
+        assert entry["kind"] == "archive" and entry["file"].endswith(".zip")
+        with zipfile.ZipFile(folder / entry["file"]) as bundle:
+            names = bundle.namelist()
+        # The note rides in every archive, so whichever is opened first has it.
+        assert any(name.endswith("printing_guide.txt") for name in names)
+        inside += [name for name in names if name.endswith(".jpg")]
+
+    # All six ratios are delivered, none dropped to make them fit.
+    assert len(inside) == 6
