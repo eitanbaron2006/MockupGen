@@ -69,6 +69,13 @@ const qualityName = (key) => state.qualities.find((quality) => quality.key === k
 
 const modeName = (key) => state.modes.find((mode) => mode.key === key)?.name || key;
 
+/** What a file weighs. The number a shop needs before uploading it anywhere. */
+function weigh(bytes) {
+  if (!bytes) return '';
+  const mb = bytes / 1048576;
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 /** How long one file took, in the shortest form that stays honest. */
 function took(ms) {
   if (!ms && ms !== 0) return '';
@@ -334,7 +341,7 @@ function renderHistory() {
         ${run.files.map((file) => `
           <button class="history-file" data-preview="/print-outputs/${escapeHtml(file.file_name)}" data-caption="${escapeHtml(buyerName(file.file_name))}">
             <img src="/print-outputs/${escapeHtml(file.file_name)}" alt="${escapeHtml(file.ratio_key)}" loading="lazy">
-            <span>${escapeHtml(file.ratio_key)}${file.ms ? ` &middot; ${escapeHtml(took(file.ms))}` : ''}</span>
+            <span>${escapeHtml(file.ratio_key)} &middot; ${escapeHtml(weigh(file.bytes))}${file.ms ? ` &middot; ${escapeHtml(took(file.ms))}` : ''}</span>
           </button>`).join('')}
       </div>
     </div>`).join('');

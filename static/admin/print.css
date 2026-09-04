@@ -1072,10 +1072,14 @@ body.print-page {
   flex-shrink: 0;
 }
 
+/* A grid rather than a wrapping row: every card in the run is the same width,
+   and that width is set by the longest label a card can carry -- "US Letter ·
+   11.2 MB · 4.9s". At 76px the text folded onto a second line and the cards
+   in one row stopped lining up. */
 .history-files {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   margin-top: 10px;
 }
 
@@ -1087,22 +1091,27 @@ body.print-page {
   display: grid;
   gap: 4px;
   justify-items: center;
+  min-width: 0;
   padding: 5px 5px 4px;
-  width: 76px;
 }
 
 .history-file:hover {
   border-color: var(--accent);
 }
 
+/* Square, because the card is as wide as its longest label and a 56px-tall
+   strip inside that left most of the tile as backing rather than picture. A
+   square well shows a portrait and a panoramic at the same scale, which is
+   the comparison this panel exists for. */
 .history-file img {
+  aspect-ratio: 1;
   background-color: #fff;
   background-image:
     linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%),
     linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%);
   background-position: 0 0, 8px 8px;
   background-size: 16px 16px;
-  height: 56px;
+  height: auto;
   object-fit: contain;
   width: 100%;
 }
@@ -1111,6 +1120,11 @@ body.print-page {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 9px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* One line, always. A label that folds makes the row of cards uneven. */
+  white-space: nowrap;
 }
 
 /* --- Walking the full-screen view ---------------------------------------- */
