@@ -828,11 +828,20 @@ def test_a_print_file_can_be_looked_at_without_being_downloaded(tmp_path):
 
     # Made once: the second request serves what the first one wrote.
     folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
-    previews = list(folder.glob("*.preview.jpg"))
+    previews = list(folder.glob("*.preview-*.jpg"))
     assert len(previews) == 1
     written_at = previews[0].stat().st_mtime
     assert client.get(f"/print-outputs/{name}?preview=1").status_code == 200
     assert previews[0].stat().st_mtime == written_at
+
+    # A bigger one for a full-screen view, cached apart from the small one.
+    # It is never larger than the source: a preview scales down and stops.
+    larger = client.get(f"/print-outputs/{name}?preview=1200")
+    assert larger.status_code == 200
+    with Image.open(io.BytesIO(larger.data)) as wider:
+        assert max(wider.size) <= 1200
+        assert max(wider.size) >= max(shown.size)
+    assert len(list(folder.glob("*.preview-*.jpg"))) == 2, "the two sizes share one cache file"
 
     # A note has nothing to show, and says so rather than failing oddly.
     assert client.get(f"/print-outputs/{made['guide']['file']}?preview=1").status_code == 415

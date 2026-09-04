@@ -110,9 +110,9 @@ def sweep_expired_exports() -> dict[str, int]:
         cutoff = time.time() - days * 86400
         for path in folder.iterdir():
             # A preview belongs to the file beside it and is swept with it.
-            if path.name.endswith(PREVIEW_SUFFIX):
-                owner = next((name for name in claimed if name.startswith(path.name[: -len(PREVIEW_SUFFIX)])), None)
-                if owner:
+            if PREVIEW_SUFFIX in path.name:
+                stem = path.name.split(PREVIEW_SUFFIX)[0]
+                if any(name.startswith(stem) for name in claimed):
                     continue
             if path.is_file() and path.name not in claimed and path.stat().st_mtime < cutoff:
                 path.unlink(missing_ok=True)
@@ -172,7 +172,7 @@ def print_page():
 # one -- a listing row, a gallery, a grid of six -- must not download it, so a
 # small preview is made once and kept beside it.
 PREVIEW_EDGE = 420
-PREVIEW_SUFFIX = ".preview.jpg"
+PREVIEW_SUFFIX = ".preview-"
 
 
 @print_routes.get("/print-outputs/<path:name>")
@@ -190,20 +190,29 @@ def print_output(name: str):
     if not path.is_file():
         return json_error("File not found", 404)
 
-    if not request.args.get("preview"):
+    asked = request.args.get("preview")
+    if not asked:
         return send_file(path)
 
     if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
         # A guide or an archive has nothing to show.
         return json_error("That file has no preview", 415)
 
-    preview = folder / f"{path.stem}{PREVIEW_SUFFIX}"
+    # A number asks for that edge: a grid wants a few tens of kilobytes and a
+    # full-screen view wants something worth looking at, and neither wants the
+    # twenty megabytes behind them. Each size is kept separately.
+    try:
+        edge = max(120, min(int(asked), 2400)) if asked not in {"1", "true", "yes"} else PREVIEW_EDGE
+    except (TypeError, ValueError):
+        edge = PREVIEW_EDGE
+
+    preview = folder / f"{path.stem}.preview-{edge}.jpg"
     if not preview.is_file() or preview.stat().st_mtime < path.stat().st_mtime:
         try:
             with Image.open(path) as opened:
                 opened.load()
                 thumbnail = opened.convert("RGB")
-            thumbnail.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE), Image.LANCZOS)
+            thumbnail.thumbnail((edge, edge), Image.LANCZOS)
             thumbnail.save(preview, format="JPEG", quality=82, optimize=True)
         except (OSError, ValueError) as error:
             return json_error(f"Could not make a preview: {error}", 500)
