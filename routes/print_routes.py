@@ -39,6 +39,7 @@ from services.print_catalog_service import (
     PrintCatalogError,
     checked_output_mode,
     ratios_for,
+    set_for_artwork,
 )
 from services.print_export_service import (
     OUTPUT_MODES,
@@ -364,11 +365,23 @@ def export_print_files():
         wanted = spec.get("ratios") or ""
         keys = [key.strip().lower() for key in (wanted.split(",") if isinstance(wanted, str) else wanted) if str(key).strip()]
         active = catalog.list_ratios(active_only=True)
-        ratios = (
-            [ratio for ratio in active if ratio["key"].lower() in keys]
-            if keys
-            else ratios_for(catalog, {"mode": "matching"}, artwork.width / artwork.height)
-        )
+        if keys:
+            ratios = [ratio for ratio in active if ratio["key"].lower() in keys]
+        else:
+            # No set named and no ratios listed: the shape of the artwork
+            # decides. If its ratio has a package configured, that is what the
+            # shop sells it as -- otherwise it is the one file its own shape
+            # makes, which is what this used to do in every case.
+            by_shape = set_for_artwork(catalog, artwork.width / artwork.height)
+            if by_shape:
+                print_set = by_shape
+                chosen_set = by_shape
+                ratios = ratios_for(catalog, by_shape, artwork.width / artwork.height)
+                quality = quality or by_shape["quality"]
+                output_mode = by_shape["output_mode"]
+                include_guide = by_shape["include_guide"]
+            else:
+                ratios = ratios_for(catalog, {"mode": "matching"}, artwork.width / artwork.height)
     try:
         # An explicit mode wins over the set's, so one export can be tried
         # another way without editing the set.

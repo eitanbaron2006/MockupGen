@@ -126,6 +126,9 @@ function renderRatios() {
         <div class="ratio-card-name">${escapeHtml(ratio.name || ratio.key)}</div>
         <div class="ratio-card-px">${ratio.width} &times; ${ratio.height} px</div>
         <div class="ratio-card-sizes" title="${escapeHtml(ratio.sizes || '')}">${escapeHtml(ratio.sizes || 'No sizes listed')}</div>
+        ${ratio.default_set_id
+          ? `<div class="ratio-card-set">&#8594; ${escapeHtml(state.sets.find((set) => set.id === ratio.default_set_id)?.name || 'a package')}</div>`
+          : ''}
       </div>
       <div class="ratio-actions">
         <button class="ratio-toggle${ratio.active ? ' is-on' : ''}" data-toggle="${ratio.id}" title="${ratio.active ? 'Stop offering this ratio' : 'Offer this ratio again'}">${ratio.active ? 'ON' : 'OFF'}</button>
@@ -618,6 +621,11 @@ function openRatioModal(ratio) {
   el('ratioWidth').value = ratio?.width || 7200;
   el('ratioHeight').value = ratio?.height || 10800;
   el('ratioSizes').value = ratio?.sizes || '';
+  el('ratioDefaultSet').innerHTML = [
+    '<option value="">Its own file only</option>',
+    ...state.sets.map((set) => `<option value="${set.id}">${escapeHtml(set.name)}</option>`),
+  ].join('');
+  el('ratioDefaultSet').value = ratio?.default_set_id ? String(ratio.default_set_id) : '';
   drawRatioProof();
   openModal('ratioModal');
 }
@@ -635,6 +643,8 @@ async function saveRatio() {
     width: Number(el('ratioWidth').value),
     height: Number(el('ratioHeight').value),
     sizes: el('ratioSizes').value.trim(),
+    // What an incoming artwork of this shape is sold as.
+    default_set_id: el('ratioDefaultSet').value ? Number(el('ratioDefaultSet').value) : null,
   };
   try {
     if (state.editingRatio) await api(`/api/print/ratios/${state.editingRatio.id}`, { method: 'PATCH', body: JSON.stringify(payload) });

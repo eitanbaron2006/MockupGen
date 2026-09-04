@@ -752,3 +752,51 @@ def test_more_ratios_than_slots_come_back_as_archives(tmp_path):
 
     # All six ratios are delivered, none dropped to make them fit.
     assert len(inside) == 6
+
+
+def test_a_ratio_decides_which_package_an_incoming_artwork_produces(tmp_path):
+    """The shop's answer to "what is a 2:3 artwork worth selling as".
+
+    Without this the export could only ever make one file for an artwork that
+    named no set -- its own ratio -- which is almost never the product. It is
+    also why a Compile produced a single image.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    # Nothing configured yet: one file, the artwork's own shape.
+    plain = export(client, {"quality": "basic"}).get_json()
+    assert [entry["ratio"] for entry in plain["files"]] == ["2:3"]
+
+    pack = client.post(
+        "/api/print/sets",
+        json={"name": "Portrait pack", "mode": "chosen", "ratio_keys": ["2:3", "3:4", "4:5"], "quality": "basic"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+
+    two_three = next(r for r in client.get("/api/print/ratios").get_json()["ratios"] if r["key"] == "2:3")
+    attached = client.patch(
+        f"/api/print/ratios/{two_three['id']}",
+        json={"default_set_id": pack["id"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert attached.status_code == 200
+    assert attached.get_json()["ratio"]["default_set_id"] == pack["id"]
+
+    # Now the same artwork, still naming no set, produces the whole package.
+    packaged = export(client, {}).get_json()
+    assert [entry["ratio"] for entry in packaged["files"]] == ["2:3", "3:4", "4:5"]
+    assert packaged["quality"] == "basic"
+
+    # A square artwork follows its own ratio's configuration, not this one.
+    square = export(client, {"quality": "basic"}, size=(1000, 1000)).get_json()
+    assert [entry["ratio"] for entry in square["files"]] == ["1:1"]
+
+    # An explicit set still wins over the ratio's default.
+    other = client.post(
+        "/api/print/sets",
+        json={"name": "Just one", "mode": "chosen", "ratio_keys": ["11:14"], "quality": "basic"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+    assert [e["ratio"] for e in export(client, {"set": other["id"]}).get_json()["files"]] == ["11:14"]

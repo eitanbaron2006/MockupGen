@@ -101,6 +101,7 @@ class PrintCatalogService:
                     sizes TEXT NOT NULL DEFAULT '',
                     active INTEGER NOT NULL DEFAULT 1,
                     builtin INTEGER NOT NULL DEFAULT 0,
+                    default_set_id INTEGER,
                     sort_order INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 );
@@ -152,6 +153,11 @@ class PrintCatalogService:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(ratios)")}
             if "builtin" not in columns:
                 connection.execute("ALTER TABLE ratios ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0")
+            if "default_set_id" not in columns:
+                # Which package an artwork of this shape should produce. Without
+                # it an incoming artwork could only ever make one file -- its
+                # own ratio -- because nothing said what else it was worth.
+                connection.execute("ALTER TABLE ratios ADD COLUMN default_set_id INTEGER")
             file_columns = {row["name"] for row in connection.execute("PRAGMA table_info(export_files)")}
             if file_columns and "ms" not in file_columns:
                 connection.execute("ALTER TABLE export_files ADD COLUMN ms INTEGER NOT NULL DEFAULT 0")
@@ -243,7 +249,7 @@ class PrintCatalogService:
         current = self.get_ratio(ratio_id)
         if not current:
             raise PrintCatalogError("Ratio not found")
-        allowed = {"key", "name", "width", "height", "sizes", "active", "sort_order"}
+        allowed = {"key", "name", "width", "height", "sizes", "active", "sort_order", "default_set_id"}
         assignments: list[str] = []
         values: list[Any] = []
         if "width" in changes or "height" in changes:
@@ -563,6 +569,34 @@ class PrintCatalogService:
                     (str(key), str(value)),
                 )
         self._checkpoint()
+
+
+def matching_ratio(catalog: PrintCatalogService, artwork_ratio: float) -> dict[str, Any] | None:
+    """The active ratio closest to an artwork's shape, compared in portrait."""
+    active = catalog.list_ratios(active_only=True)
+    if not active:
+        return None
+
+    def distance(ratio: dict[str, Any]) -> float:
+        shape = ratio["width"] / ratio["height"] if ratio["height"] else 1.0
+        upright = artwork_ratio if artwork_ratio <= 1 else 1 / artwork_ratio
+        upright_ratio = shape if shape <= 1 else 1 / shape
+        return abs(upright - upright_ratio)
+
+    return min(active, key=distance)
+
+
+def set_for_artwork(catalog: PrintCatalogService, artwork_ratio: float) -> dict[str, Any] | None:
+    """The package an incoming artwork of this shape should produce.
+
+    This is what the shop configures per ratio: a 2:3 artwork arrives and the
+    2:3 row says which set it is worth selling as. Without it the answer was
+    always one file -- the artwork's own ratio -- which is rarely the product.
+    """
+    ratio = matching_ratio(catalog, artwork_ratio)
+    if not ratio or not ratio.get("default_set_id"):
+        return None
+    return catalog.get_set(int(ratio["default_set_id"]))
 
 
 def ratios_for(

@@ -1140,3 +1140,17 @@ body.print-page {
 
 .preview-prev { left: 22px; }
 .preview-next { right: 22px; }
+
+/* Which package an artwork of this shape produces -- visible on the card, so
+   the wiring can be read without opening every ratio in turn. */
+.ratio-card-set {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .05em;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
