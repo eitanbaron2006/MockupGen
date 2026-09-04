@@ -845,3 +845,50 @@ def test_a_print_file_can_be_looked_at_without_being_downloaded(tmp_path):
 
     # A note has nothing to show, and says so rather than failing oddly.
     assert client.get(f"/print-outputs/{made['guide']['file']}?preview=1").status_code == 415
+
+
+def test_the_shop_wide_rule_decides_what_an_artwork_produces(tmp_path):
+    """One control, not ten. A per-ratio setting nobody finishes wiring is a
+    setting that leaves every automatic export at a single file."""
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    # Unwired: one file, the artwork's own shape.
+    assert [e["ratio"] for e in export(client, {"quality": "basic"}).get_json()["files"]] == ["2:3"]
+    assert client.get("/api/print/ratios").get_json()["default_set_id"] == ""
+
+    pack = client.post(
+        "/api/print/sets",
+        json={"name": "House pack", "mode": "chosen", "ratio_keys": ["2:3", "3:4", "4:5"], "quality": "basic"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+    saved = client.put(
+        "/api/print/settings",
+        json={"default_set_id": str(pack["id"])},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert saved.status_code == 200
+
+    # Every shape now produces the pack, with nothing configured per ratio.
+    assert [e["ratio"] for e in export(client, {}).get_json()["files"]] == ["2:3", "3:4", "4:5"]
+    square = export(client, {}, size=(1000, 1000)).get_json()
+    assert [e["ratio"] for e in square["files"]] == ["2:3", "3:4", "4:5"]
+    assert client.get("/api/print/ratios").get_json()["default_set_id"] == str(pack["id"])
+
+    # A ratio with its own answer overrides the shop-wide one -- the exception
+    # the per-ratio setting exists for.
+    only_square = client.post(
+        "/api/print/sets",
+        json={"name": "Square only", "mode": "chosen", "ratio_keys": ["1:1"], "quality": "basic"},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["set"]
+    one_to_one = next(r for r in client.get("/api/print/ratios").get_json()["ratios"] if r["key"] == "1:1")
+    client.patch(
+        f"/api/print/ratios/{one_to_one['id']}",
+        json={"default_set_id": only_square["id"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert [e["ratio"] for e in export(client, {}, size=(1000, 1000)).get_json()["files"]] == ["1:1"]
+    # ...and a shape without its own still follows the shop.
+    assert [e["ratio"] for e in export(client, {}).get_json()["files"]] == ["2:3", "3:4", "4:5"]

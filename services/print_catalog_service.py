@@ -589,14 +589,28 @@ def matching_ratio(catalog: PrintCatalogService, artwork_ratio: float) -> dict[s
 def set_for_artwork(catalog: PrintCatalogService, artwork_ratio: float) -> dict[str, Any] | None:
     """The package an incoming artwork of this shape should produce.
 
-    This is what the shop configures per ratio: a 2:3 artwork arrives and the
-    2:3 row says which set it is worth selling as. Without it the answer was
-    always one file -- the artwork's own ratio -- which is rarely the product.
+    Two answers, in order: what this ratio says, then what the shop says for
+    everything. The per-ratio one exists for the exceptions -- a panoramic is
+    not sold like a portrait -- but wiring ten ratios one modal at a time is a
+    setting nobody ever finishes, so the shop-wide default is the one that
+    matters and the one the screen puts in front of you.
+
+    With neither, the answer is one file in the artwork's own shape, which is
+    rarely the product.
     """
     ratio = matching_ratio(catalog, artwork_ratio)
-    if not ratio or not ratio.get("default_set_id"):
+    if ratio and ratio.get("default_set_id"):
+        chosen = catalog.get_set(int(ratio["default_set_id"]))
+        if chosen:
+            return chosen
+
+    stored = catalog.get_settings().get("default_set_id")
+    if not stored:
         return None
-    return catalog.get_set(int(ratio["default_set_id"]))
+    try:
+        return catalog.get_set(int(stored))
+    except (TypeError, ValueError):
+        return None
 
 
 def ratios_for(

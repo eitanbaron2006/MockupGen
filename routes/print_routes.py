@@ -229,6 +229,9 @@ def get_print_ratios():
             "ratios": print_catalog().list_ratios(),
             "qualities": available_qualities(_tools()),
             "modes": list(OUTPUT_MODES),
+            # The shop-wide rule travels with the ratios so the screen can draw
+            # it without a second request.
+            "default_set_id": print_catalog().get_settings().get("default_set_id", ""),
         }
     )
 
@@ -327,6 +330,7 @@ def get_print_settings():
             "settings": print_catalog().get_settings(),
             "found": {name: discover_tool(name) for name in ("realesrgan", "topaz")},
             "retention_days": _retention_days(),
+            "default_set_id": print_catalog().get_settings().get("default_set_id", ""),
         }
     )
 
@@ -337,7 +341,7 @@ def put_print_settings():
     if refusal:
         return refusal
     payload = request.get_json(silent=True) or {}
-    allowed = {"realesrgan_path", "topaz_path", "retention_days", "etsy_max_files", "etsy_max_bytes"}
+    allowed = {"realesrgan_path", "topaz_path", "retention_days", "etsy_max_files", "etsy_max_bytes", "default_set_id"}
     print_catalog().set_settings({k: str(v) for k, v in payload.items() if k in allowed})
     return jsonify({"success": True, "settings": print_catalog().get_settings()})
 
@@ -754,6 +758,7 @@ def get_print_exports():
             "exports": catalog.list_exports(limit=limit, offset=offset, reference=reference),
             "total": catalog.count_exports(reference=reference),
             "retention_days": _retention_days(),
+            "default_set_id": print_catalog().get_settings().get("default_set_id", ""),
         }
     )
 

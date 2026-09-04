@@ -105,6 +105,15 @@
           </div>
           <button class="add-set-btn" id="addRatio" title="New ratio">+</button>
         </div>
+        <!-- What an incoming artwork turns into when nothing else says.
+             Here rather than inside each ratio's editor: wiring ten ratios one
+             modal at a time is a setting nobody finishes, and an unwired one
+             means every automatic export is a single file. -->
+        <div class="auto-rule">
+          <span class="dock-label">An artwork with no set produces</span>
+          <select id="autoSet" class="dock-select"></select>
+          <p class="auto-rule-note" id="autoSetNote"></p>
+        </div>
         <div class="panel-body print-scroll" id="ratioList"></div>
       </section>
     </div>

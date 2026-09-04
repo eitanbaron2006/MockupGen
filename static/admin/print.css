@@ -1168,3 +1168,25 @@ body.print-page {
   text-transform: uppercase;
   white-space: nowrap;
 }
+
+/* The shop-wide rule, above the ratios rather than inside one of them. */
+.auto-rule {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+}
+
+.auto-rule-note {
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* An unwired rule is not a neutral state: it means every automatic export is
+   a single file, which is almost never the product. */
+.auto-rule-note.is-warning {
+  color: var(--accent);
+}

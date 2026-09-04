@@ -120,6 +120,23 @@ function renderSets() {
   }).join('');
 }
 
+/** The shop-wide rule, and what it means in plain words. */
+function renderAutoRule() {
+  const select = el('autoSet');
+  const chosen = String(state.settings.default_set_id || '');
+  select.innerHTML = [
+    '<option value="">Its own ratio only — one file</option>',
+    ...state.sets.map((set) => `<option value="${set.id}"${String(set.id) === chosen ? ' selected' : ''}>${escapeHtml(set.name)}</option>`),
+  ].join('');
+
+  const set = state.sets.find((entry) => String(entry.id) === chosen);
+  const overrides = state.ratios.filter((ratio) => ratio.default_set_id).length;
+  el('autoSetNote').textContent = set
+    ? `${plural((set.ratio_keys || []).length || 1, 'file')} per artwork${overrides ? `, except ${overrides} ratio${overrides === 1 ? '' : 's'} with their own` : ''}.`
+    : 'One file, in the shape the artwork already has. Most listings want more than that.';
+  el('autoSetNote').classList.toggle('is-warning', !set && !overrides);
+}
+
 function renderRatios() {
   const list = el('ratioList');
   if (!state.ratios.length) {
@@ -718,7 +735,9 @@ async function loadRatios() {
   state.ratios = payload.ratios || [];
   state.qualities = payload.qualities || [];
   state.modes = payload.modes || [];
+  if (payload.default_set_id !== undefined) state.settings.default_set_id = payload.default_set_id;
   renderRatios();
+  renderAutoRule();
   // The set cards name their quality and draw their ratios, both of which
   // arrive here -- and the two loads race, so whichever lands second redraws.
   renderSets();
@@ -730,6 +749,7 @@ async function loadSets() {
   const payload = await api('/api/print/sets');
   state.sets = payload.sets || [];
   renderSets();
+  renderAutoRule();
   renderExportControls();
   renderSummary();
 }
@@ -740,6 +760,18 @@ function wire() {
   el('addSet').addEventListener('click', () => openSetModal(null));
   el('addRatio').addEventListener('click', () => openRatioModal(null));
   el('openSettings').addEventListener('click', openSettingsModal);
+  el('autoSet').addEventListener('change', async (event) => {
+    const chosen = event.target.value;
+    try {
+      await api('/api/print/settings', { method: 'PUT', body: JSON.stringify({ default_set_id: chosen }) });
+      state.settings.default_set_id = chosen;
+      renderAutoRule();
+      const set = state.sets.find((entry) => String(entry.id) === chosen);
+      toast(set ? `Artworks now produce "${set.name}".` : 'Artworks now produce one file in their own ratio.');
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
   el('saveSet').addEventListener('click', saveSet);
   el('saveRatio').addEventListener('click', saveRatio);
   el('saveSettings').addEventListener('click', saveSettings);
