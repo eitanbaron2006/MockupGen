@@ -30,7 +30,7 @@ from flask import (
     stream_with_context,
     url_for,
 )
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from routes.responses import json_error
 from services.image_utils import ImageProcessingError, load_rgba
@@ -109,6 +109,11 @@ def sweep_expired_exports() -> dict[str, int]:
         claimed = catalog.claimed_file_names()
         cutoff = time.time() - days * 86400
         for path in folder.iterdir():
+            # A preview belongs to the file beside it and is swept with it.
+            if path.name.endswith(PREVIEW_SUFFIX):
+                owner = next((name for name in claimed if name.startswith(path.name[: -len(PREVIEW_SUFFIX)])), None)
+                if owner:
+                    continue
             if path.is_file() and path.name not in claimed and path.stat().st_mtime < cutoff:
                 path.unlink(missing_ok=True)
                 orphans += 1
@@ -163,15 +168,46 @@ def print_page():
     return render_template("admin/print.html", csrf_token=session["csrf_token"])
 
 
+# A print file is fifteen to twenty megabytes. Anything that wants to *look* at
+# one -- a listing row, a gallery, a grid of six -- must not download it, so a
+# small preview is made once and kept beside it.
+PREVIEW_EDGE = 420
+PREVIEW_SUFFIX = ".preview.jpg"
+
+
 @print_routes.get("/print-outputs/<path:name>")
 def print_output(name: str):
-    """One finished print file, by the name the export answered with."""
+    """One finished print file, or a small preview of it.
+
+    ``?preview=1`` answers with a few tens of kilobytes instead of twenty
+    megabytes. The preview is written next to the file the first time it is
+    asked for, so a gallery of six costs one render each and nothing after.
+    """
     if Path(name).name != name:
         return json_error("Invalid file name", 400)
-    path = _print_folder() / name
+    folder = _print_folder()
+    path = folder / name
     if not path.is_file():
         return json_error("File not found", 404)
-    return send_file(path)
+
+    if not request.args.get("preview"):
+        return send_file(path)
+
+    if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        # A guide or an archive has nothing to show.
+        return json_error("That file has no preview", 415)
+
+    preview = folder / f"{path.stem}{PREVIEW_SUFFIX}"
+    if not preview.is_file() or preview.stat().st_mtime < path.stat().st_mtime:
+        try:
+            with Image.open(path) as opened:
+                opened.load()
+                thumbnail = opened.convert("RGB")
+            thumbnail.thumbnail((PREVIEW_EDGE, PREVIEW_EDGE), Image.LANCZOS)
+            thumbnail.save(preview, format="JPEG", quality=82, optimize=True)
+        except (OSError, ValueError) as error:
+            return json_error(f"Could not make a preview: {error}", 500)
+    return send_file(preview)
 
 
 # ------------------------------------------------------------------ ratios

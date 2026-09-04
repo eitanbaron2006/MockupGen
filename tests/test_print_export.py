@@ -800,3 +800,39 @@ def test_a_ratio_decides_which_package_an_incoming_artwork_produces(tmp_path):
         headers={"X-CSRF-Token": csrf},
     ).get_json()["set"]
     assert [e["ratio"] for e in export(client, {"set": other["id"]}).get_json()["files"]] == ["11:14"]
+
+
+def test_a_print_file_can_be_looked_at_without_being_downloaded(tmp_path):
+    """A print file is fifteen to twenty megabytes.
+
+    A listing row, a gallery, a grid of six -- none of them can afford to pull
+    the real thing just to show a thumbnail, so a small preview is made once
+    and kept beside it.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+    made = export(client, {"ratios": "2:3", "quality": "basic"}).get_json()
+    name = made["files"][0]["file"]
+
+    full = client.get(f"/print-outputs/{name}")
+    preview = client.get(f"/print-outputs/{name}?preview=1")
+
+    assert full.status_code == 200 and preview.status_code == 200
+    assert len(preview.data) < len(full.data), "the preview is not smaller than the file"
+
+    with Image.open(io.BytesIO(preview.data)) as shown:
+        assert max(shown.size) <= 420
+        # Still the artwork, not a placeholder.
+        assert shown.getpixel((shown.width // 2, shown.height // 2)) != (255, 255, 255)
+
+    # Made once: the second request serves what the first one wrote.
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    previews = list(folder.glob("*.preview.jpg"))
+    assert len(previews) == 1
+    written_at = previews[0].stat().st_mtime
+    assert client.get(f"/print-outputs/{name}?preview=1").status_code == 200
+    assert previews[0].stat().st_mtime == written_at
+
+    # A note has nothing to show, and says so rather than failing oddly.
+    assert client.get(f"/print-outputs/{made['guide']['file']}?preview=1").status_code == 415
