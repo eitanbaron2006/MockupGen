@@ -90,10 +90,15 @@ def pack_files(
         parcels.append(parcel)
 
     if len(parcels) > usable:
+        # The useful part is not that it failed, but by how much: a shop that
+        # can see the numbers knows to drop a ratio and move on.
+        total_mb = sum(int(entry.get("bytes") or 0) for entry in files) // (1024 * 1024)
         raise PackingError(
             f"These {len(files)} files need {len(parcels)} archives, and only {usable} can be delivered. "
-            f"Remove a ratio from the set, or deliver them another way."
+            f"They come to {total_mb}MB against a {usable * max_bytes // (1024 * 1024)}MB ceiling. "
+            f"Use fewer ratios in this set, or deliver them another way."
         )
+
     return parcels
 
 

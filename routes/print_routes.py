@@ -45,6 +45,7 @@ from services.print_export_service import (
     PrintExportError,
     available_qualities,
     discover_tool,
+    fit_file_to_limit,
     flatten_artwork,
     has_transparency,
     print_file_name,
@@ -545,9 +546,61 @@ def build_print_deliverables():
     guide = summary.get("guide") or {}
     guide_name = guide.get("file")
 
+    # A detailed artwork at 7200x10800 is 34MB at quality 95 -- over the limit
+    # on its own, before any packing. The dimensions and the 300 DPI are what
+    # a print needs, so what gives is the compression, which is the one of the
+    # three nobody can see change at arm's length.
+    fitted = []
+    for entry in produced:
+        outcome = fit_file_to_limit(folder / entry["file"], max_bytes)
+        entry["bytes"] = outcome["bytes"]
+        if outcome.get("fitted"):
+            entry["fitted_quality"] = outcome["quality"]
+            fitted.append({
+                "ratio": entry.get("ratio"),
+                "was_bytes": outcome["was_bytes"],
+                "bytes": outcome["bytes"],
+                "quality": outcome["quality"],
+            })
+
+    def fit_all(budget: int) -> None:
+        for entry in produced:
+            outcome = fit_file_to_limit(folder / entry["file"], budget)
+            entry["bytes"] = outcome["bytes"]
+            if outcome.get("fitted"):
+                entry["fitted_quality"] = outcome["quality"]
+                fitted.append({
+                    "ratio": entry.get("ratio"),
+                    "was_bytes": outcome["was_bytes"],
+                    "bytes": outcome["bytes"],
+                    "quality": outcome["quality"],
+                })
+
+    fit_all(max_bytes)
+
     try:
         plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
     except PackingError as error:
+        # The per-file limit is met and it still will not go. The total is not
+        # the constraint either: six files of 15MB come to 93MB against a
+        # 100MB ceiling, and still need six archives -- because two of them do
+        # not fit in one 20MB archive together.
+        #
+        # What decides it is how many files have to share an archive. Six into
+        # five means at least one pair, so every file has to be at most half an
+        # archive; the margin is for the archive's own overhead.
+        import math
+
+        per_archive = math.ceil(len(produced) / max_files)
+        share = int(max_bytes / per_archive * 0.94)
+        if share < max_bytes and "archives" in str(error):
+            fit_all(share)
+            try:
+                plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
+            except PackingError as second:
+                error = second
+            else:
+                return _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_files, max_bytes)
         # Named rather than worked around: quietly delivering eight of eleven
         # ratios is the worst outcome available.
         return jsonify({
@@ -558,6 +611,12 @@ def build_print_deliverables():
             "limits": {"max_files": max_files, "max_bytes": max_bytes},
         }), 409
 
+    return _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_files, max_bytes)
+
+
+def _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_files, max_bytes):
+    """The finished answer, however many passes it took to get there."""
+    guide_name = guide.get("file")
     if plan["mode"] == "files":
         # No archive at all. The files already fit the allowance, and a .zip
         # would only stand between the buyer and what they paid for.
@@ -612,6 +671,7 @@ def build_print_deliverables():
         "limits": {"max_files": max_files, "max_bytes": max_bytes},
         "slots_used": len(deliverables),
         "deliverables": deliverables,
+        "recompressed": fitted,
         "files": summary.get("files"),
         "guide": summary.get("guide"),
     })

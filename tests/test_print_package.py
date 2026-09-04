@@ -162,3 +162,55 @@ def test_one_ratio_on_its_own_is_one_plain_file():
     plan = plan_delivery(files(8), has_guide=True)
     assert plan["mode"] == "files"
     assert plan["slots_used"] == 2 and plan["include_guide"] is True
+
+
+def test_a_file_over_the_limit_is_recompressed_rather_than_refused(tmp_path):
+    """A detailed artwork at 7200x10800 is 34MB at quality 95.
+
+    Four of six ratios exceed Etsy's per-file limit on their own, before any
+    packing. What gives is the compression -- the dimensions and the 300 DPI
+    are the two a print actually needs.
+    """
+    import random
+
+    from PIL import Image
+
+    from services.print_export_service import fit_file_to_limit
+
+    random.seed(11)
+    detailed = Image.new("RGB", (1400, 1400))
+    pixels = detailed.load()
+    for y in range(1400):
+        for x in range(1400):
+            pixels[x, y] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+    path = tmp_path / "big.jpg"
+    detailed.save(path, "JPEG", quality=95, optimize=True, dpi=(300, 300))
+    original = path.stat().st_size
+    limit = original // 2
+
+    outcome = fit_file_to_limit(path, limit)
+
+    assert outcome["fitted"] is True
+    assert outcome["bytes"] <= limit < outcome["was_bytes"]
+    assert outcome["quality"] < 95
+    # The pixels and the DPI are untouched: only the compression moved.
+    with Image.open(path) as saved:
+        assert saved.size == (1400, 1400)
+        assert saved.info.get("dpi") == (300, 300)
+
+
+def test_a_file_already_under_the_limit_is_left_exactly_as_it_is(tmp_path):
+    from PIL import Image
+
+    from services.print_export_service import fit_file_to_limit
+
+    path = tmp_path / "small.jpg"
+    Image.new("RGB", (400, 400), (200, 90, 70)).save(path, "JPEG", quality=95, dpi=(300, 300))
+    before = path.read_bytes()
+
+    outcome = fit_file_to_limit(path, 20 * 1024 * 1024)
+
+    assert outcome["fitted"] is False and outcome["quality"] is None
+    # Not re-encoded: a second pass would cost quality for nothing.
+    assert path.read_bytes() == before
