@@ -1070,3 +1070,35 @@ def test_a_checkpoint_of_another_architecture_is_refused_not_converted(tmp_path,
 
     from tools.convert_esrgan_to_ncnn import MODELS
     assert not (MODELS / "should-never-be-written.bin").exists(), "a refused conversion still wrote a file"
+
+
+def test_a_saved_file_drops_the_batch_id_from_its_name(tmp_path):
+    """The buyer's downloads folder is not the place for our bookkeeping.
+
+    Files on disk are prefixed with a batch id so two exports of the same ratio
+    cannot collide. That is ours, not theirs, and the card shows the name
+    without it -- so saving one has to give the same name the card shows.
+
+    An anchor's `download` attribute cannot do this on its own: a filename in
+    the response's Content-Disposition overrides it, and Flask sends one. So
+    the ask is explicit and the route answers with the name it should have.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+    made = export(client, {"ratios": "2:3", "quality": "basic"}).get_json()
+    name = made["files"][0]["file"]
+    assert "_" in name, "the file on disk is no longer batch-prefixed"
+
+    saved = client.get(f"/print-outputs/{name}?download=1")
+    assert saved.status_code == 200
+    disposition = saved.headers["Content-Disposition"]
+    assert disposition.startswith("attachment")
+    assert name.split("_", 1)[1] in disposition
+    # The id is gone from the offered name, not merely hidden.
+    assert name.split("_", 1)[0] not in disposition
+
+    # Looking at it is unchanged: no attachment, so the viewer still shows it.
+    assert "attachment" not in client.get(f"/print-outputs/{name}").headers.get("Content-Disposition", "")
+    # And the bytes are the same file either way -- this names, it does not alter.
+    assert client.get(f"/print-outputs/{name}?download=1").data == client.get(f"/print-outputs/{name}").data

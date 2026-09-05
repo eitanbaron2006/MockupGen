@@ -206,6 +206,23 @@ function syncQualityForSet() {
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
+/** Save this file, from the strip along the bottom of its card.
+ *
+ * An arrow-to-bar glyph is the obvious icon for this and also the kind that
+ * renders as a box on a machine missing the font, so it is drawn rather than
+ * typed. `download` names the file what the buyer would call it, not the
+ * batch-prefixed name it has on disk.
+ */
+function downloadLink(url, file) {
+  const separator = url.includes('?') ? '&' : '?';
+  return `<a class="print-download" href="${escapeHtml(url + separator + 'download=1')}" download="${escapeHtml(buyerName(file))}"
+      title="Save this file" aria-label="Save ${escapeHtml(buyerName(file))}">
+      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M8 1.8v7.4M4.8 6.3 8 9.5l3.2-3.2M2.8 12.6h10.4" />
+      </svg>
+    </a>`;
+}
+
 function renderSummary() {
   const active = state.ratios.filter((ratio) => ratio.active).length;
   el('catalogSummary').textContent = `${plural(active, 'ratio')} active · ${plural(state.sets.length, 'set')}`;
@@ -230,6 +247,7 @@ function resultCard(entry) {
         <div class="print-result-top">
           <span class="print-result-ratio">${escapeHtml(entry.ratio)}</span>
           ${entry.ms ? `<span class="print-result-took" title="How long this file took to render">${escapeHtml(took(entry.ms))}</span>` : ''}
+          ${downloadLink(entry.url, entry.file)}
         </div>
         <div class="print-result-px">${entry.width} &times; ${entry.height} px &middot; 300 DPI</div>
         <div class="print-result-sizes">${escapeHtml(entry.prints_at || '')}</div>
@@ -356,10 +374,13 @@ function renderHistory() {
       </div>
       <div class="history-files">
         ${run.files.map((file) => `
-          <button class="history-file" data-preview="/print-outputs/${escapeHtml(file.file_name)}" data-caption="${escapeHtml(buyerName(file.file_name))}">
+          <div class="history-file" data-preview="/print-outputs/${escapeHtml(file.file_name)}" data-caption="${escapeHtml(buyerName(file.file_name))}" role="button" tabindex="0">
             <img src="/print-outputs/${escapeHtml(file.file_name)}" alt="${escapeHtml(file.ratio_key)}" loading="lazy">
-            <span>${escapeHtml(file.ratio_key)} &middot; ${escapeHtml(weigh(file.bytes))}${file.ms ? ` &middot; ${escapeHtml(took(file.ms))}` : ''}</span>
-          </button>`).join('')}
+            <div class="history-file-strip">
+              <span>${escapeHtml(file.ratio_key)} &middot; ${escapeHtml(weigh(file.bytes))}${file.ms ? ` &middot; ${escapeHtml(took(file.ms))}` : ''}</span>
+              ${downloadLink(`/print-outputs/${file.file_name}`, file.file_name)}
+            </div>
+          </div>`).join('')}
       </div>
     </div>`).join('');
 }
@@ -837,6 +858,9 @@ function wire() {
   });
 
   const openFromCard = (event) => {
+    // The save link sits inside the card, so without this every download also
+    // threw the full-screen view open on top of it.
+    if (event.target.closest('.print-download')) return;
     const card = event.target.closest('[data-preview]');
     if (!card) return;
     // One past export is one piece of work: its files scroll among themselves.
@@ -844,6 +868,21 @@ function wire() {
     openPreview(state.previews.findIndex((entry) => entry.url === card.dataset.preview));
   };
   el('exportResults').addEventListener('click', openFromCard);
+
+  // A card is a div wearing role="button" -- which a screen reader announces as
+  // a button and a keyboard then cannot press. The history tiles were real
+  // buttons until the save link went in (an anchor inside a button is not legal
+  // HTML), so this is what keeps that working, and it gives the result cards
+  // the keyboard they were only pretending to have.
+  const pressFromKey = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const card = event.target.closest('[data-preview]');
+    if (!card || event.target.closest('.print-download')) return;
+    event.preventDefault();
+    openFromCard(event);
+  };
+  el('exportResults').addEventListener('keydown', pressFromKey);
+  el('exportHistory').addEventListener('keydown', pressFromKey);
 
   el('exportHistory').addEventListener('click', (event) => {
     const forget = event.target.closest('[data-forget]');

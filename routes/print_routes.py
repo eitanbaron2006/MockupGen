@@ -191,6 +191,14 @@ def print_output(name: str):
 
     asked = request.args.get("preview")
     if not asked:
+        # Every file on disk carries the batch id that keeps two exports of the
+        # same ratio apart. That is bookkeeping, and no buyer should have to see
+        # it in their downloads folder -- so a save is offered under the name
+        # the screen shows. The `download` attribute alone could not do this:
+        # a Content-Disposition filename from here overrides it.
+        if request.args.get("download"):
+            buyer = name.split("_", 1)[1] if "_" in name else name
+            return send_file(path, as_attachment=True, download_name=buyer)
         return send_file(path)
 
     if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:

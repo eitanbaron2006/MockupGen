@@ -1116,11 +1116,23 @@ body.print-page {
   width: 100%;
 }
 
+/* The label and the save control share the strip. The label is the part that
+   gives way: it truncates, and the icon keeps its size, because a card whose
+   width is set by its longest filename is what made this row ragged before. */
+.history-file-strip {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  min-width: 0;
+  width: 100%;
+}
+
 .history-file span {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 9px;
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   /* One line, always. A label that folds makes the row of cards uneven. */
@@ -1189,4 +1201,58 @@ body.print-page {
    a single file, which is almost never the product. */
 .auto-rule-note.is-warning {
   color: var(--accent);
+}
+
+/* --- Saving one file ------------------------------------------------------ */
+
+/* Quiet until wanted: the card is for looking, and the arrow should not compete
+   with the picture. It is drawn at 13px against a 24px target, so it stays
+   comfortably clickable while reading as small. */
+.print-download {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--faint);
+  display: inline-flex;
+  flex: none;
+  height: 22px;
+  justify-content: center;
+  text-decoration: none;
+  transition: color .12s, border-color .12s;
+  width: 20px;
+}
+
+.print-download svg {
+  fill: none;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  width: 13px;
+}
+
+.print-download:hover,
+.print-download:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The row aligns its text on the baseline, which an icon has no useful one for.
+   The time keeps the right-hand end it always had and the arrow follows it;
+   with no time to push against, space-between puts the arrow there instead. */
+.print-result-top .print-result-took {
+  margin-left: auto;
+}
+
+.print-result-top .print-download {
+  align-self: center;
+  margin-right: -4px;
+}
+
+/* The card itself is keyboard-operable, so it has to show where the focus is. */
+.print-result:focus-visible,
+.history-file:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
