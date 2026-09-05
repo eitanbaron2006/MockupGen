@@ -1127,3 +1127,51 @@ def test_print_files_keep_their_full_colour_resolution(tmp_path):
         # 0 is 4:4:4, 1 is 4:2:2, 2 is 4:2:0.
         assert JpegImagePlugin.get_sampling(saved) == 0, "the print file is being colour-subsampled"
         assert saved.info.get("dpi") == (300, 300), "a print file without its 300 DPI is a web image"
+
+
+def test_a_large_preview_is_kept_at_a_quality_worth_inspecting(tmp_path):
+    """The full-screen view is where someone checks their crop.
+
+    It used to be handed the print file itself -- 55 to 78 megapixels, fifteen
+    megabytes -- to draw in a box about nine hundred pixels wide. Past a size
+    like that a browser stops decoding the whole image, and what it drops shows
+    as a pale band along an edge; the file on disk is perfect, so the report is
+    always "the export is broken" when the export is fine.
+
+    So the view asks for a preview like everything else. It is a different size
+    from the grid's, and it is not compressed as hard, because a thumbnail is
+    judged at postage-stamp size and this one is leaned into.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+    made = export(client, {"ratios": "2:3", "quality": "basic"}).get_json()
+    name = made["files"][0]["file"]
+
+    big = client.get(f"/print-outputs/{name}?preview=2000")
+    grid = client.get(f"/print-outputs/{name}?preview=420")
+    assert big.status_code == 200 and grid.status_code == 200
+
+    with Image.open(io.BytesIO(big.data)) as shown:
+        assert max(shown.size) <= 2000
+    # Each size is cached under its own name, so one does not overwrite another.
+    assert len(big.data) != len(grid.data)
+
+    # The two sizes are compressed differently, and it is the big one that gets
+    # the better setting. Compared per pixel, since it is much larger overall.
+    with Image.open(io.BytesIO(big.data)) as a, Image.open(io.BytesIO(grid.data)) as b:
+        big_per_pixel = len(big.data) / (a.size[0] * a.size[1])
+        grid_per_pixel = len(grid.data) / (b.size[0] * b.size[1])
+    assert big_per_pixel > grid_per_pixel, "the full-screen preview is compressed as hard as a thumbnail"
+
+
+def test_the_viewer_never_asks_for_the_print_file_itself(tmp_path):
+    """Pinned in the script, because this is where the regression would return.
+
+    A one-line change back to `shown.url` reintroduces the band, and nothing
+    server-side would notice: the files stay correct either way.
+    """
+    script = (Path(__file__).resolve().parents[1] / "static" / "admin" / "print.js").read_text(encoding="utf-8")
+    opening = script[script.index("function openPreview"):script.index("const stepPreview")]
+    assert "preview=${PREVIEW_EDGE}" in opening, "the full-screen view is loading the print file again"
+    assert "PREVIEW_EDGE = 2000" in script

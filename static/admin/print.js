@@ -204,6 +204,10 @@ function syncQualityForSet() {
   }
 }
 
+/* Enough for a full-screen look on a high-density display -- the drawn box is
+   ~900 CSS px, so 2000 covers it at 2x with room to spare. */
+const PREVIEW_EDGE = 2000;
+
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** Save this file, from the strip along the bottom of its card.
@@ -320,7 +324,12 @@ function openPreview(index) {
   const total = state.previews.length;
   state.previewAt = ((index % total) + total) % total;
   const shown = state.previews[state.previewAt];
-  el('previewImage').src = shown.url;
+  // Not the file itself. A print is 55 to 78 megapixels and fifteen megabytes,
+  // and this box is about nine hundred pixels wide -- handing the browser the
+  // whole thing to look at is both wasteful and the point at which it starts
+  // dropping parts of the decode, which is what put a pale band along the
+  // bottom of the larger ratios. The route has made these previews all along.
+  el('previewImage').src = `${shown.url}${shown.url.includes('?') ? '&' : '?'}preview=${PREVIEW_EDGE}`;
   el('previewCaption').textContent = total > 1
     ? `${shown.caption}   ·   ${state.previewAt + 1} of ${total}`
     : shown.caption;

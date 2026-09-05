@@ -220,7 +220,10 @@ def print_output(name: str):
                 opened.load()
                 thumbnail = opened.convert("RGB")
             thumbnail.thumbnail((edge, edge), Image.LANCZOS)
-            thumbnail.save(preview, format="JPEG", quality=82, optimize=True)
+            # A grid thumbnail is judged at postage-stamp size; a full-screen
+            # preview is what someone leans in to check their crop on, so it is
+            # not the place to save forty kilobytes.
+            thumbnail.save(preview, format="JPEG", quality=90 if edge > 800 else 82, optimize=True)
         except (OSError, ValueError) as error:
             return json_error(f"Could not make a preview: {error}", 500)
     return send_file(preview)
