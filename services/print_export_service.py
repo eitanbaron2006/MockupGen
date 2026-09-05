@@ -20,7 +20,6 @@ import math
 import shutil
 import subprocess
 import tempfile
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -457,50 +456,3 @@ def printing_guide(ratios: list[dict[str, Any]], mode: str = DEFAULT_MODE) -> st
 
 def realesrgan_ready(program: str) -> bool:
     return bool(program) and (Path(program).is_file() or bool(shutil.which(program)))
-
-
-# How far the quality may fall to meet a marketplace file limit. A print is
-# viewed at arm's length at 300 DPI, where the difference between 95 and 80 is
-# not visible; below about 70 it starts to be, so that is the floor.
-FIT_QUALITY_STEPS = (95, 90, 85, 80, 75, 70)
-
-
-def fit_file_to_limit(path: Path, max_bytes: int) -> dict[str, Any]:
-    """Bring one saved print file under a size limit, or say it cannot.
-
-    The dimensions and the 300 DPI stay exactly as they were: what gives is
-    the JPEG quality, which is the one of the three a buyer cannot see change.
-    Shrinking the pixels would be the visible loss, and is not done here.
-
-    Measured on a detailed artwork at 7200x10800: 34.6MB at quality 95, 18.8MB
-    at 80. A flat artwork never gets here at all -- it compresses to a few
-    megabytes on its own.
-    """
-    original = path.stat().st_size
-    if original <= max_bytes:
-        return {"fitted": False, "bytes": original, "quality": None}
-
-    with Image.open(path) as opened:
-        opened.load()
-        image = opened.convert("RGB")
-
-    for quality in FIT_QUALITY_STEPS:
-        buffer = BytesIO()
-        image.save(buffer, format="JPEG", quality=quality, optimize=True, dpi=(300, 300))
-        if buffer.tell() <= max_bytes:
-            path.write_bytes(buffer.getvalue())
-            return {
-                "fitted": True,
-                "bytes": buffer.tell(),
-                "quality": quality,
-                "was_bytes": original,
-            }
-
-    # Even at the floor it does not fit. Said plainly: the alternative is
-    # quietly shipping something that looks worse than the shop intended.
-    return {
-        "fitted": False,
-        "bytes": original,
-        "quality": FIT_QUALITY_STEPS[-1],
-        "impossible": True,
-    }

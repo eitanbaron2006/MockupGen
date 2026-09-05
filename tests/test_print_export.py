@@ -892,3 +892,72 @@ def test_the_shop_wide_rule_decides_what_an_artwork_produces(tmp_path):
     assert [e["ratio"] for e in export(client, {}, size=(1000, 1000)).get_json()["files"]] == ["1:1"]
     # ...and a shape without its own still follows the shop.
     assert [e["ratio"] for e in export(client, {}).get_json()["files"]] == ["2:3", "3:4", "4:5"]
+
+
+def test_a_set_gets_every_size_for_every_artwork(tmp_path):
+    """Three artworks sold as one listing need three artworks' worth of files.
+
+    The export takes a single artwork, so a set runs it once per image -- but
+    the packing has to see all of them at once. Eighteen files against five
+    slots is a decision that cannot be made six at a time.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    made = []
+    for index in range(3):
+        answer = export(client, {"ratios": "2:3, 3:4", "quality": "basic"}, size=(1200 + index, 1800)).get_json()
+        made += [entry["file"] for entry in answer["files"] if entry["success"]]
+    assert len(made) == 6, "one artwork's files went missing"
+
+    packed = client.post("/api/print/package", json={"files": made}).get_json()
+
+    assert packed["success"] is True
+    # Every file is delivered; none dropped to make the set fit.
+    delivered = [name for entry in packed["deliverables"] for name in (entry.get("files") or [entry.get("file")])]
+    if packed["delivery"] == "archives":
+        assert sorted(name for name in delivered if name in made) == sorted(made)
+    else:
+        assert len([e for e in packed["deliverables"] if e["kind"] == "print"]) == 6
+    assert packed["slots_used"] <= packed["limits"]["max_files"]
+
+
+def test_packing_refuses_a_name_that_is_not_one_of_ours(tmp_path):
+    client, _ = studio(tmp_path)
+    assert client.post("/api/print/package", json={"files": ["../secrets.txt"]}).status_code == 400
+    assert client.post("/api/print/package", json={"files": ["nope.jpg"]}).status_code == 404
+    assert client.post("/api/print/package", json={"files": []}).status_code == 400
+
+
+def test_a_set_does_not_deliver_three_files_under_one_name(tmp_path):
+    """Stripping the batch id leaves a set's files all called the same thing.
+
+    Three artworks at 2:3 all become "2x3_ratio_24x36_inch.jpg", and a zip
+    with a repeated name hands the buyer one of them. Two thirds of what they
+    paid for would simply not be in the download.
+    """
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+
+    made = []
+    for index in range(3):
+        answer = export(client, {"ratios": "2:3, 3:4", "quality": "basic"}, size=(1200 + index, 1800)).get_json()
+        made += [entry["file"] for entry in answer["files"] if entry["success"]]
+
+    # Force archiving: more files than the allowance holds as plain images.
+    client.put("/api/print/settings", json={"etsy_max_files": "2"}, headers={"X-CSRF-Token": csrf})
+    packed = client.post("/api/print/package", json={"files": made}).get_json()
+    assert packed["delivery"] == "archives"
+
+    folder = Path(client.application.config["PRINT_OUTPUT_FOLDER"])
+    inside = []
+    for entry in packed["deliverables"]:
+        with zipfile.ZipFile(folder / entry["file"]) as bundle:
+            names = bundle.namelist()
+            assert len(names) == len(set(names)), f"{entry['file']} repeats a name"
+            inside += names
+
+    # Every one of the six files reached the buyer under a name of its own.
+    assert len(inside) == len(set(inside)) == 6

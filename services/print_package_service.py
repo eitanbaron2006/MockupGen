@@ -67,10 +67,11 @@ def pack_files(
     if usable <= 0:
         raise PackingError(f"No room left for print files: {max_files} allowed, {reserved_slots} reserved")
 
+    # Callers reach this only for files that already fit a slot: plan_delivery
+    # sends anything larger down the oversize path, because the alternative is
+    # re-encoding a print, and the quality is the product.
     oversized = [entry for entry in files if int(entry.get("bytes") or 0) > max_bytes]
     if oversized:
-        # Splitting an image across archives would produce something no buyer
-        # can open, so this is refused rather than worked around.
         names = ", ".join(str(entry.get("ratio") or entry.get("file")) for entry in oversized)
         raise PackingError(
             f"{len(oversized)} file(s) are larger than the {max_bytes // (1024 * 1024)}MB limit on their own: {names}"
@@ -147,12 +148,31 @@ def plan_delivery(
     when there is a slot spare. Only when there are more files than slots does
     anything get archived, and then the guide rides inside every archive.
     """
+    # A file larger than one slot is not a reason to compress it. The quality
+    # of a print is the product; a buyer who paid for 300 DPI at full quality
+    # and received a re-encode has been given something else. So the answer is
+    # a different delivery, not a smaller file.
     oversized = [entry for entry in files if int(entry.get("bytes") or 0) > max_bytes]
-    if oversized:
-        names = ", ".join(str(entry.get("ratio") or entry.get("file")) for entry in oversized)
-        raise PackingError(
-            f"{len(oversized)} file(s) are larger than the {max_bytes // (1024 * 1024)}MB limit on their own: {names}"
-        )
+
+    total = sum(int(entry.get("bytes") or 0) for entry in files)
+    allowance = max_files * max_bytes
+    if oversized or total > allowance:
+        # Past what the marketplace can hold at all. One archive of everything
+        # rather than a packing that cannot succeed: it is the thing to hand to
+        # a shop that will deliver it another way -- a link in a PDF, which is
+        # how a large set is sold -- and it says so rather than pretending.
+        return {
+            "mode": "oversize",
+            "entries": list(files),
+            "include_guide": has_guide,
+            "guide_dropped": False,
+            "slots_used": 1,
+            "total_bytes": total,
+            "allowance_bytes": allowance,
+            # Which files could not go on their own, if any. Named so the shop
+            # can see why this became a link rather than an upload.
+            "oversized": [str(entry.get("ratio") or entry.get("file")) for entry in oversized],
+        }
 
     if len(files) <= max_files:
         room_for_guide = has_guide and len(files) < max_files

@@ -164,53 +164,50 @@ def test_one_ratio_on_its_own_is_one_plain_file():
     assert plan["slots_used"] == 2 and plan["include_guide"] is True
 
 
-def test_a_file_over_the_limit_is_recompressed_rather_than_refused(tmp_path):
-    """A detailed artwork at 7200x10800 is 34MB at quality 95.
+def test_a_set_too_large_for_the_marketplace_becomes_one_archive():
+    """Three artworks at six ratios is eighteen files, well past 100MB.
 
-    Four of six ratios exceed Etsy's per-file limit on their own, before any
-    packing. What gives is the compression -- the dimensions and the 300 DPI
-    are the two a print actually needs.
+    No packing succeeds there, so the answer is not a smaller packing but a
+    different delivery: one archive, and the plain fact that it exceeds what
+    the marketplace holds. A shop sells that through a link in a PDF.
     """
-    import random
+    from services.print_package_service import plan_delivery
 
-    from PIL import Image
+    # Eighteen files of 9MB: a three-image set at six ratios.
+    plan = plan_delivery(files(*([9] * 18)), has_guide=True)
 
-    from services.print_export_service import fit_file_to_limit
-
-    random.seed(11)
-    detailed = Image.new("RGB", (1400, 1400))
-    pixels = detailed.load()
-    for y in range(1400):
-        for x in range(1400):
-            pixels[x, y] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-
-    path = tmp_path / "big.jpg"
-    detailed.save(path, "JPEG", quality=95, optimize=True, dpi=(300, 300))
-    original = path.stat().st_size
-    limit = original // 2
-
-    outcome = fit_file_to_limit(path, limit)
-
-    assert outcome["fitted"] is True
-    assert outcome["bytes"] <= limit < outcome["was_bytes"]
-    assert outcome["quality"] < 95
-    # The pixels and the DPI are untouched: only the compression moved.
-    with Image.open(path) as saved:
-        assert saved.size == (1400, 1400)
-        assert saved.info.get("dpi") == (300, 300)
+    assert plan["mode"] == "oversize"
+    assert plan["slots_used"] == 1
+    assert len(plan["entries"]) == 18, "nothing is dropped to make it fit"
+    assert plan["total_bytes"] > plan["allowance_bytes"]
+    # 18 x 9MB = 162MB against 5 x 20MB.
+    assert plan["allowance_bytes"] == 5 * 20 * 1024 * 1024
 
 
-def test_a_file_already_under_the_limit_is_left_exactly_as_it_is(tmp_path):
-    from PIL import Image
+def test_a_set_that_still_fits_is_packed_the_way_it_always_was():
+    """The rule only changes above the allowance -- below it nothing moves."""
+    from services.print_package_service import plan_delivery
 
-    from services.print_export_service import fit_file_to_limit
+    # Ten files of 6MB is 60MB: three to an archive, four archives.
+    plan = plan_delivery(files(*([6] * 10)), has_guide=True)
 
-    path = tmp_path / "small.jpg"
-    Image.new("RGB", (400, 400), (200, 90, 70)).save(path, "JPEG", quality=95, dpi=(300, 300))
-    before = path.read_bytes()
+    assert plan["mode"] == "archives"
+    assert plan["slots_used"] <= 5
+    assert all(parcel.bytes <= DEFAULT_MAX_BYTES for parcel in plan["parcels"])
 
-    outcome = fit_file_to_limit(path, 20 * 1024 * 1024)
 
-    assert outcome["fitted"] is False and outcome["quality"] is None
-    # Not re-encoded: a second pass would cost quality for nothing.
-    assert path.read_bytes() == before
+def test_a_file_too_large_for_a_slot_is_never_reencoded_to_fit():
+    """The quality of a print is the product, not a variable to trade.
+
+    A detailed artwork at 7200x10800 is 34MB against a 20MB slot, and the way
+    to make it fit would be to compress it. That is not done: the file goes out
+    at full quality and the delivery changes instead.
+    """
+    from services.print_package_service import plan_delivery
+
+    plan = plan_delivery(files(34, 5, 4), has_guide=True)
+
+    assert plan["mode"] == "oversize"
+    assert plan["oversized"], "the file that could not go on its own is not named"
+    # Every file is still there, at the bytes it was made with.
+    assert [entry["bytes"] for entry in plan["entries"]] == [int(34 * MB), int(5 * MB), int(4 * MB)]

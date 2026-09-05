@@ -46,7 +46,6 @@ from services.print_export_service import (
     PrintExportError,
     available_qualities,
     discover_tool,
-    fit_file_to_limit,
     flatten_artwork,
     has_transparency,
     print_file_name,
@@ -608,61 +607,15 @@ def build_print_deliverables():
     guide = summary.get("guide") or {}
     guide_name = guide.get("file")
 
-    # A detailed artwork at 7200x10800 is 34MB at quality 95 -- over the limit
-    # on its own, before any packing. The dimensions and the 300 DPI are what
-    # a print needs, so what gives is the compression, which is the one of the
-    # three nobody can see change at arm's length.
-    fitted = []
-    for entry in produced:
-        outcome = fit_file_to_limit(folder / entry["file"], max_bytes)
-        entry["bytes"] = outcome["bytes"]
-        if outcome.get("fitted"):
-            entry["fitted_quality"] = outcome["quality"]
-            fitted.append({
-                "ratio": entry.get("ratio"),
-                "was_bytes": outcome["was_bytes"],
-                "bytes": outcome["bytes"],
-                "quality": outcome["quality"],
-            })
-
-    def fit_all(budget: int) -> None:
-        for entry in produced:
-            outcome = fit_file_to_limit(folder / entry["file"], budget)
-            entry["bytes"] = outcome["bytes"]
-            if outcome.get("fitted"):
-                entry["fitted_quality"] = outcome["quality"]
-                fitted.append({
-                    "ratio": entry.get("ratio"),
-                    "was_bytes": outcome["was_bytes"],
-                    "bytes": outcome["bytes"],
-                    "quality": outcome["quality"],
-                })
-
-    fit_all(max_bytes)
+    fitted: list[dict] = []
 
     try:
         plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
     except PackingError as error:
-        # The per-file limit is met and it still will not go. The total is not
-        # the constraint either: six files of 15MB come to 93MB against a
-        # 100MB ceiling, and still need six archives -- because two of them do
-        # not fit in one 20MB archive together.
-        #
-        # What decides it is how many files have to share an archive. Six into
-        # five means at least one pair, so every file has to be at most half an
-        # archive; the margin is for the archive's own overhead.
-        import math
-
-        per_archive = math.ceil(len(produced) / max_files)
-        share = int(max_bytes / per_archive * 0.94)
-        if share < max_bytes and "archives" in str(error):
-            fit_all(share)
-            try:
-                plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
-            except PackingError as second:
-                error = second
-            else:
-                return _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_files, max_bytes)
+        # Not retried at a lower quality. Six files of 15MB need six archives
+        # and five are allowed, and the way to make them fit would be to
+        # re-encode a print -- which is the one thing the product cannot lose.
+        # The shop is told the numbers instead, and delivers it another way.
         # Named rather than worked around: quietly delivering eight of eleven
         # ratios is the worst outcome available.
         return jsonify({
@@ -679,6 +632,61 @@ def build_print_deliverables():
 def _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_files, max_bytes):
     """The finished answer, however many passes it took to get there."""
     guide_name = guide.get("file")
+
+    if plan["mode"] == "oversize":
+        # Past what the marketplace holds, at full quality. One archive of
+        # everything -- the thing to hand to a shop that will deliver it as a
+        # link instead. Nothing here is compressed to make it smaller.
+        archive_path = folder / f"{summary.get('export_id') or 'pack'}_print-files_complete.zip"
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            taken: set[str] = set()
+            for entry in plan["entries"]:
+                source = folder / entry["file"]
+                if not source.is_file():
+                    continue
+                arcname = entry["file"].split("_", 1)[-1]
+                if arcname in taken:
+                    stem, _, suffix = arcname.rpartition(".")
+                    for attempt in range(2, 200):
+                        candidate = f"{stem}_{attempt}.{suffix}" if stem else f"{arcname}_{attempt}"
+                        if candidate not in taken:
+                            arcname = candidate
+                            break
+                taken.add(arcname)
+                archive.write(source, arcname=arcname)
+            if guide_name and (folder / guide_name).is_file():
+                archive.write(folder / guide_name, arcname=guide_name.split("_", 1)[-1])
+
+        return jsonify({
+            "success": True,
+            "export_id": summary.get("export_id"),
+            "delivery": "oversize",
+            "guide_dropped": False,
+            "limits": {"max_files": max_files, "max_bytes": max_bytes},
+            "slots_used": 1,
+            "total_bytes": plan["total_bytes"],
+            "allowance_bytes": plan["allowance_bytes"],
+            "oversized": plan.get("oversized", []),
+            # Said plainly: this cannot be uploaded as it is, and why.
+            "note": (
+                f"{plan['total_bytes'] // (1024 * 1024)}MB at full quality, against "
+                f"{plan['allowance_bytes'] // (1024 * 1024)}MB the marketplace accepts. "
+                "Deliver this archive as a link rather than an upload."
+            ),
+            "deliverables": [{
+                "index": 1,
+                "kind": "archive",
+                "name": archive_path.name.split("_", 1)[-1],
+                "file": archive_path.name,
+                "url": f"/print-outputs/{archive_path.name}",
+                "bytes": archive_path.stat().st_size,
+                "ratios": [str(entry.get("ratio") or "") for entry in plan["entries"]],
+                "files": [entry["file"] for entry in plan["entries"]],
+            }],
+            "files": summary.get("files"),
+            "guide": summary.get("guide"),
+        })
+
     if plan["mode"] == "files":
         # No archive at all. The files already fit the allowance, and a .zip
         # would only stand between the buyer and what they paid for.
@@ -709,11 +717,25 @@ def _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_fil
         for parcel, described in zip(plan["parcels"], report):
             archive_path = folder / f"{summary.get('export_id') or 'pack'}_{described['name']}"
             with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                taken: set[str] = set()
                 for entry in parcel.entries:
                     source = folder / entry["file"]
-                    if source.is_file():
-                        # The batch id is ours, not the buyer's.
-                        archive.write(source, arcname=entry["file"].split("_", 1)[-1])
+                    if not source.is_file():
+                        continue
+                    # The batch id is ours, not the buyer's. But a set is
+                    # several artworks at the same ratios, so stripping it
+                    # leaves three files all called 2x3_ratio_24x36_inch.jpg --
+                    # and a zip with a repeated name delivers one of them.
+                    arcname = entry["file"].split("_", 1)[-1]
+                    if arcname in taken:
+                        stem, _, suffix = arcname.rpartition(".")
+                        for attempt in range(2, 60):
+                            candidate = f"{stem}_{attempt}.{suffix}" if stem else f"{arcname}_{attempt}"
+                            if candidate not in taken:
+                                arcname = candidate
+                                break
+                    taken.add(arcname)
+                    archive.write(source, arcname=arcname)
                 if guide_name and (folder / guide_name).is_file():
                     archive.write(folder / guide_name, arcname=guide_name.split("_", 1)[-1])
             described["kind"] = "archive"
@@ -737,6 +759,70 @@ def _deliverables_answer(plan, summary, produced, fitted, folder, guide, max_fil
         "files": summary.get("files"),
         "guide": summary.get("guide"),
     })
+
+
+@print_routes.post("/api/print/package")
+def package_print_files():
+    """Pack files that have already been made into what a listing can carry.
+
+    A set is several artworks sold as one listing, and every one of them needs
+    its sizes. The export endpoint takes a single artwork, so the caller runs
+    it once per image -- but the packing has to see all of them at once: three
+    artworks at six ratios is eighteen files against five slots, and deciding
+    that six at a time cannot work.
+
+    JSON: ``files`` (names the export answered with) and an optional ``guide``.
+    """
+    payload = request.get_json(silent=True) or {}
+    names = payload.get("files") or []
+    if not isinstance(names, list) or not names:
+        return json_error("files must be a non-empty list", 400)
+
+    folder = _print_folder()
+    produced = []
+    for raw in names[:60]:
+        name = str(raw)
+        if name.startswith("/print-outputs/"):
+            name = name[len("/print-outputs/"):]
+        if not name or "/" in name or "\\" in name or Path(name).name != name:
+            return json_error(f"Invalid file name: {raw}", 400)
+        path = folder / name
+        if not path.is_file():
+            return json_error(f"File not found: {name}", 404)
+        produced.append({
+            "ratio": _ratio_of(name),
+            "file": name,
+            "url": f"/print-outputs/{name}",
+            "bytes": path.stat().st_size,
+            "success": True,
+        })
+
+    guide_name = str(payload.get("guide") or "").strip()
+    if guide_name.startswith("/print-outputs/"):
+        guide_name = guide_name[len("/print-outputs/"):]
+    if guide_name and (Path(guide_name).name != guide_name or not (folder / guide_name).is_file()):
+        guide_name = ""
+
+    max_files, max_bytes = _etsy_limits()
+    fitted: list[dict] = []
+    try:
+        plan = plan_delivery(produced, max_files=max_files, max_bytes=max_bytes, has_guide=bool(guide_name))
+    except PackingError as second:
+        # No second pass at a lower quality: a print re-encoded to fit an
+        # upload limit is not the product the buyer paid for.
+        return jsonify({"success": False, "error": str(second), "files": produced}), 409
+
+    guide = {"file": guide_name, "url": f"/print-outputs/{guide_name}"} if guide_name else {}
+    return _deliverables_answer(
+        plan, {"export_id": payload.get("export_id"), "files": produced}, produced, fitted,
+        folder, guide, max_files, max_bytes,
+    )
+
+
+def _ratio_of(name: str) -> str:
+    """The ratio a produced file is named after, for the parcel labels."""
+    stem = name.split("_", 1)[-1]
+    return stem.split("_ratio", 1)[0].replace("x", ":", 1) if "_ratio" in stem else stem
 
 
 @print_routes.get("/api/print/exports")
