@@ -1102,3 +1102,28 @@ def test_a_saved_file_drops_the_batch_id_from_its_name(tmp_path):
     assert "attachment" not in client.get(f"/print-outputs/{name}").headers.get("Content-Disposition", "")
     # And the bytes are the same file either way -- this names, it does not alter.
     assert client.get(f"/print-outputs/{name}?download=1").data == client.get(f"/print-outputs/{name}").data
+
+
+def test_print_files_keep_their_full_colour_resolution(tmp_path):
+    """4:2:0 chroma subsampling is a libjpeg default, not a decision.
+
+    Left alone it halves the colour resolution on both axes -- three quarters
+    of it gone -- and nothing in the code says so, because the giveaway is the
+    absence of an argument rather than the presence of one. Measured on a real
+    upscale it cost up to 45 levels of 255 on a saturated edge, which on a
+    print someone paid for is the kind of loss this product must not take
+    quietly. So it is pinned here: the default is what would come back.
+    """
+    from PIL import JpegImagePlugin
+
+    client, _ = studio(tmp_path)
+    csrf = login(client)
+    small_ratios(client, csrf)
+    made = export(client, {"ratios": "2:3", "quality": "basic"}).get_json()
+
+    data = client.get(f"/print-outputs/{made['files'][0]['file']}").data
+    with Image.open(io.BytesIO(data)) as saved:
+        saved.load()
+        # 0 is 4:4:4, 1 is 4:2:2, 2 is 4:2:0.
+        assert JpegImagePlugin.get_sampling(saved) == 0, "the print file is being colour-subsampled"
+        assert saved.info.get("dpi") == (300, 300), "a print file without its 300 DPI is a web image"

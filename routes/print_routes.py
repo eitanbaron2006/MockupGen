@@ -478,7 +478,14 @@ def export_print_files():
             }
         name = f"{batch}_{print_file_name(ratio, artwork)}"
         produced = folder / name
-        rendered.save(produced, format="JPEG", quality=95, optimize=True, dpi=(300, 300))
+        # subsampling=0 is 4:4:4 -- full colour resolution. Without it libjpeg
+        # defaults to 4:2:0 and throws away three quarters of the colour, which
+        # is not a default anyone here chose. Measured on a real upscale, that
+        # default cost up to 45 levels of 255 on a saturated edge; at 4:4:4 the
+        # worst case is 19, for 1.3x the bytes. Going on to quality 100 would
+        # cost 4x the bytes to reach 4, and every file would then exceed what
+        # the marketplace takes on its own.
+        rendered.save(produced, format="JPEG", quality=95, subsampling=0, optimize=True, dpi=(300, 300))
         return {
             "ratio": ratio["key"],
             "success": True,
