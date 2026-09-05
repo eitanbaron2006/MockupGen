@@ -1175,3 +1175,18 @@ def test_the_viewer_never_asks_for_the_print_file_itself(tmp_path):
     opening = script[script.index("function openPreview"):script.index("const stepPreview")]
     assert "preview=${PREVIEW_EDGE}" in opening, "the full-screen view is loading the print file again"
     assert "PREVIEW_EDGE = 2000" in script
+
+
+def test_the_full_screen_view_paints_nothing_behind_the_picture():
+    """A backing behind a print can only ever show itself.
+
+    Print files are JPEG, so they have no transparency and nothing can show
+    through them. What the white backing did instead was appear as a pale
+    hairline along the bottom edge -- on 11:14 and ISO A, whose heights do not
+    land on a whole pixel -- and read as a defect in the export. The files were
+    perfect the whole time.
+    """
+    css = (Path(__file__).resolve().parents[1] / "static" / "admin" / "print.css").read_text(encoding="utf-8")
+    start = css.index(".print-preview img {")
+    block = css[start:css.index("}", start)]
+    assert "background" not in block, f"something is being painted behind the full-screen image:\n{block}"

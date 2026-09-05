@@ -891,8 +891,11 @@ body.print-page {
   display: flex;
 }
 
+/* No background of any kind. A print file is a JPEG and cannot be transparent,
+   so a backing behind it can never show anything except itself -- and it did:
+   a pale hairline along the bottom edge on the ratios whose height does not
+   land on a whole pixel. The picture is the only thing that should be here. */
 .print-preview img {
-  background: #fff;
   max-height: calc(100vh - 140px);
   max-width: 100%;
   object-fit: contain;
