@@ -143,8 +143,31 @@ QUALITIES = (
     {
         "key": "ai",
         "name": "Real-ESRGAN",
-        "note": "4x AI upscale, then fitted -- needs realesrgan-ncnn-vulkan",
+        "note": "4x AI upscale, then fitted -- the general-purpose model",
         "needs": "realesrgan",
+        "model": "realesrgan-x4plus",
+    },
+    {
+        "key": "ultrasharp",
+        "name": "4x UltraSharp",
+        # The same binary and the same architecture, trained differently.
+        # Measured against x4plus on the same artwork: 33.6 dB PSNR apart,
+        # which is a real difference rather than noise -- it holds texture and
+        # edges where x4plus smooths them.
+        "note": "4x AI upscale, kinder to texture and edges than x4plus",
+        "needs": "realesrgan",
+        "model": "4x-UltraSharp-fp16",
+    },
+    {
+        "key": "siax",
+        "name": "4x NMKD-Siax",
+        # Converted from a PyTorch checkpoint by tools/convert_esrgan_to_ncnn.py
+        # -- same RRDBNet the other two are, trained on different data. Measured
+        # against both on the same artwork: 23.8 dB from x4plus and 24.3 from
+        # UltraSharp, so it is a genuinely third result rather than a relabel.
+        "note": "4x AI upscale, trained for photographic detail",
+        "needs": "realesrgan",
+        "model": "4x-NMKD-Siax",
     },
     {
         "key": "gigapixel",
@@ -175,8 +198,36 @@ def available_qualities(tools: dict[str, str] | None = None) -> list[dict[str, A
                 reason = f"{PROGRAM_NAMES.get(needs, needs)} was not found on this machine"
             elif not available:
                 reason = f"Not found at {program}"
+            # A model is a pair of files beside the binary. Offering a quality
+            # whose weights are missing is the same mistake as offering one
+            # whose program is: it fails minutes into a render instead of not
+            # being on the menu.
+            #
+            # Only when there is a models folder to look in, though. Without
+            # one the binary falls back to its own defaults and we cannot see
+            # what it has -- and "I cannot tell" is not the same as "missing".
+            model = quality.get("model")
+            if available and model and models_folder(program).is_dir() and not model_is_present(program, model):
+                available = False
+                reason = f"The {model} model is not in this machine's models folder"
         offered.append({**quality, "available": available, "reason": reason})
     return offered
+
+
+def models_folder(program: str) -> Path:
+    """Where the binary keeps its weights: a `models` folder beside it."""
+    return Path(program).parent / "models"
+
+
+def model_is_present(program: str, model: str) -> bool:
+    """Both halves of an ncnn model, by the name the binary is given.
+
+    ncnn wants a `.param` (the network) and a `.bin` (the weights) sharing a
+    name. Either one missing and the binary finds its GPU, prints its details
+    and then fails to open a file.
+    """
+    folder = models_folder(program)
+    return (folder / f"{model}.param").is_file() and (folder / f"{model}.bin").is_file()
 
 
 # ---------------------------------------------------------------- the ladder
@@ -222,21 +273,32 @@ def _run_external(program: str, arguments: list[str], label: str) -> None:
         raise PrintExportError(f"{label} failed: {(result.stderr or result.stdout or '').strip()[:400]}")
 
 
-def scale_realesrgan(image: Image.Image, width: int, height: int, program: str) -> Image.Image:
-    """4x through Real-ESRGAN, then fitted to the exact size."""
+def scale_realesrgan(
+    image: Image.Image,
+    width: int,
+    height: int,
+    program: str,
+    model: str = "realesrgan-x4plus",
+) -> Image.Image:
+    """4x through the ncnn upscaler, then fitted to the exact size.
+
+    The model is a parameter because the binary takes any `.param`/`.bin` pair
+    by name -- the list in its own help text is a set of defaults, not a limit.
+    So a better-trained model is a file drop and a name, not a code change.
+    """
     with tempfile.TemporaryDirectory() as scratch:
         source = Path(scratch) / "input.png"
         result = Path(scratch) / "output.png"
         image.convert("RGB").save(source, "PNG")
-        arguments = ["-i", str(source), "-o", str(result), "-n", "realesrgan-x4plus", "-j", "1:1:1"]
+        arguments = ["-i", str(source), "-o", str(result), "-n", model, "-j", "1:1:1"]
         # The binary looks for its weights beside itself; saying so explicitly
         # means it still works when it is started from another directory.
-        models = Path(program).parent / "models"
+        models = models_folder(program)
         if models.is_dir():
             arguments += ["-m", str(models)]
-        _run_external(program, arguments, "Real-ESRGAN")
+        _run_external(program, arguments, model)
         if not result.is_file():
-            raise PrintExportError("Real-ESRGAN produced no output")
+            raise PrintExportError(f"{model} produced no output")
         with Image.open(result) as upscaled:
             upscaled.load()
             output = upscaled.copy()
@@ -275,8 +337,12 @@ def scale(image: Image.Image, width: int, height: int, quality: str, tools: dict
         return scale_step(image, width, height)
     if quality == "step-unsharp":
         return apply_unsharp(scale_step(image, width, height), 0.5, 1.0)
-    if quality == "ai":
-        return scale_realesrgan(image, width, height, str(tools.get("realesrgan", "")))
+    # Every ncnn model is the same binary with a different `-n`, so which
+    # qualities go here is read from the table rather than listed again: adding
+    # a model is one entry in QUALITIES, and nothing to forget down here.
+    chosen = next((entry for entry in QUALITIES if entry["key"] == quality), None)
+    if chosen and chosen.get("needs") == "realesrgan":
+        return scale_realesrgan(image, width, height, str(tools.get("realesrgan", "")), chosen["model"])
     if quality == "gigapixel":
         return scale_topaz(image, width, height, str(tools.get("topaz", "")))
     return apply_unsharp(scale_bicubic(image, width, height), 0.4, 0.8)

@@ -961,3 +961,112 @@ def test_a_set_does_not_deliver_three_files_under_one_name(tmp_path):
 
     # Every one of the six files reached the buyer under a name of its own.
     assert len(inside) == len(set(inside)) == 6
+
+
+def test_a_model_without_its_weights_is_not_offered(tmp_path, monkeypatch):
+    """The binary is one thing; the model it is asked for is another.
+
+    Real-ESRGAN takes any `.param`/`.bin` pair by name, so a second model is a
+    file drop rather than a code change -- which also means the files can
+    simply not be there. A quality offered in that state finds its GPU, prints
+    its details and fails on a missing file, minutes into a render. So the
+    check is for the pair, and an absent model is greyed out with the reason.
+    """
+    from services import print_export_service as export_service
+
+    program = tmp_path / "realesrgan-ncnn-vulkan.exe"
+    program.write_bytes(b"")
+    models = tmp_path / "models"
+    models.mkdir()
+    for half in ("param", "bin"):
+        (models / f"realesrgan-x4plus.{half}").write_bytes(b"")
+
+    monkeypatch.setattr(export_service, "TOOL_CANDIDATES", {"realesrgan": (str(program),), "topaz": ()})
+    monkeypatch.setattr(export_service.shutil, "which", lambda name: None)
+    found = export_service.resolved_tools({})
+
+    offered = {q["key"]: q for q in export_service.available_qualities(found)}
+    assert offered["ai"]["available"] is True
+    # Same binary, same everything -- only the weights are absent.
+    assert offered["ultrasharp"]["available"] is False
+    assert "4x-UltraSharp-fp16" in offered["ultrasharp"]["reason"]
+
+    # Half a model is not a model: ncnn needs the network and the weights.
+    (models / "4x-UltraSharp-fp16.param").write_bytes(b"")
+    assert export_service.model_is_present(str(program), "4x-UltraSharp-fp16") is False
+    (models / "4x-UltraSharp-fp16.bin").write_bytes(b"")
+
+    offered = {q["key"]: q for q in export_service.available_qualities(found)}
+    assert offered["ultrasharp"]["available"] is True
+    assert offered["ultrasharp"]["reason"] == ""
+
+
+def test_each_ai_quality_asks_the_upscaler_for_its_own_model(tmp_path, monkeypatch):
+    """Two qualities, one binary -- what separates them is the `-n` name.
+
+    Worth pinning: the model name used to be a literal inside the call, so a
+    second model could be listed on the screen and still silently render
+    through the first.
+    """
+    from PIL import Image as PillowImage
+
+    from services import print_export_service as export_service
+
+    asked: list[str] = []
+
+    def fake_run(program, arguments, label):
+        name = arguments[arguments.index("-n") + 1]
+        asked.append(name)
+        output = Path(arguments[arguments.index("-o") + 1])
+        PillowImage.new("RGB", (400, 600), (10, 20, 30)).save(output, "PNG")
+
+    monkeypatch.setattr(export_service, "_run_external", fake_run)
+    source = PillowImage.new("RGB", (100, 150), (200, 90, 70))
+    tools = {"realesrgan": str(tmp_path / "realesrgan-ncnn-vulkan.exe")}
+
+    # Read from the table, so a model added later is covered here the day it
+    # is added rather than the day someone remembers this test.
+    models = [(q["key"], q["model"]) for q in export_service.QUALITIES if q.get("needs") == "realesrgan"]
+    assert len(models) >= 3, "the ncnn qualities are no longer coming from QUALITIES"
+
+    for quality, expected in models:
+        result = export_service.scale(source, 200, 300, quality, tools)
+        assert result.size == (200, 300)
+        assert asked[-1] == expected, f"{quality} rendered through {asked[-1]}"
+
+
+def test_a_checkpoint_of_another_architecture_is_refused_not_converted(tmp_path, monkeypatch):
+    """A conversion that "succeeds" into noise is the expensive kind of wrong.
+
+    The models are all the same network with different numbers, so the weights
+    are written against a template param. Nothing in that process would notice
+    a checkpoint of some other architecture -- it would write a file, the
+    binary would load it, and the upscale would come back as garbage. Which
+    nobody sees until a customer has the print. So the shapes are checked layer
+    by layer and a mismatch stops it.
+    """
+    import torch
+
+    from tools.convert_esrgan_to_ncnn import convert, state_dict, weight_order
+
+    # The real checkpoint maps onto the template exactly: 351 convolutions.
+    real = Path("tools/realesrgan/models/4x_NMKD-Siax_200k_transfered.pth")
+    if real.is_file():
+        assert len(weight_order(state_dict(real))) == 351
+
+    # A network shaped like RRDBNet but two blocks deep, not twenty-three.
+    small = {"conv_first.weight": torch.zeros(64, 3, 3, 3), "conv_first.bias": torch.zeros(64)}
+    for block in range(2):
+        for dense in (1, 2, 3):
+            for conv in range(1, 6):
+                stem = f"RRDB_trunk.{block}.RDB{dense}.conv{conv}"
+                small[f"{stem}.weight"] = torch.zeros(32, 64, 3, 3)
+                small[f"{stem}.bias"] = torch.zeros(32)
+    checkpoint = tmp_path / "wrong.pth"
+    torch.save(small, checkpoint)
+
+    with pytest.raises(SystemExit, match="different architecture"):
+        convert(checkpoint, "should-never-be-written")
+
+    from tools.convert_esrgan_to_ncnn import MODELS
+    assert not (MODELS / "should-never-be-written.bin").exists(), "a refused conversion still wrote a file"
